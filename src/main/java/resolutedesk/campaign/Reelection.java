@@ -25,6 +25,7 @@ import java.util.Random;
 import resolutedesk.congress.Bill;
 import resolutedesk.congress.Hill;
 import resolutedesk.congress.Leaders;
+import resolutedesk.congress.Relations;
 import resolutedesk.executive.Cabinet;
 import resolutedesk.model.Cand;
 import resolutedesk.model.Econ;
@@ -40,7 +41,7 @@ public final class Reelection {
     /** The election year of the current term. */
     public static int year(Game g) { return termYear(g) + 3; }
 
-    static int electionDay(Game g) {
+    public static int electionDay(Game g) {
         int y = year(g);
         for (int d = 2; d <= 8; d++) { int day = dayOfDate(y, 10, d); if (dowOf(day) == 1) return day; }
         return dayOfDate(y, 10, 3);
@@ -303,7 +304,8 @@ public final class Reelection {
                 re.nominee = successor(g); re.nomVp = null;
                 g.log(NK_BIG, ("President " + g.pres.last + " will not seek another term").toUpperCase(), re.nominee.name() + " is the early favorite for the nomination.", 4.5);
                 g.perf += 1;
-                g.capital = Math.max(0, g.capital - 10);
+                Relations.setback(g, 5);                       // a lame duck
+                g.cong.mandate = 0;
             }
         } else if (d.a == 1) {
             re.theme = k;

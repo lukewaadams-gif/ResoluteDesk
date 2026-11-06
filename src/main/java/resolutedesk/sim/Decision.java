@@ -2,6 +2,7 @@ package resolutedesk.sim;
 
 import java.io.Serializable;
 import resolutedesk.congress.Bill;
+import resolutedesk.congress.Member;
 import resolutedesk.executive.Action;
 import resolutedesk.executive.Case;
 import resolutedesk.executive.Person;
@@ -20,6 +21,7 @@ public final class Decision implements Serializable {
     public Scandal scandalRef;
     public Probe probeRef;
     public Person person;
+    public Member member;
     public int[] codes;
     Person[] advisers;
 }

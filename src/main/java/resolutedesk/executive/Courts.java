@@ -18,6 +18,7 @@ import java.util.Random;
 import resolutedesk.congress.Bloc;
 import resolutedesk.congress.Hill;
 import resolutedesk.congress.Midterms;
+import resolutedesk.congress.Relations;
 import resolutedesk.model.Game;
 import resolutedesk.sim.Decision;
 import resolutedesk.sim.Decisions;
@@ -158,11 +159,11 @@ public final class Courts {
         if (yes > 50 || tie) {
             x.court.add(j); x.justices++;
             g.log(NK_BIG, "SENATE CONFIRMS " + j.name.toUpperCase() + " TO THE SUPREME COURT, " + yes + "-" + no, null, 4);
-            g.perf += 0.8; g.capital = Math.min(100, g.capital + 5);
+            g.perf += 0.8;
             for (Bloc b : g.cong.blocs) if (b.party == g.party) b.rel = Math.min(100, b.rel + 3);
         } else {
             g.log(NK_BIG, "SENATE REJECTS " + j.name.toUpperCase() + " FOR THE SUPREME COURT, " + yes + "-" + no, null, 4);
-            g.perf -= 1.5; g.capital = Math.max(0, g.capital - 8);
+            g.perf -= 1.5; Relations.setback(g, 2);
             Decisions.info(g, "Your Supreme Court nominee is rejected", j.name + " lost, " + yes + "-" + no + ". The seat is still open. Choose another nominee in the West Wing (the Courts tab).");
         }
     }
@@ -182,11 +183,11 @@ public final class Courts {
             if (win) {
                 if (a.status == A_BLOCKED) { a.status = A_LIVE; a.statusWeek = g.week; Actions.apply(g, a, true); }
                 g.log(NK_BIG, "SUPREME COURT UPHOLDS " + a.name.toUpperCase() + ", " + yes + "-" + (n - yes), null, 3.2);
-                g.perf += 0.6; g.capital = Math.min(100, g.capital + 4);
+                g.perf += 0.6;
             } else {
                 Actions.apply(g, a, false); a.status = A_STRUCK; a.statusWeek = g.week;
                 g.log(NK_BIG, "SUPREME COURT STRIKES DOWN " + a.name.toUpperCase() + ", " + (n - yes) + "-" + yes, null, 3.2);
-                g.perf -= 0.8; g.capital = Math.max(0, g.capital - 4);
+                g.perf -= 0.8;
             }
             return;
         }

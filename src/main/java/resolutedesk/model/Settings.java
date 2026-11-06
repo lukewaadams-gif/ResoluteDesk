@@ -11,8 +11,10 @@ public final class Settings implements Serializable {
     public String presId, vpId;
     public Cand custom;                        // a president you created
     public boolean tutorial = true;
+    public boolean transition;                 // play the ten weeks from Election Day to the inauguration
     public double cApproval = Double.NaN, cUnemp = Double.NaN, cInfl = Double.NaN, cGdp = Double.NaN;
     public int cHouse = -1, cSenate = -1;      // the president's party's seats, or -1 for the era's
+    public double cMargin = Double.NaN;        // the popular-vote margin won by, or NaN for the era's
     public long seed;
     public String bgLine;                      // a Battleground 2028 Hall of Fame line the president came from
 }

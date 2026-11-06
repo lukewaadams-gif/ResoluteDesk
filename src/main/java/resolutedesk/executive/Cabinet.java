@@ -22,6 +22,7 @@ import java.util.Random;
 import java.util.Set;
 import resolutedesk.congress.Bloc;
 import resolutedesk.congress.Hill;
+import resolutedesk.congress.Relations;
 import resolutedesk.core.Seeds;
 import resolutedesk.model.Cand;
 import resolutedesk.model.Game;
@@ -47,29 +48,14 @@ public final class Cabinet {
         g.ex = x;
         Random r = new Random(g.set.seed ^ 0xCAB1L);
         for (int i = 0; i < NPOST; i++) { x.voteAt[i] = -1; x.wf[i] = POST_WF[i]; x.ready[i] = 62 + r.nextGaussian() * 5; }
-        boolean real = g.era.year == 2025 && g.pres != null && "trump".equals(g.pres.id);
-        if (real) {
-            for (String row : SLATE25) {
-                String[] t = row.split("\\|");
-                int k = Integer.parseInt(t[0]);
-                Person p = new Person();
-                p.name = t[1]; p.background = t[2]; p.party = REP; p.real = true;
-                p.skill = Double.parseDouble(t[4]); p.loyalty = Double.parseDouble(t[5]); p.ideo = Double.parseDouble(t[6]); p.trait = Integer.parseInt(t[7]);
-                p.rosterId = t.length > 8 && t[8].length() > 0 ? t[8] : null;
-                Cand c = p.rosterId != null ? candById(p.rosterId) : null;
-                p.face = c != null ? c : face(p.name, r, REP);
-                if (c == null && p.face.look != null && realLook(p.name) == null) femaleLook(p.face.look, t[3].equals("F"), r);
-                if (k >= 100) { p.role = k - 100; p.since = 0; x.staff[p.role] = p; }
-                else { p.post = k; x.nominee[k] = p; }
-            }
+        List<Person> real = realSlate(g, r);
+        if (!real.isEmpty()) {
+            for (Person p : real) { if (p.role >= 0) { p.since = 0; x.staff[p.role] = p; } else x.nominee[p.post] = p; }
         } else {
             for (int s = 0; s < NSTAFF; s++) { Person p = staffOptions(g, s, 0).get(0); p.since = 0; x.staff[s] = p; }
             for (int k = 0; k < NPOST; k++) if (postOn(k)) x.nominee[k] = options(g, k, 0).get(0);
         }
-        // the Senate takes the nominees a few at a time, the top jobs first
-        int[] order = {P_STATE, P_TREAS, P_DEF, P_DHS, P_DOJ, P_CIA, P_DNI, P_OMB, P_HHS, P_COM, P_INT, P_DOE, P_AG, P_VA, P_DOT, P_HUD, P_LAB, P_ED, P_EPA, P_USTR, P_UN};
-        int n = 0;
-        for (int i = 0; i < order.length; i++) { if (x.nominee[order[i]] == null) continue; x.voteAt[order[i]] = n == 0 ? 0 : 1 + n / 3; x.nominee[order[i]].nominated = 0; n++; }
+        schedule(g);
         // the Supreme Court
         for (String row : courtIn(g.era)) {
             String[] t = row.split("\\|");
@@ -92,6 +78,34 @@ public final class Cabinet {
         for (int d = 0; d < NDG; d++) x.deleg[d] = false;
     }
 
+    /** In 2025 with the real president: the real cabinet nominees and senior staff, or an empty list in any other game. */
+    public static List<Person> realSlate(Game g, Random r) {
+        List<Person> l = new ArrayList<Person>();
+        if (g.era.year != 2025 || g.pres == null || !"trump".equals(g.pres.id)) return l;
+        for (String row : SLATE25) {
+            String[] t = row.split("\\|");
+            int k = Integer.parseInt(t[0]);
+            Person p = new Person();
+            p.name = t[1]; p.background = t[2]; p.party = REP; p.real = true;
+            p.skill = Double.parseDouble(t[4]); p.loyalty = Double.parseDouble(t[5]); p.ideo = Double.parseDouble(t[6]); p.trait = Integer.parseInt(t[7]);
+            p.rosterId = t.length > 8 && t[8].length() > 0 ? t[8] : null;
+            Cand c = p.rosterId != null ? candById(p.rosterId) : null;
+            p.face = c != null ? c : face(p.name, r, REP);
+            if (c == null && p.face.look != null && realLook(p.name) == null) femaleLook(p.face.look, t[3].equals("F"), r);
+            if (k >= 100) p.role = k - 100; else p.post = k;
+            l.add(p);
+        }
+        return l;
+    }
+
+    /** The Senate takes the nominees a few at a time, the top jobs first. */
+    public static void schedule(Game g) {
+        Exec x = g.ex;
+        int[] order = {P_STATE, P_TREAS, P_DEF, P_DHS, P_DOJ, P_CIA, P_DNI, P_OMB, P_HHS, P_COM, P_INT, P_DOE, P_AG, P_VA, P_DOT, P_HUD, P_LAB, P_ED, P_EPA, P_USTR, P_UN};
+        int n = 0;
+        for (int i = 0; i < order.length; i++) { if (x.nominee[order[i]] == null) continue; x.voteAt[order[i]] = n == 0 ? 0 : 1 + n / 3; x.nominee[order[i]].nominated = 0; n++; }
+    }
+
     public static void femaleLook(Look l, boolean f, Random r) {
         l.female = f;
         if (f && l.style < 6) l.style = 6 + r.nextInt(4);
@@ -100,10 +114,10 @@ public final class Cabinet {
     }
 
     /** The surname of a person's full name. */
-    static String surname(String name) { return name.substring(name.lastIndexOf(' ') + 1); }
+    public static String surname(String name) { return name.substring(name.lastIndexOf(' ') + 1); }
 
     /** Surnames already taken in this administration: the president, the vice president, the staff and the cabinet. */
-    static Set<String> takenSurnames(Game g) {
+    public static Set<String> takenSurnames(Game g) {
         Set<String> s = new HashSet<String>();
         if (g.pres != null) s.add(g.pres.last);
         if (g.vp != null) s.add(g.vp.last);
@@ -116,7 +130,7 @@ public final class Cabinet {
     }
 
     /** A generated person for a job, with a surname no one else in the administration has. kind: 0 loyalist, 1 expert, 2 bipartisan or outsider. */
-    static Person make(Game g, Random r, int party, int kind, Set<String> taken) {
+    public static Person make(Game g, Random r, int party, int kind, Set<String> taken) {
         Person p = new Person();
         boolean f = genFemale(r, 0.42);
         String last = genLast(r);
@@ -207,6 +221,8 @@ public final class Cabinet {
         else l += 0.5 - 2.2 * dist - 1.2 * g.era.polarization;
         if (p.party != g.party) l += b.party == p.party ? 1.6 : -0.4;
         if (p.real && p.rosterId != null && b.party != g.party) l += 0.3;      // a senator or governor colleagues know
+        l += p.senate;                                                         // the calls the transition made
+        if (p.baggageKnown) l -= p.baggageWeight;                              // what the hearings dwell on
         return logistic(1.5 * l);
     }
 
@@ -249,6 +265,12 @@ public final class Cabinet {
         Exec x = g.ex;
         Person p = x.nominee[post];
         if (p == null) return;
+        if (p.baggageWeight > 0 && !p.baggageKnown && g.rng.nextDouble() < 0.55) {
+            // what no one checked comes out at the hearing
+            p.baggageKnown = true;
+            g.perf -= 0.6;
+            g.log(NK_BAD, "Confirmation hearing: " + p.name + " is pressed over " + p.baggage, "Senators say the White House should have known. The nomination is in trouble.", 1.8);
+        }
         double[] c = count(g, p);
         int yes = (int) Math.round(clamp(c[0] + g.rng.nextGaussian() * c[1], 0, 100)), no = 100 - yes;
         boolean tie = yes == 50 && Hill.majority(g, SENATE, g.party);
@@ -258,10 +280,9 @@ public final class Cabinet {
             p.confirmed = true; p.acting = false; p.since = g.week; p.morale = 75;
             x.post[post] = p;
             g.log(post <= P_DHS || post == P_OMB ? NK_GOOD : NK_INFO, "Senate confirms " + p.name + " as " + lcTitle(POST_TITLE[post]) + ", " + yes + "-" + no + (tie ? ", with the vice president breaking the tie" : ""), null, post <= P_DEF || tie ? 1.4 : 0.8);
-            g.capital = Math.min(100, g.capital + 0.5);
         } else {
             g.log(NK_BIG, "SENATE REJECTS " + p.name.toUpperCase() + " FOR " + POST_TITLE[post].toUpperCase(), "The vote was " + yes + "-" + no + ". A career official stays in charge until you name someone else.", 2.6);
-            g.perf -= 1.0; g.capital = Math.max(0, g.capital - 6);
+            g.perf -= 1.0; Relations.setback(g, 1);
             Decisions.info(g, "The Senate rejects your nominee", p.name + " lost the vote to be " + lcTitle(POST_TITLE[post]) + ", " + yes + "-" + no + ". Choose someone else in the West Wing (the Cabinet tab).");
         }
     }

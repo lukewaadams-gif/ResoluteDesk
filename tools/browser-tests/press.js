@@ -9,7 +9,7 @@ const { open } = require('./lib');
   const pick = async (k) => { await ev((kk) => { const u = window.__rd.app; const m = u.modal; if (!m) return; u.modal = null; const a = m.actions ? m.actions[Math.min(kk, m.actions.length - 1)] : null; if (a) (typeof a === "function" ? a() : a.run()); }, k); await P.waitForTimeout(150); };
   const answer = async () => { for (let k = 0; k < 8; k++) { const s = await st(); if (!s.modal) break; await pick(0); } };
   await t.click('New presidency'); await P.waitForTimeout(300);
-  await P.evaluate(() => { const s = window.__rd.app.setup; s.year = 2025; s.presId = null; s.vpId = null; s.custom = null; }); await P.waitForTimeout(200);  // the 2025 era
+  await P.evaluate(() => { const s = window.__rd.app.setup; s.year = 2025; s.presId = null; s.vpId = null; s.custom = null; s.transition = false; }); await P.waitForTimeout(200);  // the 2025 era
   await t.click('Choose your president'); await P.waitForTimeout(400);
   await t.at(48 + 10 + 240 + 100, 166 + 50);
   await t.click('Next: your running mate'); await P.waitForTimeout(300);

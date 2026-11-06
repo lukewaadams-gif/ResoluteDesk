@@ -24,6 +24,7 @@ import resolutedesk.congress.BillDef;
 import resolutedesk.congress.Budget;
 import resolutedesk.congress.Legis;
 import resolutedesk.congress.Member;
+import resolutedesk.congress.Relations;
 import resolutedesk.executive.Actions;
 import resolutedesk.executive.Cabinet;
 import resolutedesk.executive.Courts;
@@ -137,6 +138,7 @@ public final class Decisions {
             }
             case D_HIST: return History.auto(g, d.a);
             case D_CAMPAIGN: return Reelection.auto(g, d);
+            case D_ASK: return Relations.auto(g, d);
             case D_SPEECH: return d.codes != null ? (g.week % d.codes.length) : d.a == 0 ? 0 : 0;
             case D_SUMMIT: case D_GSUMMIT: case D_DISASTER: case D_QA: return 0;
             default: return 0;
@@ -148,21 +150,28 @@ public final class Decisions {
         while (!g.inbox.isEmpty() && guard++ < 20) { Decision d = g.inbox.remove(0); apply(g, d, auto(g, d)); }
     }
 
-    /** Spends capital on the swing votes for a bill that's stuck short of a majority. */
+    /**
+     * Works the votes for a bill that's stuck short of a majority: calls in favors members owe, then spends up to
+     * two of the week's Hill hours on the swing votes, each with the deal that member wants.
+     */
     public static void autoWhip(Game g) {
         int made = 0;
         for (Bill b : g.cong.bills) {
-            if (!b.ours || b.stage < ST_COMMITTEE || b.stage > ST_FLOOR2 || made >= 2) continue;
+            if (!b.ours || b.stage < ST_COMMITTEE || b.stage > ST_FLOOR2) continue;
             int ch = b.chamberNow();
-            if (Legis.chance(g, b, ch, false) >= 0.6) continue;
+            double p = Legis.chance(g, b, ch, false);
+            if (p >= 0.6) continue;
             for (Member m : g.cong.members) {
-                if (made >= 2 || g.capital < 12) break;
-                if (m.role != RO_SWING || m.chamber != ch || m.lastDeal == g.week) continue;
+                if (m.chamber != ch || m.role == RO_LEADER) continue;
+                if (p < 0.45 && Legis.cannot(g, b, m, Legis.DL_FAVOR) == null) { Legis.deal(g, b, m, Legis.DL_FAVOR); continue; }
+                if (made >= 2 || m.role != RO_SWING) continue;
                 int kind = m.price == PRICE_PROJECT ? Legis.DL_PROJECT : m.price == PRICE_APPOINT ? Legis.DL_APPOINT : m.price == PRICE_ENDORSE && m.party == g.party ? Legis.DL_ENDORSE : Legis.DL_CALL;
+                if (Legis.cannot(g, b, m, kind) != null) kind = Legis.DL_CALL;
+                if (Legis.cannot(g, b, m, kind) != null) continue;
                 Legis.deal(g, b, m, kind);
                 made++;
             }
-            if (!b.publicPush && g.capital > 20 && b.support() > 55) Legis.deal(g, b, null, Legis.DL_PUBLIC);
+            if (!b.publicPush && b.support() > 55) Legis.deal(g, b, null, Legis.DL_PUBLIC);
         }
     }
 
@@ -225,6 +234,7 @@ public final class Decisions {
             case D_WORLD: Diplo.crisisDecision(g, d.a, k); break;
             case D_HIST: History.decide(g, d.a, k); break;
             case D_CAMPAIGN: Reelection.decide(g, d, k); break;
+            case D_ASK: Relations.answer(g, d, k); break;
             case D_HOME: HomeFront.eventDecision(g, d.a, k); break;
             case D_DISASTER: HomeFront.disasterDecision(g, d, k); break;
             case D_SPEECH: Speech.step(g, d.codes != null ? d.codes[k] : k); break;

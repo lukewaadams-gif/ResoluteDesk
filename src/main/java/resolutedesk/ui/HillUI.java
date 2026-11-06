@@ -6,9 +6,10 @@ import static resolutedesk.core.Dates.*;
 import static resolutedesk.core.Fmt.*;
 import static resolutedesk.core.Num.*;
 import static resolutedesk.data.StateData.*;
+import static resolutedesk.executive.Posts.*;
 import static resolutedesk.history.EraRules.*;
-import static resolutedesk.model.Attributes.*;
 import static resolutedesk.model.Parties.*;
+import static resolutedesk.sim.Schedule.*;
 import static resolutedesk.ui.Draw.*;
 import static resolutedesk.ui.Fonts.*;
 import static resolutedesk.ui.Theme.*;
@@ -25,10 +26,13 @@ import resolutedesk.congress.BillDef;
 import resolutedesk.congress.Bloc;
 import resolutedesk.congress.Budget;
 import resolutedesk.congress.Congress;
+import resolutedesk.congress.Favor;
 import resolutedesk.congress.Hill;
 import resolutedesk.congress.Legis;
 import resolutedesk.congress.Member;
 import resolutedesk.congress.Midterms;
+import resolutedesk.congress.Relations;
+import resolutedesk.executive.Cabinet;
 import resolutedesk.model.Game;
 import resolutedesk.opinion.Elect;
 
@@ -37,16 +41,23 @@ public final class HillUI {
     public static int tab, chairCh, sel = -1, draftSel = -1;
     public static Bill draft;
     static String msg;
-    public static final String[] TABS = {"The Hill", "Bills", "Whip count", "The budget", "Elections"};
+    public static final String[] TABS = {"The Hill", "Bills", "Whip count", "The budget", "Elections", "Favors"};
 
     static void draw(ResoluteDesk u, Graphics2D g, Game game) {
         Congress c = game.cong;
         u.segmented(g, 48, 116, 640, 30, TABS, tab, i -> tab = i, null);
-        text(g, "Political capital", 720, 136, F_S, C_DIM);
-        bar(g, 840, 127, 160, 10, game.capital / 100, C_GOLD);
-        text(g, String.valueOf(Math.round(game.capital)), 1010, 137, F_BB, C_GOLD);
-        if (msg != null) textFit(g, msg, 1050, 137, DW - 1100, F_XS, C_GOLD);
+        double hm = Relations.hoursMax(game), hl = Relations.hoursLeft(game);
+        text(g, "Hill time", 712, 136, F_S, C_DIM);
+        bar(g, 782, 127, 96, 10, hm > 0 ? hl / hm : 0, C_GOLD);
+        text(g, Relations.hours(hl) + " of " + Relations.hours(hm) + " h", 886, 137, F_XSB, C_GOLD);
+        u.hit(712, 120, 260, 24, null, "Calls and meetings take your time. You get two hours a week, and each Hill meeting on your calendar adds two and a half.");
+        text(g, "Mandate", 990, 136, F_S, C_DIM);
+        bar(g, 1050, 127, 70, 10, c.mandate / 15, C_ACCENT);
+        text(g, String.valueOf(Math.round(c.mandate)), 1128, 137, F_XSB, C_ACCENT);
+        u.hit(990, 120, 160, 24, null, Relations.mandateWord(c.mandate) + ". Your margin in the last election gives your bills a push in Congress. It fades over the first year of a term.");
+        if (msg != null) textFit(g, msg, 1166, 137, DW - 1214, F_XS, C_GOLD);
         switch (tab) {
+            case 5: favors(u, g, game); break;
             case 1: bills(u, g, game); break;
             case 2: whip(u, g, game); break;
             case 3: budget(u, g, game); break;
@@ -95,9 +106,10 @@ public final class HillUI {
         if (game.filibusterGone) text(g, "The legislative filibuster is gone: bills pass the Senate with a simple majority.", 66, 780, F_XS, C_GOLD);
         else if (Hill.majority(game, SENATE, game.party)) {
             double p = Legis.nukeChance(game);
-            u.button(g, 66, 756, 300, 36, "Ask the Senate to end the filibuster", game.capital >= 15 ? B_NORM : B_OFF, game.capital >= 15 ? () -> msg = Legis.nuke(game) : null,
-                    "Costs 15 capital. About a " + Math.round(p * 100) + "% chance your own senators go along. The other side won't forget.");
-            text(g, "About " + Math.round(p * 100) + "% chance; 15 capital", 380, 779, F_XS, C_DIM);
+            boolean ok = Relations.hoursLeft(game) >= Legis.NUKE_HOURS;
+            u.button(g, 66, 756, 300, 36, "Ask the Senate to end the filibuster", ok ? B_NORM : B_OFF, ok ? () -> msg = Legis.nuke(game) : null,
+                    "Takes " + Relations.hours(Legis.NUKE_HOURS) + " hours of calls. About a " + Math.round(p * 100) + "% chance your own senators go along. The other side won't forget.");
+            text(g, "About " + Math.round(p * 100) + "% chance; " + Relations.hours(Legis.NUKE_HOURS) + " hours of calls", 380, 779, F_XS, C_DIM);
         }
         // leaders and chairs
         double px = 764, pw = DW - 48 - px;
@@ -113,7 +125,9 @@ public final class HillUI {
             bar(g, cx + 82, cy + 48, 150, 8, m.rel / 100, m.rel >= 55 ? C_GOOD : m.rel >= 40 ? C_GOLD : C_BAD);
             text(g, Math.round(m.rel) + "", cx + 240, cy + 57, F_XSB, Color.white);
             final Member mm = m;
-            u.button(g, cx + 82, cy + 64, 150, 24, "Meet (2 capital)", game.capital >= 2 ? B_NORM : B_OFF, game.capital >= 2 ? () -> { game.capital -= 2; mm.rel = Math.min(100, mm.rel + 5 + game.pres.a[A_EST] / 30.0); msg = "You meet with " + mm.name + "."; } : null, "A private meeting. Improves your relationship.");
+            boolean canMeet = Relations.hoursLeft(game) >= 2;
+            u.button(g, cx + 82, cy + 64, 150, 24, "Meet (2 hours)", canMeet ? B_NORM : B_OFF, canMeet ? () -> msg = Relations.meet(game, mm) : null, "A private meeting. Improves your relationship. Takes two hours of your week.");
+            if (Relations.owed(game, m) != null) text(g, "owes you", cx + 240, cy + 81, F_T, C_GOOD);
             k++;
         }
         u.panel(g, px, 470, pw, 342, "Committee chairs");
@@ -333,21 +347,84 @@ public final class HillUI {
             text(g, Legis.lean(p), px + 300, yy + 10, F_XSB, p > 0.6 ? C_GOOD : p > 0.4 ? C_GOLD : C_BAD);
             if (b.stage >= ST_COMMITTEE && b.stage <= ST_FLOOR2) {
                 double bx = px + 300;
-                int[] kinds = {Legis.DL_CALL, Legis.DL_PROJECT, Legis.DL_APPOINT, Legis.DL_ENDORSE, Legis.DL_THREAT};
-                String[] ab = {"Call", "Project", "Appoint", "Endorse", "Threat"};
+                int[] kinds = {Legis.DL_CALL, Legis.DL_PROJECT, Legis.DL_APPOINT, Legis.DL_ENDORSE, Legis.DL_THREAT, Legis.DL_FAVOR};
+                String[] ab = {"Call", "Project", "Appoint", "Endorse", "Threat", "Favor"};
                 for (int j = 0; j < kinds.length; j++) {
                     final int kind = kinds[j];
                     final Member mm = m;
-                    boolean ok = game.capital >= Legis.DEAL_COST[kind] && mm.lastDeal != game.week;
-                    u.button(g, bx + j * 62, yy + 16, 58, 20, ab[j], ok ? B_NORM : B_OFF, ok ? () -> msg = Legis.deal(game, bb, mm, kind) : null, Legis.DEAL[kind] + " (" + Legis.DEAL_COST[kind] + " capital)");
+                    if (kind == Legis.DL_FAVOR && Relations.owed(game, m) == null) continue;
+                    String no = Legis.cannot(game, bb, mm, kind);
+                    u.button(g, bx + j * 62, yy + 16, 58, 20, ab[j], no == null ? (kind == Legis.DL_FAVOR ? B_ON : B_NORM) : B_OFF, no == null ? () -> msg = Legis.deal(game, bb, mm, kind) : null,
+                            Legis.DEAL[kind] + ". " + (no != null ? no : Legis.DEAL_COST[kind]));
                 }
             }
             yy += 46;
             if (yy > 700) break;
         }
         if (b.stage >= ST_COMMITTEE && b.stage <= ST_FLOOR2) {
-            u.button(g, px + 14, 760, 220, 36, b.publicPush ? "You've gone public" : "Go public (3 capital)", !b.publicPush && game.capital >= 3 ? B_PRIMARY : B_OFF, !b.publicPush && game.capital >= 3 ? () -> msg = Legis.deal(game, bb, null, Legis.DL_PUBLIC) : null, "Make the case to the country. Moderates feel the pressure.");
+            u.button(g, px + 14, 760, 220, 36, b.publicPush ? "You've gone public" : "Go public", !b.publicPush ? B_PRIMARY : B_OFF, !b.publicPush ? () -> msg = Legis.deal(game, bb, null, Legis.DL_PUBLIC) : null, "Make the case to the country. Moderates feel the pressure. " + Legis.DEAL_COST[Legis.DL_PUBLIC]);
             if (b.ours) u.button(g, px + pw - 180, 760, 166, 36, "Withdraw the bill", B_GHOST, () -> { bb.stage = ST_DEAD; bb.stageWeek = game.week; if (bb.recon && game.cong.reconFy == Hill.fiscalYear(game)) game.cong.reconFy = -1; msg = "You pulled " + bb.name + "."; }, "Pull it before it fails.");
+        }
+    }
+
+    // ---- favors, promises and the mandate ----
+    static void favors(ResoluteDesk u, Graphics2D g, Game game) {
+        Congress c = game.cong;
+        u.panel(g, 48, 160, 700, 652, "What you've built");
+        double y = 204;
+        text(g, Relations.mandateWord(c.mandate), 66, y, F_H3, Color.white);
+        bar(g, 66, y + 12, 664, 10, c.mandate / 15, C_ACCENT);
+        y += 44;
+        wrap(g, "You won the last election by " + (c.margin >= 0 ? fmt1(c.margin) + " points" : "losing the popular vote by " + fmt1(-c.margin) + " points")
+                + ". A mandate gives your bills a push with your own party and the moderates of the other. It was " + Math.round(c.mandate0) + " on the first day of the term and fades over the first year.", 66, y, 664, F_XS, C_DIM);
+        y += 52;
+        double h = Relations.honeymoon(game);
+        text(g, h > 0 ? "Congress's honeymoon: about " + Math.round(h * 15) + " more weeks" : "Congress's honeymoon is over", 66, y, F_SB, h > 0 ? C_GOOD : C_DIM);
+        y += 18;
+        wrap(g, "In the first hundred days or so, even some of the other side give a new president the benefit of the doubt.", 66, y, 664, F_XS, C_DIM);
+        y += 40;
+        int slots = 0;
+        for (int i = 0; i < game.act.length; i++) if (game.act[i] == AC_CONGRESS) slots++;
+        text(g, "Your time this week: " + Relations.hours(Relations.hoursLeft(game)) + " of " + Relations.hours(Relations.hoursMax(game)) + " hours left", 66, y, F_SB, C_GOLD);
+        y += 18;
+        wrap(g, "Two hours of phone time, plus two and a half for each Hill meeting on your calendar (you have " + slots + ")" + (Cabinet.sq(game, S_LEG) >= 0.7 ? ", plus one from your legislative director" : "")
+                + ". Calls and deals take an hour each, a private meeting two.", 66, y, 664, F_XS, C_DIM);
+        y += 40;
+        text(g, "Appointments to offer: " + c.appointments + " of " + Relations.MAX_APPOINTMENTS, 66, y, F_SB, Color.white);
+        y += 18;
+        wrap(g, "Ambassadorships, boards and commissions. One opens up every four weeks.", 66, y, 664, F_XS, C_DIM);
+        y += 34;
+        text(g, "Promises kept: " + c.kept + "   broken: " + c.broken, 66, y, F_SB, c.broken > c.kept ? C_BAD : Color.white);
+        y += 40;
+        label(g, "There is no political capital to spend", 66, y, C_GOLD);
+        y += 18;
+        wrap(g, "Votes come from goodwill, favors owed and the mandate. Members owe you when you do things for them: say yes when they ask, campaign in their states in an election year, "
+                + "sign their committees' bills, and keep your promises. Call a favor in on a hard vote from the whip count. Threats and broken promises cost goodwill that takes months to rebuild.", 66, y, 664, F_XS, C_TEXT);
+        // the ledger
+        double px = 764, pw = DW - 48 - px;
+        u.panel(g, px, 160, pw, 330, "Favors owed to you");
+        double yy = 200;
+        List<Favor> owed = Relations.open(game, true);
+        if (owed.isEmpty()) wrap(g, "No one owes you anything yet.", px + 18, yy, pw - 36, F_XS, C_DIM);
+        for (Favor f : owed) {
+            if (yy > 470) break;
+            Portrait.draw(g, f.member.face, px + 14, yy - 6, 30, 36, u.tsec, 0, true, true);
+            text(g, f.member.title != null && f.member.role == RO_SWING ? f.member.title : f.member.name + " (" + PARTY_SHORT[f.member.party] + ")", px + 52, yy + 8, F_SB, Color.white);
+            textFit(g, f.why + ", " + dateStr(f.week * 7), px + 52, yy + 24, pw - 80, F_XS, C_DIM);
+            yy += 42;
+        }
+        u.panel(g, px, 500, pw, 312, "Your promises");
+        yy = 540;
+        List<Favor> prom = Relations.open(game, false);
+        if (prom.isEmpty()) wrap(g, "You haven't promised anyone anything.", px + 18, yy, pw - 36, F_XS, C_DIM);
+        for (Favor f : prom) {
+            if (yy > 790) break;
+            int left = f.due - game.week;
+            Portrait.draw(g, f.member.face, px + 14, yy - 6, 30, 36, u.tsec, 0, true, true);
+            text(g, f.member.name + " (" + PARTY_SHORT[f.member.party] + ")", px + 52, yy + 8, F_SB, Color.white);
+            textFit(g, f.why + " by " + dateStr(f.due * 7), px + 52, yy + 24, pw - 200, F_XS, C_DIM);
+            textR(g, left <= 0 ? "this week" : left + (left == 1 ? " week left" : " weeks left"), px + pw - 18, yy + 8, F_XSB, left <= 2 ? C_BAD : left <= 5 ? C_AMBER : C_GOOD);
+            yy += 42;
         }
     }
 

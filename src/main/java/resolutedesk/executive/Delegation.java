@@ -14,7 +14,7 @@ public final class Delegation {
             "Your counsel handles pardon requests", "Your chief of staff fills vacancies"};
 
     public static final String[] DG_DESC = {"Each new week starts with a balanced schedule, built around your top issue and your stamina.",
-            "Spends political capital on calls and deals when one of your bills is short of votes.", "Sends a budget that follows your party's agenda when it's due.",
+            "Spends your Hill time and the favors you're owed when one of your bills is short of votes.", "Sends a budget that follows your party's agenda when it's due.",
             "Grants the safe requests and turns down the risky ones.", "Picks replacements for anyone who leaves, and sends the Senate a nominee for any empty cabinet post."};
 
     public static final int[] DG_ROLE = {S_COS, S_LEG, -1, S_COUNSEL, S_COS};

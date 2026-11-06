@@ -19,7 +19,7 @@ const { open } = require('./lib');
 
   // 1. a new presidency in 1961, with the tour
   await t.click('New presidency'); await P.waitForTimeout(300);
-  await ev(() => { const s = window.__rd.app.setup; s.year = 1961; s.presId = null; s.vpId = null; s.tutorial = true; }); await P.waitForTimeout(200);
+  await ev(() => { const s = window.__rd.app.setup; s.year = 1961; s.presId = null; s.vpId = null; s.tutorial = true; s.transition = false; }); await P.waitForTimeout(200);
   await t.shot(OUT + '/01_setup.png');
   await t.click('Choose your president'); await P.waitForTimeout(400);
   await t.at(414, 218);

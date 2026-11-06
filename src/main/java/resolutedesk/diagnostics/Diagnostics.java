@@ -27,6 +27,7 @@ import static resolutedesk.press.Outlets.*;
 import static resolutedesk.sim.DecisionKinds.*;
 import static resolutedesk.sim.Rosters.*;
 import static resolutedesk.sim.Schedule.*;
+import static resolutedesk.transition.TransitionData.*;
 import static resolutedesk.ui.RoomIds.*;
 import static resolutedesk.ui.ScreenIds.*;
 import static resolutedesk.ui.Theme.*;
@@ -39,6 +40,7 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.List;
 import resolutedesk.ResoluteDesk;
 import resolutedesk.campaign.Reelection;
 import resolutedesk.congress.Bill;
@@ -46,6 +48,7 @@ import resolutedesk.congress.BillDef;
 import resolutedesk.congress.Budget;
 import resolutedesk.congress.Congress;
 import resolutedesk.congress.Legis;
+import resolutedesk.congress.Relations;
 import resolutedesk.executive.Action;
 import resolutedesk.executive.Actions;
 import resolutedesk.executive.Cabinet;
@@ -75,6 +78,8 @@ import resolutedesk.sim.Decision;
 import resolutedesk.sim.Decisions;
 import resolutedesk.sim.Setup;
 import resolutedesk.sim.Week;
+import resolutedesk.transition.Prospect;
+import resolutedesk.transition.Transitions;
 import resolutedesk.ui.Creator;
 import resolutedesk.ui.HillUI;
 import resolutedesk.ui.Night;
@@ -82,6 +87,7 @@ import resolutedesk.ui.PressRoom;
 import resolutedesk.ui.Rooms;
 import resolutedesk.ui.Screens;
 import resolutedesk.ui.SitRoom;
+import resolutedesk.ui.TransitionUI;
 import resolutedesk.ui.USMap;
 import resolutedesk.ui.WestWing;
 import resolutedesk.world.Diplo;
@@ -109,6 +115,7 @@ public final class Diagnostics {
             for (int r = 0; r < runs; r++) sim(1000 + r, year, pres, scen, weeks);
         }
         if (what.equals("ui")) ui(a.length > 2 ? a[2] : "shots");
+        if (what.equals("transition")) transitionSim(a.length > 2 ? Integer.parseInt(a[2]) : 2025, a.length > 3 ? Integer.parseInt(a[3]) : 52);
         if (what.equals("check")) check();
         if (what.equals("impeach")) for (int r = 0; r < (a.length > 2 ? Integer.parseInt(a[2]) : 5); r++) impeach(2000 + r, a.length > 3 ? Double.parseDouble(a[3]) : 9);
         if (what.equals("whip")) whip(a.length > 2 ? Integer.parseInt(a[2]) : 2025, a.length > 3 ? a[3] : null, a.length > 4 ? Integer.parseInt(a[4]) : 0);
@@ -142,7 +149,7 @@ public final class Diagnostics {
         }
         Congress c = g.cong;
         b.append("  congress: laws ").append(c.laws).append(" vetoes ").append(c.vetoes).append(" overrides ").append(c.overrides).append(" shutdowns ").append(c.shutdowns).append(" (").append(c.shutdownTotal).append(" wks) default ").append(c.defaulted)
-                .append(" capital ").append(fmt0(g.capital)).append(" House D ").append(g.houseD).append(" Senate D ").append(g.senateD).append("\n");
+                .append(" mandate ").append(fmt1(g.cong.mandate)).append(" favors ").append(Relations.open(g, true).size()).append(" House D ").append(g.houseD).append(" Senate D ").append(g.senateD).append("\n");
         for (Bill bl : c.bills) b.append("    ").append(bl.ours ? "* " : "  ").append(bl.name).append(": ").append(STAGE[bl.stage]).append(" wk").append(bl.introduced).append("-").append(bl.stageWeek).append(bl.recon ? " recon" : "").append(" H ").append(bl.houseYes).append("-").append(bl.houseNo).append(" S ").append(bl.senYes).append("-").append(bl.senNo).append("\n");
         if (c.midSummary != null) b.append("  midterms: ").append(c.midSummary).append("\n");
         Exec x = g.ex;
@@ -310,6 +317,74 @@ public final class Diagnostics {
         System.out.println("shot " + name);
     }
 
+    /**
+     * A transition played by a simple script (interview and check the top jobs, float and announce the best, meet
+     * senators), then a year of the presidency. The equivalence check runs it in both versions.
+     */
+    static void transitionSim(int year, int weeks) {
+        Settings s = new Settings();
+        Era e = era(year);
+        s.year = year; s.seed = 77; s.presId = eraRoster(e).get(0).id; s.vpId = defaultVp(e, candById(s.presId)); s.transition = true;
+        Game g = Setup.newGame(s);
+        StringBuilder b = new StringBuilder("=== transition " + year + " " + g.pres.name() + ", " + g.trans.weeks + " weeks, " + g.trans.prospects.size() + " prospects\n");
+        int[] order = {JOB_STAFF + S_COS, P_STATE, P_TREAS, P_DEF, P_DOJ, JOB_STAFF + S_NSA, P_DHS, P_HHS, P_OMB, P_COM};
+        while (!Transitions.lastWeek(g)) {
+            for (int job : order) {
+                if (!Transitions.open(g, job) || Transitions.prospects(g, job).isEmpty()) continue;
+                for (Prospect q : Transitions.prospects(g, job)) {
+                    if (Transitions.cannot(g, q, Transitions.TA_INTERVIEW) == null) Transitions.act(g, q, Transitions.TA_INTERVIEW);
+                    if (Transitions.cannot(g, q, Transitions.TA_VET) == null) Transitions.act(g, q, Transitions.TA_VET);
+                }
+                Prospect best = Transitions.teamChoice(g, job);
+                if (Transitions.vetted(g, best)) {
+                    if (Transitions.cannot(g, best, Transitions.TA_FLOAT) == null) Transitions.act(g, best, Transitions.TA_FLOAT);
+                    if (Transitions.cannot(g, best, Transitions.TA_SENATE) == null) Transitions.act(g, best, Transitions.TA_SENATE);
+                    b.append("  week ").append(g.trans.week).append(": ").append(Transitions.act(g, best, Transitions.TA_ANNOUNCE)).append("\n");
+                }
+            }
+            Transitions.week(g);
+        }
+        for (String n : g.trans.news) b.append("  news ").append(n).append("\n");
+        for (String n : g.trans.notes) b.append("  note ").append(n).append("\n");
+        b.append("  grade ").append(Transitions.grade(Transitions.score(g))).append(" score ").append(fmt1(Transitions.score(g))).append("\n");
+        Setup.inaugurate(g);
+        b.append("  approval ").append(fmt1(g.approval)).append(" honeymoon ").append(fmt1(g.honeymoon)).append("\n");
+        for (int w = 0; w < weeks && !g.over; w++) {
+            Auto.week(g);
+            Week.resolve(g);
+            Decisions.autoAll(g);
+            if (w % 13 == 12) b.append("  week ").append(g.week).append(" approval ").append(fmt1(g.approval)).append(" mandate ").append(fmt1(g.cong.mandate))
+                    .append(" favors ").append(Relations.open(g, true).size()).append(" kept ").append(g.cong.kept).append(" broken ").append(g.cong.broken).append("\n");
+        }
+        for (int k = 0; k < NPOST; k++) if (g.ex.post[k] != null) b.append("  ").append(POST_SHORT[k]).append(": ").append(g.ex.post[k].name).append(" ").append(g.ex.post[k].voteYes).append("-").append(g.ex.post[k].voteNo).append("\n");
+        System.out.print(b);
+    }
+
+    /** The transition: a fresh shortlist, then a few weeks of the team's work. */
+    static void transition(ResoluteDesk u, String dir) {
+        u.setup.transition = true;
+        u.setup.seed = 5;
+        u.game = Setup.newGame(u.setup);
+        u.setup.transition = false;
+        Game g = u.game;
+        TransitionUI.sel = JOB_STAFF + S_COS;
+        u.go(SC_TRANS); shot(u, dir, "transition");
+        List<Prospect> cos = Transitions.prospects(g, JOB_STAFF + S_COS);
+        Transitions.act(g, cos.get(0), Transitions.TA_INTERVIEW);
+        Transitions.act(g, cos.get(1), Transitions.TA_INTERVIEW);
+        Transitions.act(g, cos.get(1), Transitions.TA_ANNOUNCE);
+        List<Prospect> st = Transitions.prospects(g, P_DEF);
+        for (Prospect q : st) Transitions.act(g, q, Transitions.TA_VET);
+        Transitions.act(g, st.get(1), Transitions.TA_INTERVIEW);
+        Transitions.act(g, st.get(1), Transitions.TA_FLOAT);
+        Transitions.act(g, st.get(2), Transitions.TA_FLOAT);
+        for (int w = 0; w < 3; w++) Transitions.week(g);
+        TransitionUI.sel = P_DEF;
+        shot(u, dir, "transition_defense");
+        TransitionUI.sel = P_STATE;
+        shot(u, dir, "transition_state");
+    }
+
     static void ui(String dir) {
         new File(dir).mkdirs();
         ResoluteDesk u = new ResoluteDesk();
@@ -320,6 +395,7 @@ public final class Diagnostics {
         u.go(SC_PICK); Screens.pickParty = REP; Screens.sel = 0; shot(u, dir, "pick");
         Creator.begin(u, DEM); shot(u, dir, "create");
         u.setup.presId = "trump"; u.setup.vpId = "vance"; u.go(SC_VP); shot(u, dir, "vp");
+        transition(u, dir);
         u.game = newGame(5, 2025, "trump", 0);
         u.go(SC_OVAL); shot(u, dir, "oval");
         for (int w = 0; w < 30; w++) { if (w % 8 == 3) Rooms.roadWeek(u.game); else Week.routine(u.game); if (u.game.stamina < 40) Rooms.restWeek(u.game); if (w % 6 == 1) Decisions.autoAgenda(u.game); Week.resolve(u.game); Decisions.autoAll(u.game); }

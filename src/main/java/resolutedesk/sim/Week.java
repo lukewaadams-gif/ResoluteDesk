@@ -17,6 +17,7 @@ import resolutedesk.congress.Budget;
 import resolutedesk.congress.Hill;
 import resolutedesk.congress.Legis;
 import resolutedesk.congress.Midterms;
+import resolutedesk.congress.Relations;
 import resolutedesk.economy.Economy;
 import resolutedesk.executive.Actions;
 import resolutedesk.executive.Cabinet;
@@ -59,7 +60,7 @@ public final class Week {
             g.act[d * 3] = AC_POLICY; g.arg[d * 3] = pri[d % pri.length];
             g.act[d * 3 + 1] = d == 1 ? AC_REMARKS : d == 2 ? AC_CONGRESS : d == 3 ? AC_TRIP : AC_CEREMONY;
             if (d == 1) g.arg[d * 3 + 1] = top;
-            if (d == 3) g.arg[d * 3 + 1] = swingState(g);
+            if (d == 3) { int ps = Relations.promisedState(g); g.arg[d * 3 + 1] = ps >= 0 ? ps : swingState(g); }
             g.act[d * 3 + 2] = d == 4 ? AC_FAMILY : AC_FREE;
         }
         g.act[15] = AC_EXERCISE; g.act[16] = AC_FAMILY; g.act[17] = AC_REST;
@@ -187,7 +188,7 @@ public final class Week {
             Budget.week(g);
             Midterms.week(g);
             Reelection.week(g);
-            g.capital = clamp(g.capital + 0.6 + (g.approval - 45) * 0.05 + (g.honeymoon > 1 ? 0.5 : 0), 0, 100);
+            Relations.week(g);
         }
         if (g.ex != null) {
             Cabinet.week(g);

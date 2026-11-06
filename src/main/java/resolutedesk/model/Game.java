@@ -16,6 +16,7 @@ import resolutedesk.congress.Congress;
 import resolutedesk.executive.Exec;
 import resolutedesk.home.Home;
 import resolutedesk.sim.Decision;
+import resolutedesk.transition.Transition;
 import resolutedesk.world.World;
 
 /** Everything about one presidency: the calendar, the president, approval, the economy, Congress, the cabinet, the world and the record. Saved games are this object, serialized. */
@@ -38,6 +39,7 @@ public final class Game implements Serializable {
     public int sick;                           // weeks of illness left
     // standing with the public
     public double approval, approval0, honeymoon, rally, perf, scandal;
+    public double mood;                        // the public mood: a slow drift in approval, a few points either way
     public double[] issueApp = new double[NPI], issueAdj = new double[NPI], issueSal = new double[NPI], command = new double[NPI];
     public double[] stateApp = new double[NS], stateBump = new double[NS];
     public double[] groupApp = new double[NG], groupAdj = new double[NG];
@@ -55,6 +57,7 @@ public final class Game implements Serializable {
     public int termStart, prior;               // the week the current term began; terms the president had already served before the game
     public int ending;                         // how the presidency ended (END_*)
     public Reelect re;                         // the campaign for another term
+    public Transition trans;                   // the weeks before the inauguration, if they were played
     public int tut = -1;                       // the tutorial's step (-1: off)
     public boolean watch;                      // watch mode: the game plays itself
     public int watchSpeed = 1;
@@ -70,7 +73,6 @@ public final class Game implements Serializable {
     public int legacyScore, legacyRank;
     public List<String> achievements, epilogue;
     public List<String> milestones = new ArrayList<String>();
-    public double capital = 30;                // political capital: spent on deals, earned by approval and wins
     public List<Decision> inbox = new ArrayList<Decision>();
     public boolean filibusterGone;
     // history: one row a week

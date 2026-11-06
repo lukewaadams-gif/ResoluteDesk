@@ -166,6 +166,7 @@ public final class BgImport {
         if (!Double.isNaN(p.infl)) s.cInfl = Math.round(p.infl * 10) / 10.0;
         if (!Double.isNaN(p.gdp)) s.cGdp = Math.round(p.gdp * 10) / 10.0;
         s.bgLine = p.desc;
+        s.transition = true;
         u.setup = s;
         Screens.vpSel = -1;
         u.go(SC_VP);

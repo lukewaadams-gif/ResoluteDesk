@@ -4,6 +4,7 @@ import static resolutedesk.core.Dates.*;
 import static resolutedesk.core.Fmt.*;
 import static resolutedesk.core.Num.*;
 import static resolutedesk.data.Candidates.*;
+import static resolutedesk.data.ElectionResults.*;
 import static resolutedesk.data.Eras.*;
 import static resolutedesk.history.EraRules.*;
 import static resolutedesk.model.Attributes.*;
@@ -13,6 +14,7 @@ import static resolutedesk.sim.Rosters.*;
 
 import java.util.Random;
 import resolutedesk.congress.Hill;
+import resolutedesk.congress.Relations;
 import resolutedesk.economy.Economy;
 import resolutedesk.executive.Cabinet;
 import resolutedesk.history.History;
@@ -20,10 +22,23 @@ import resolutedesk.home.HomeFront;
 import resolutedesk.model.Game;
 import resolutedesk.model.Settings;
 import resolutedesk.opinion.Approval;
+import resolutedesk.transition.Transitions;
 import resolutedesk.world.Diplo;
 
 /** Starting a new presidency from the settings chosen before the game. */
 public final class Setup {
+    /** The popular-vote margin the president won by: the real one for the real winner, a narrow win for a what-if, or the one set before the game. */
+    static double margin(Game g) {
+        Settings s = g.set;
+        if (!Double.isNaN(s.cMargin)) return s.cMargin;
+        double m = realMargin(g.era.year);
+        boolean realWinner = g.pres != null && g.pres.id != null && g.pres.id.equals(g.era.winnerId);
+        if (Double.isNaN(m)) m = 2.0;
+        else if (!realWinner) m = WHAT_IF_MARGIN;
+        if (s.scenario == 4) m = Math.max(m, 12);                       // a landslide
+        return m;
+    }
+
     public static Game newGame(Settings s) {
         Game g = new Game();
         g.set = s;
@@ -52,19 +67,30 @@ public final class Setup {
         g.fitness = 40 + (g.pres.a[A_STA] - 60) * 0.5;
         Economy.init(g);
         Hill.setup(g);
+        Relations.elected(g, margin(g));
         Cabinet.setup(g);
         Diplo.setup(g);
         Approval.init(g);
         HomeFront.setup(g);
         History.setup(g);
         Week.routine(g);
+        if (s.transition) Transitions.begin(g);         // the oath comes when the transition ends
+        else inaugurate(g);
+        return g;
+    }
+
+    /** Noon on Inauguration Day: the transition's choices take office, and the first news of the presidency. */
+    public static void inaugurate(Game g) {
+        if (g.trans != null && !g.trans.done) Transitions.finish(g);
+        if (g.trans != null) Approval.restart(g);
         Week.record(g);
         String vp = g.vp != null ? " " + g.vp.name() + " is sworn in as vice president." : "";
         g.log(NK_BIG, g.pres.name().toUpperCase() + " IS SWORN IN AS PRESIDENT",
                 g.pres.name() + " took the oath of office at noon on " + dateLong(0) + "." + vp + " " + PARTIES[g.party] + " hold " + g.myHouse() + " House seats and " + g.mySenate() + " Senate seats.", 5);
-        Decisions.info(g, "Your cabinet", "Your transition team has sent the Senate a full slate of nominees, and your White House staff starts today. "
+        if (g.trans != null) Decisions.info(g, "Your government", "Your nominees go to the Senate today, the top jobs first, and your White House staff starts work. "
+                + "The transition earned a grade of " + Transitions.grade(Transitions.score(g)) + ". Until each nominee is confirmed, a career official runs the department. Review any of them in the West Wing (press 5).");
+        else Decisions.info(g, "Your cabinet", "Your transition team has sent the Senate a full slate of nominees, and your White House staff starts today. "
                 + "Until each nominee is confirmed, a career official runs the department. Review or change any of them in the West Wing (press 5).");
         g.log(NK_ECON, "The new president inherits unemployment of " + fmt1(g.econ.unemp) + "% and inflation of " + fmt1(g.econ.infl) + "%", null, 1.5);
-        return g;
     }
 }

@@ -120,7 +120,7 @@ public final class Budget {
             c.crUntil = g.week + 11;
             for (int i = 0; i < 12; i++) if (c.approps[i] < 3) c.approps[i] = 4;
             g.perf += 0.6;
-            g.capital = Math.min(100, g.capital + 4);
+            Relations.win(g, 1);
             g.log(NK_GOOD, "The other side blinks: Congress passes a clean stopgap", null, 1.4);
         } else {
             startShutdown(g, minority ? (k == 2 ? 0.5 : 0.42) : (k == 2 ? 0.6 : 0.5));
@@ -160,8 +160,8 @@ public final class Budget {
         c.shutdown = false;
         c.crUntil = g.week + 10;
         for (int i = 0; i < 12; i++) if (c.approps[i] < 3) c.approps[i] = 4;
-        if (won) { g.perf += 1.2; g.capital = Math.min(100, g.capital + 8); g.log(NK_BIG, "SHUTDOWN ENDS ON THE PRESIDENT'S TERMS AFTER " + c.shutdownWeeks + " WEEKS", null, 3.0); }
-        else { g.capital = Math.max(0, g.capital - 8); g.econ.fiscal -= 0.05; g.log(NK_BIG, "THE SHUTDOWN ENDS AFTER " + c.shutdownWeeks + " WEEKS WITH A DEAL", "The White House accepted spending cuts to reopen the government.", 2.6); }
+        if (won) { g.perf += 1.2; Relations.win(g, 3); g.log(NK_BIG, "SHUTDOWN ENDS ON THE PRESIDENT'S TERMS AFTER " + c.shutdownWeeks + " WEEKS", null, 3.0); }
+        else { Relations.setback(g, 3); g.econ.fiscal -= 0.05; g.log(NK_BIG, "THE SHUTDOWN ENDS AFTER " + c.shutdownWeeks + " WEEKS WITH A DEAL", "The White House accepted spending cuts to reopen the government.", 2.6); }
     }
 
     static void omnibus(Game g) {
@@ -258,15 +258,15 @@ public final class Budget {
         boolean unified = Hill.majority(g, HOUSE, g.party) && Hill.majority(g, SENATE, g.party);
         if (c.xWeek < 0) return;
         if (lastChance) {
-            if (k == 0) { raise(g, 1.0); g.econ.fiscal -= 0.2; g.capital = Math.max(0, g.capital - 12); g.perf -= 0.8; for (Bloc b : c.blocs) if (b.party == g.party) b.rel = Math.max(0, b.rel - 4); g.log(NK_BIG, "A LAST-MINUTE DEAL RAISES THE DEBT LIMIT", "The White House gave up more than it wanted to.", 2.6); }
+            if (k == 0) { raise(g, 1.0); g.econ.fiscal -= 0.2; g.perf -= 0.8; for (Bloc b : c.blocs) if (b.party == g.party) b.rel = Math.max(0, b.rel - 4); g.log(NK_BIG, "A LAST-MINUTE DEAL RAISES THE DEBT LIMIT", "The White House gave up more than it wanted to.", 2.6); }
             else if (k == 1) { raise(g, 1.5); g.econ.finShock -= 1.6; g.perf -= 1.5; g.scandal += 4; g.log(NK_BIG, "PRESIDENT INVOKES THE 14TH AMENDMENT TO KEEP PAYING THE NATION'S BILLS", "Treasury keeps borrowing past the limit. Lawsuits are filed within hours; bond markets lurch.", 3.6); }
             return;
         }
-        if (k == 1) { raise(g, 1.5); g.econ.fiscal -= 0.15; g.capital = Math.max(0, g.capital - 5); g.log(NK_INFO, "A deal: spending cuts for a higher debt limit", null, 1.6); return; }
+        if (k == 1) { raise(g, 1.5); g.econ.fiscal -= 0.15; Relations.setback(g, 2); g.log(NK_INFO, "A deal: spending cuts for a higher debt limit", null, 1.6); return; }
         double p = k == 0 ? (unified ? 0.85 : 0.35) : (unified ? 0.7 : 0.45);
         if (r.nextDouble() < p) {
             raise(g, 2.0);
-            if (k == 2) { g.perf += 1; g.capital = Math.min(100, g.capital + 6); }
+            if (k == 2) { g.perf += 1; Relations.win(g, 2); }
             g.log(NK_GOOD, "Congress raises the debt limit" + (k == 0 ? " with no strings attached" : " after a tense standoff"), null, 1.8);
         } else {
             g.econ.finShock -= k == 2 ? 1.2 : 0.6;

@@ -34,11 +34,30 @@ public final class Names {
 
     public static final String[] MID_LASTS = {"Callahan", "Delgado", "Hollister", "Whitcomb", "Vasquez", "Rutledge", "Carrington", "Sandoval", "Vance"};
 
+    /** Surnames that fit any decade. None belongs to a president or a recent cabinet member. */
+    public static final String[] MORE_LASTS = {"Aldridge", "Ambrose", "Archer", "Atwood", "Bancroft", "Barlow", "Beckett", "Bellamy", "Bingham", "Blackwell", "Bradshaw", "Brandt",
+            "Bristow", "Burgess", "Carver", "Chadwick", "Channing", "Chatfield", "Cobb", "Conley", "Corcoran", "Crandall", "Crowley", "Dalton", "Davenport", "Delaney", "Dempsey",
+            "Donnelly", "Doyle", "Draper", "Driscoll", "Dunbar", "Eastman", "Eckert", "Emerson", "Everett", "Farrell", "Fenwick", "Finch", "Fitzgerald", "Fleming", "Forsythe",
+            "Galloway", "Gilmore", "Goodwin", "Grady", "Hale", "Halloran", "Harlow", "Hartley", "Haskell", "Hawthorne", "Hendricks", "Hewitt", "Hollis", "Horton", "Hutchins",
+            "Ingram", "Jennings", "Keller", "Kendall", "Kerrigan", "Kimball", "Kirby", "Lacey", "Lambert", "Larkin", "Lassiter", "Lockhart", "Lowell", "Lyle", "Maddox", "Malloy",
+            "Manning", "Marlowe", "McAllister", "McBride", "McCray", "McKenna", "Merritt", "Milburn", "Moreland", "Mulcahy", "Nash", "Nolan", "Oakes", "O'Hara", "Osgood", "Parrish",
+            "Pickett", "Quigley", "Ramsey", "Redfield", "Reiner", "Rigby", "Rowe", "Sadler", "Sawyer", "Schaefer", "Sexton", "Shepherd", "Sinclair", "Slade", "Sloane", "Spalding",
+            "Stafford", "Stratton", "Tate", "Thayer", "Tolliver", "Truitt", "Van Dorn", "Wakefield", "Warrick", "Webber", "Wendell", "Westbrook", "Whitlock", "Wilcox", "Winthrop",
+            "Wyatt", "Yardley", "Zeller", "Holmgren", "Lindahl", "Novak", "Petrakis", "Rossi", "Moretti", "Bianchi", "Russo", "Ferrante", "DeLuca", "Kaminski", "Nowak", "Zielinski",
+            "Brodsky", "Lindgren", "Halvorsen", "Engstrom", "Becker", "Hoffmann", "Krueger", "Schmitt", "Vogel", "Dekker"};
+
+    /** Surnames of today's wider Washington, used from 1990 on. */
+    public static final String[] WIDER_LASTS = {"Nguyen", "Patel", "Chen", "Park", "Okonkwo", "Adeyemi", "Mensah", "Haddad", "Khalil", "Farouk", "Rahman", "Siddiqui", "Mehta",
+            "Iyer", "Chowdhury", "Tanaka", "Hayashi", "Sato", "Morales", "Ortega", "Herrera", "Navarro", "Ibarra", "Montoya", "Villanueva", "Esposito", "Kovacs", "Novotny",
+            "Boateng", "Diallo", "Toure", "Lin", "Wong", "Huang", "Takahashi", "Kaur", "Reyes", "Ochoa", "Benitez", "Zamora", "Quintero", "Luna", "Abiodun", "Nakashima", "Sorensen-Diaz"};
+
     /** A made-up surname: today's mix, or for earlier decades one that fits the Washington of the day. */
     public static String genLast(Random r) {
-        String s = LASTS[r.nextInt(LASTS.length)];
+        int a = LASTS.length, b = MORE_LASTS.length;
+        int i = r.nextInt(a + b + (GEN_YEAR >= 1990 ? WIDER_LASTS.length : 0));
+        String s = i < a ? LASTS[i] : i < a + b ? MORE_LASTS[i - a] : WIDER_LASTS[i - a - b];
         if (GEN_YEAR >= 1990) return s;
-        for (int i = 0; i < MODERN_LASTS.length; i++) if (MODERN_LASTS[i].equals(s)) return (GEN_YEAR < 1965 ? OLD_LASTS : MID_LASTS)[i];
+        for (int k = 0; k < MODERN_LASTS.length; k++) if (MODERN_LASTS[k].equals(s)) return (GEN_YEAR < 1965 ? OLD_LASTS : MID_LASTS)[k];
         return s;
     }
 

@@ -16,13 +16,52 @@ import resolutedesk.model.Econ;
 import resolutedesk.model.Era;
 import resolutedesk.model.Game;
 
-/** Approval: the weekly national number and its breakdown by issue, by group and by state. */
+/**
+ * Approval: the weekly national number and its breakdown by issue, by group and by state.
+ *
+ * <p>The national number follows a target built in two parts. The fundamentals are the era's baseline, the
+ * economy (growth, jobs, prices and gas) and your standing on the issues people care about. On top of those
+ * come the things that happen: the honeymoon, which an election margin makes bigger; your record of wins and
+ * failures; scandals; the wear of office; and a slow drift in the public mood. Partisanship then squeezes the
+ * result: since about 1990 your own party keeps you above a floor near 30 and the other party keeps you below a
+ * ceiling near 70, both a little tighter the more polarized the era. Before then there is no floor, as Truman
+ * and Nixon found. A rally around the flag passes through the ceiling, which is how approval reaches 90.
+ */
 public final class Approval {
-    static double squash(Game g, double t) {
-        double pol = g.era.polarization;
-        double lo = 50 - (22 + 18 * (1 - pol)), hi = 50 + (12 + 30 * (1 - pol));
-        double c = (lo + hi) / 2, s = (hi - lo) / 4;
-        return lo + (hi - lo) * logistic((t - c) / s);
+    /** How much each kind of event moves the target, and how fast the effects fade each week. */
+    static final double PERF_WEIGHT = 1.6, SCANDAL_WEIGHT = 1.2, RALLY_WEIGHT = 1.6;
+    static final double HONEYMOON_FADE = 0.975, RALLY_FADE = 0.965, PERF_FADE = 0.96, SCANDAL_FADE = 0.975;
+    /** The public mood: a slow random drift, about two points either way. */
+    static final double MOOD_FADE = 0.97, MOOD_STEP = 0.45;
+    /** How much of the gap to the target closes each week, and the week-to-week noise of the polls. */
+    static final double PULL = 0.15, NOISE = 0.55;
+
+    /** How sorted the era's politics are, from 0 (before 1990, or a mild era) to 1 (today). */
+    static double sorted(Game g) { return yearNow(g) < 1990 ? 0 : clamp((g.era.polarization - 0.5) / 0.5, 0, 1); }
+
+    /** The partisan floor and ceiling {lo, hi}: none to speak of before 1990, about 30 and 70 after, tighter as polarization rises. */
+    static double[] bounds(Game g) {
+        if (yearNow(g) < 1990) return new double[]{12, 82};
+        double s = sorted(g);
+        return new double[]{30 + 6 * s, 72 - 8 * s};
+    }
+
+    /** How far below the floor approval can sink, at most: a catastrophe today bottoms out in the mid-20s. */
+    static final double FLOOR_DEPTH = 16;
+
+    /**
+     * Squeezes a raw target into the range partisanship allows. Past the ceiling each point counts for 0.35. Past the
+     * floor the first points count for 0.3, and fewer after that, so approval levels off about 16 points below it.
+     */
+    static double squash(Game g, double raw, double rally) {
+        double[] b = bounds(g);
+        double x = raw;
+        if (raw < b[0]) x = b[0] - FLOOR_DEPTH * (1 - Math.exp(-0.3 * (b[0] - raw) / FLOOR_DEPTH));
+        else if (raw > b[1]) x = b[1] + (raw - b[1]) * 0.35;
+        x += rally * (1 - Math.max(0, x - 50) / 100);                       // a rally passes through the ceiling
+        if (x > 86) x = 86 + (x - 86) * 0.45;
+        if (x < 14) x = 14 - (14 - x) * 0.45;
+        return clamp(x, 4, 96);
     }
 
     static double issueWeighted(Game g) {
@@ -31,15 +70,36 @@ public final class Approval {
         return w > 0 ? v / w : 0;
     }
 
-    /** Where approval is heading, before partisanship squeezes it. */
-    static double target(Game g) {
+    /** The economy's part: growth, jobs, prices and the price of gas against what people of the era expected. */
+    static double economy(Game g) {
         Econ e = g.econ;
-        double t = g.era.approvalBase + 0.8 * (e.gdp - 2) - 1.6 * (e.unemp - e.uRef) - 1.5 * (Economy.piEff(e.infl) - e.piRef) - 3.0 * (e.gas / e.priceLevel - e.gasRef)
-                + 0.06 * (e.sentiment - 80) + g.perf + g.honeymoon + g.rally - g.scandal + 1.5 * issueWeighted(g) + personal(g);
+        return 1.2 * (e.gdp - 2) - 2.4 * (e.unemp - e.uRef) - 2.0 * (Economy.piEff(e.infl) - e.piRef) - 3.0 * (e.gas / e.priceLevel - e.gasRef) + 0.08 * (e.sentiment - 80);
+    }
+
+    /** The fundamentals: the era, the economy, the issues and the president's own appeal. */
+    static double fundamentals(Game g) {
+        double t = g.era.approvalBase + economy(g) + 1.5 * issueWeighted(g) + personal(g);
         if (g.set.difficulty == 0) t += 2;
         if (g.set.difficulty == 2) t -= 2;
         return t;
     }
+
+    /** What has happened lately, apart from rallies: the honeymoon, your record, scandal, the wear of office and the public mood. */
+    static double events(Game g) {
+        return g.honeymoon + PERF_WEIGHT * g.perf - SCANDAL_WEIGHT * g.scandal - wear(g) + g.mood;
+    }
+
+    /**
+     * The wear of office: nothing for six months, then a slow slide of up to nine points a term, and about five in
+     * today's sorted politics, where fewer minds change. Second terms start a little worn.
+     */
+    static double wear(Game g) {
+        double cap = 9 * (1 - 0.45 * sorted(g));
+        return Math.min(cap, 0.045 * Math.max(0, g.tw() - 26)) + (g.term > 1 ? cap / 3 : 0);
+    }
+
+    /** Where approval is heading. */
+    static double target(Game g) { return squash(g, fundamentals(g) + events(g), RALLY_WEIGHT * g.rally); }
 
     /** What the president is like: crossover appeal and charm help; scandal baggage hurts. */
     static double personal(Game g) {
@@ -48,31 +108,46 @@ public final class Approval {
         return (p.a[A_XOV] - 60) * 0.08 + (p.a[A_CHA] - 60) * 0.03 - (p.a[A_SCA] - 40) * 0.03;
     }
 
+    /** The honeymoon a new president starts with: bigger after a bigger win. */
+    public static double honeymoonFor(Game g) {
+        double m = g.cong != null ? g.cong.mandate : 3;
+        return 4 + 0.6 * m;
+    }
+
     public static void init(Game g) {
         Era er = g.era;
         for (int i = 0; i < NPI; i++) g.issueSal[i] = 0.5;
         if (er.issues != null) for (String p : er.issues.split(" ")) { String[] kv = p.split("="); g.issueSal[Integer.parseInt(kv[0])] = Double.parseDouble(kv[1]); }
         if (!er.ai) g.issueSal[PI_TECH] = 0.05;
-        g.honeymoon = 5 + (g.set.scenario == 4 ? 3 : 0);
+        g.honeymoon = honeymoonFor(g);
         if (g.set.scenario == 2) g.rally = 6;
         double t = target(g);
-        g.approval = squash(g, t);
-        if (!Double.isNaN(g.set.cApproval)) { g.approval = g.set.cApproval; g.perf = g.approval - squash(g, t); }
+        g.approval = t;
+        if (!Double.isNaN(g.set.cApproval)) { g.approval = g.set.cApproval; g.perf = (g.approval - t) / PERF_WEIGHT; }
         g.approval0 = g.approval;
         for (int i = 0; i < NPI; i++) g.command[i] = 30 + (g.pres != null ? g.pres.a[A_INT] * 0.2 : 10);
         issues(g);
         cells(g);
     }
 
+    /** Starts approval over at its target, after the transition has changed the honeymoon (a level set before the game stays). */
+    public static void restart(Game g) {
+        if (Double.isNaN(g.set.cApproval)) g.approval = target(g);
+        g.approval0 = g.approval;
+        issues(g);
+        cells(g);
+    }
+
     public static void week(Game g) {
         Random r = g.rng;
+        g.mood = g.mood * MOOD_FADE + r.nextGaussian() * MOOD_STEP;
         double t = target(g);
-        g.approval += (squash(g, t) - g.approval) * 0.07 + r.nextGaussian() * 0.35;
-        g.approval = clamp(g.approval, 8, 92);
-        g.honeymoon *= 0.975;
-        g.rally *= 0.95;
-        g.perf *= 0.96;
-        g.scandal *= 0.985;
+        g.approval += (t - g.approval) * PULL + r.nextGaussian() * NOISE;
+        g.approval = clamp(g.approval, 4, 96);
+        g.honeymoon *= HONEYMOON_FADE;
+        g.rally *= RALLY_FADE;
+        g.perf *= PERF_FADE;
+        g.scandal *= SCANDAL_FADE;
         for (int i = 0; i < NPI; i++) { g.issueAdj[i] *= 0.97; g.issueSal[i] += (base(g, i) - g.issueSal[i]) * 0.02; }
         for (int s = 0; s < NS; s++) g.stateBump[s] *= 0.9;
         for (int gr = 0; gr < NG; gr++) g.groupAdj[gr] *= 0.99;

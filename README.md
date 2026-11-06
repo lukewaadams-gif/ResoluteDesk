@@ -32,6 +32,12 @@ Version 2 is under way; see [Coming in version 2](#coming-in-version-2).
   - Set approval, unemployment, inflation, growth and your party's seats yourself.
   - Easy, Normal and Hard.
 - **Your president and running mate:** play the real winner, the runner-up or another contender of the day (about 35 politicians of today and 55 of the past), or create your own. You choose the name, party, home state, age and background, and spend points on strengths.
+- **The transition** (new in version 2): start the day after the election, with the weeks until the inauguration to choose a government.
+  - Every cabinet post and senior staff job has a shortlist of three to five prospects: an expert, a loyalist, and a mix of politicians, outsiders and crossover picks from the other party. Each comes with a background, strengths and weaknesses, an ideology and a read on their skill and loyalty.
+  - In 2025 the real cabinet is one choice for each job. Everyone else on the lists is fictional.
+  - Your team has eight hours a week. Interview prospects to learn what they're really like, order FBI background checks (four at a time, two weeks each), meet senators to smooth a confirmation, or float a name to see the Senate's whip count, at the risk of reporters digging.
+  - Front-runners leak. A problem nobody checked can come out at the confirmation hearing.
+  - The transition is graded. A good one lengthens your honeymoon and gets departments off to a running start. You can also let your team fill every job.
 - **The Oval Office is the home screen.** Click what you want:
   - the Resolute Desk for your schedule
   - the windows for the country
@@ -59,7 +65,8 @@ Version 2 is under way; see [Coming in version 2](#coming-in-version-2).
   - Monthly jobs and inflation reports, and quarterly GDP.
   - Recessions, market crashes and oil spikes arrive at about their historical rates.
 - **Approval in detail:**
-  - National approval follows the economy, prices, the honeymoon and your work, squeezed by modern partisanship.
+  - National approval follows the economy, prices, the honeymoon and your work. Events move it: rallies, scandals, wins and failures, the wear of office and a drifting public mood.
+  - Its range is real presidents'. A big win brings a honeymoon in the 60s; bad times bring lows in the 30s; a rally around the flag can reach the high 80s. Since about 1990 partisans keep a floor near 30 and a ceiling near 70. Before then there's no floor, and approval can fall into the 20s, as Truman's and Nixon's did.
   - It's broken down by 14 issues, about 17 voter groups and all 50 states plus DC.
   - The breakdowns come from the electorate model built for Battleground 2028: 96 voter cells in every state.
   - Each state's jobs and gas prices move its numbers.
@@ -73,7 +80,12 @@ Open the Roosevelt Room from the Oval Office, or press 6.
   - Each chamber is split into three blocs per party, from the Progressive Caucus to the Freedom Caucus, each with its own ideology, party loyalty and worry about the deficit.
   - The real leaders of the era, plus fictional committee chairs and swing votes.
   - You have a relationship with every leader and bloc. Hill meetings on your calendar, private meetings, wins, deals and vetoes all move it.
-  - Political capital: you earn it with approval and wins, and spend it on deals.
+- **Relationships, not political capital** (new in version 2):
+  - Your time is the limit. Every call or deal takes an hour, and each Hill meeting on your calendar adds two and a half hours to the week.
+  - Members owe you favors when you do things for them: saying yes when they ask for a project, an appointment or a visit, campaigning in their states, or signing their committees' bills. Call a favor in on a hard vote.
+  - Promises are kept or broken. Endorse a member and you've promised to campaign in their state before the election.
+  - Appointments to offer are limited, and projects cost money and annoy the deficit hawks.
+  - Your election margin gives you a mandate that pushes your bills in the first year, and Congress gives a new president a honeymoon of about a hundred days.
 - **Your bills:** pick from 33 real proposals of both parties.
   - Set the bill's size and scope, and how to pay for it: borrow, tax the wealthy and corporations, or cut spending elsewhere.
   - Choose which chamber goes first. Revenue bills must start in the House.
@@ -245,7 +257,7 @@ The eras are on the **New presidency** screen. The campaign is in the Press Brie
 Version 2 arrives in stages, each one playable:
 
 1. **The code, reorganized** (done). The game is now a multi-file Java project with one package per mechanic, tests and build tools (see [The code](#the-code)). This stage also fixes the bug that gave many cabinet members and staff the same surname.
-2. **The transition and your team.** Ten weeks from Election Day to the inauguration to choose your cabinet and staff from shortlists, with vetting, leaks and early Senate whip counts. A new approval model with real presidents' range, from honeymoons in the 60s to lows in the 20s and rallies near 90%. Political capital gives way to relationships you build: goodwill with blocs, leaders and committee chairs, and favors owed.
+2. **The transition and your team** (done). Ten weeks from Election Day to the inauguration to choose your cabinet and staff from shortlists, with vetting, leaks and early Senate whip counts. A new approval model with real presidents' range, from honeymoons in the 60s to lows in the 20s and rallies near 90%. Political capital gives way to relationships you build: goodwill with blocs, leaders and committee chairs, and favors owed.
 3. **Policies and their real-world effects.** About 150 policies in 12 areas, changed through bills, executive orders, agency rules or the budget. Each changes measurable outcomes over months and years, and each has an impacts panel with winners, losers, timing, precedents and how sure the evidence is. A map of the whole system shows what affects what.
 4. **Foreign policy and war.** Concrete objectives with at least 20 countries, a full set of tools from arms sales to covert action, wars of choice against any country, many ways to end a war, and realistic consequences.
 5. **News and runaway storylines.** Hundreds of new stories, and stories that grow with your choices and can take over a presidency.

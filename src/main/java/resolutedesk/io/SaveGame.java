@@ -22,6 +22,7 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.util.ArrayList;
 import resolutedesk.ResoluteDesk;
+import resolutedesk.congress.Favor;
 import resolutedesk.congress.Hill;
 import resolutedesk.executive.Cabinet;
 import resolutedesk.executive.Person;
@@ -91,7 +92,8 @@ public final class SaveGame {
         if (g.set.seed > 2000000011L || g.set.seed < 0) g.set.seed = Math.abs(g.set.seed % 2000000011L);
         if (g.inbox == null) g.inbox = new ArrayList<Decision>();
         if (g.era.midSeats == null) g.era.midSeats = era(g.era.year).midSeats;
-        if (g.cong == null) { Hill.setup(g); g.capital = 30; }
+        if (g.cong == null) Hill.setup(g);
+        if (g.cong.favors == null) { g.cong.favors = new ArrayList<Favor>(); g.cong.appointments = 4; g.cong.nextAsk = g.week + 6; }
         if (g.ex == null) {
             Cabinet.setup(g);
             for (int k = 0; k < NPOST; k++) if (g.ex.nominee[k] != null) { Person p = g.ex.nominee[k]; p.confirmed = true; p.since = g.week; g.ex.post[k] = p; g.ex.nominee[k] = null; g.ex.voteAt[k] = -1; }
@@ -122,6 +124,7 @@ public final class SaveGame {
         u.game = g;
         u.setup = g.set;
         if (g.over || g.removed) { Legacy.lastScores = null; Legacy.epi = null; u.go(SC_LEGACY); return; }
+        if (g.trans != null && !g.trans.done) { u.go(SC_TRANS); u.toast("Welcome back to the transition.", C_ACCENT); return; }
         u.go(SC_OVAL);
         u.toast("Welcome back. " + dateLong(g.day()) + ".", C_ACCENT);
     }

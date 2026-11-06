@@ -14,6 +14,11 @@ public final class Person implements Serializable {
     public double skill = 60, loyalty = 60, morale = 70, ideo;       // ideo: -1 (left) to 1 (right)
     public Cand face;
     public int lastVote = -1, voteYes, voteNo;
+    // from the transition: what a background check found (or would have), and goodwill from meeting senators
+    public String baggage;
+    public double baggageWeight;
+    public boolean baggageKnown;
+    public double senate;
 
     public String title() { return role >= 0 ? STAFF_TITLE[role] : post >= 0 ? (acting ? "Acting " + lcTitle(POST_TITLE[post]) : POST_TITLE[post]) : ""; }
 

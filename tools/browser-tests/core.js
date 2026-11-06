@@ -13,7 +13,10 @@ const { open } = require('./lib');
   await t.at(48 + 10 + 240 + 100, 166 + 50); // first real candidate card (after create)
   await t.click('Next: your running mate'); await P.waitForTimeout(300);
   await t.shot(OUT + '/03_vp.png');
-  await t.click('Take the oath'); await P.waitForTimeout(600);
+  await t.click('Begin the transition'); await P.waitForTimeout(600);
+  console.log('transition', await st());
+  await t.shot(OUT + '/04_transition.png');
+  await t.click('Let the team finish'); await P.waitForTimeout(600);
   console.log('after oath', await st());
   await t.shot(OUT + '/04_oath.png');
   await t.click('Get to work'); await P.waitForTimeout(300);

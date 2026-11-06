@@ -16,9 +16,10 @@ src/main/java/resolutedesk/
   model/              the state of a game: Game, Settings, Econ, Cand, Era, News and their constants
   data/               tables of real-world data: states, candidates, eras, electoral votes, names
   sim/                the turn: setup, the week, the president's schedule, decisions, the hands-off president
+  transition/         the weeks from Election Day to the inauguration: shortlists, vetting, leaks, the grade
   economy/            the weekly economic model
   opinion/            the electorate and approval
-  congress/           members, blocs, bills, legislation, the budget, the midterms
+  congress/           members, blocs, bills, legislation, relationships and favors, the budget, the midterms
   executive/          staff and cabinet, orders and rules, the courts, scandals, the vice president
   world/              countries, diplomacy, summits, crises, operations and wars
   history/            eras and the turning points of history
@@ -60,9 +61,29 @@ schedule -> economy -> approval -> Congress (bills, budget, midterms, re-electio
          -> news, the weekly record, and the end-of-term check
 ```
 
+A new presidency can begin before the inauguration. With the transition on, `sim.Setup` builds the game as
+of Inauguration Day, then `transition.Transitions.begin` empties the jobs and draws a shortlist for each. The
+transition has its own week counter and its own random stream, so the choices made in it don't change the
+presidency's random draws. `Setup.inaugurate` hands the picks to the executive branch and starts week 0.
+
 Things that need the president come back as `sim.Decision`s in the inbox, each with options,
 advisers' views and odds. `sim.Decisions` knows what every kind of decision does, and how the
 hands-off president would choose, which is what watch mode and the simulations use.
+
+## Two models worth knowing
+
+**Approval** (`opinion.Approval`) heads each week toward a target in two parts. The fundamentals are the
+era's baseline, the economy against what people of the era expected, and the issues. Events come on top:
+the honeymoon (bigger after a bigger win), the record of wins and failures, scandal, the wear of office and a
+slowly drifting public mood, each fading at its own rate. Partisanship then squeezes the total. Since about
+1990 there is a soft floor near 30 and a ceiling near 70, tighter as polarization rises, and a floor that
+levels off rather than giving way. Before 1990 there is no floor. Rallies are added after the squeeze, so
+they break through the ceiling.
+
+**Relationships with Congress** (`congress.Relations`) replace political capital. Nothing is spent but time:
+each deal takes an hour of the president's week, and the hours come from Hill meetings on the calendar.
+Goodwill lives on blocs and members, favors and promises in `congress.Favor`, and the mandate from the
+election margin adds to the vote for the president's bills, fading over the first year of a term.
 
 ## Holders: constants, tables and helpers
 

@@ -3,6 +3,7 @@ package resolutedesk.congress;
 import static resolutedesk.congress.BillData.*;
 import static resolutedesk.congress.CongressRules.*;
 import static resolutedesk.core.Num.*;
+import static resolutedesk.data.StateData.*;
 import static resolutedesk.executive.Posts.*;
 import static resolutedesk.history.EraRules.*;
 import static resolutedesk.model.Attributes.*;
@@ -72,10 +73,11 @@ public final class Legis {
         } else l -= 0.9 * pol * (bip ? 0.7 : 1);
         if (b.ours && !mine) l -= 0.35 + (Midterms.season(g) || g.tw() > 170 ? 0.3 : 0);   // why hand the president a win?
         if (b.ours || mine) l += (bl.rel - 50) / 35;
+        if (b.ours) l += Relations.pull(g, bl);                             // the mandate and the honeymoon
         l += mine ? (g.approval - 45) / 18 : (g.approval - 50) / 30;
         double cost = b.netCost();
         if (cost > 0) l -= bl.hawk * cost / 180;
-        boolean moderate = bl.name.contains("oderate") || bl.name.contains("Blue Dogs") || bl.name.contains("Problem Solvers");
+        boolean moderate = Relations.moderate(bl);
         l += (b.support() - 55) / 40 * (moderate ? 1.2 : 0.4);
         if (b.publicPush) l += moderate ? 0.25 : 0.1;
         if (b.defId.equals("stock_ban")) l -= 1.2;                          // members don't love this one
@@ -235,7 +237,7 @@ public final class Legis {
         b.stageWeek = g.week;
         if (b.recon && g.cong.reconFy == Hill.fiscalYear(g)) g.cong.reconFy = -1;      // the reconciliation slot is free again
         g.log(NK_BAD, b.name + " " + how, null, b.ours ? 1.4 : 0.6);
-        if (b.ours) { g.capital = Math.max(0, g.capital - 5); g.issueAdj[b.def().area] -= 0.2; g.perf -= 0.3; }
+        if (b.ours) { Relations.setback(g, 1.5); g.issueAdj[b.def().area] -= 0.2; g.perf -= 0.3; }
     }
 
     public static void toDesk(Game g, Bill b) {
@@ -262,14 +264,14 @@ public final class Legis {
             g.cong.vetoes++;
             g.log(NK_BIG, "PRESIDENT " + g.pres.last.toUpperCase() + " VETOES " + b.name.toUpperCase(), null, 2.5);
             boolean mine = b.ours || b.def().lean == g.party;
-            if (mine) { g.perf -= 1.5; g.capital = Math.max(0, g.capital - 10); }
+            if (mine) { g.perf -= 1.5; Relations.setback(g, 6); }
             else { g.issueAdj[b.def().area] += 0.1; for (Bloc bl : g.cong.blocs) if (bl.party != g.party) bl.rel = Math.max(0, bl.rel - 4); }
             // an override vote if Congress has the numbers to try
             double ch = chance(g, b, HOUSE, true) * chance(g, b, SENATE, true);
             if (ch > 0.05 || b.houseYes >= 280 && b.senYes >= 64) {
                 b.stage = ST_OVERRIDE;
                 boolean h = vote(g, b, HOUSE, true), s = h && vote(g, b, SENATE, true);
-                if (h && s) { g.cong.overrides++; g.log(NK_BIG, "CONGRESS OVERRIDES THE VETO OF " + b.name.toUpperCase(), null, 2.6); enact(g, b, false); g.capital = Math.max(0, g.capital - 10); g.perf -= 1; }
+                if (h && s) { g.cong.overrides++; g.log(NK_BIG, "CONGRESS OVERRIDES THE VETO OF " + b.name.toUpperCase(), null, 2.6); enact(g, b, false); Relations.setback(g, 3); g.perf -= 1; }
                 else { b.stage = ST_DEAD; g.log(NK_GOOD, "The veto of " + b.name + " stands", null, 1.2); }
             } else b.stage = ST_DEAD;
             return;
@@ -294,7 +296,8 @@ public final class Legis {
             double sup = b.support() - 50;
             g.issueAdj[d.area] = clamp(g.issueAdj[d.area] + sup * 0.02 * Math.min(1.5, b.strength) * (mine ? 1 : 0.4), -1.5, 1.5);
             g.perf += mine ? 0.6 + sup * 0.02 : 0.2;
-            if (b.ours) g.capital = Math.min(100, g.capital + 6);
+            if (b.ours) Relations.win(g, 2);
+            else { Member ch = Hill.chairFor(g, b, b.first); if (ch != null) Relations.earn(g, ch, "You signed their committee's bill, " + b.name); }
             if (!mine) for (Bloc bl : g.cong.blocs) if (bl.party == g.party) bl.rel = Math.max(0, bl.rel - 3);
             g.log(NK_BIG, "PRESIDENT " + g.pres.last.toUpperCase() + " SIGNS " + b.name.toUpperCase(), d.desc + (b.recon && b.scope > 0.6 ? " The parliamentarian struck several provisions under the Byrd rule." : ""), 3.0);
             snd(Sfx.CHEER);
@@ -326,18 +329,39 @@ public final class Legis {
     }
 
     // ---- deals to win votes ----
-    public static final int DL_CALL = 0, DL_PROJECT = 1, DL_APPOINT = 2, DL_ENDORSE = 3, DL_THREAT = 4, DL_PUBLIC = 5;
-    public static final String[] DEAL = {"Call", "Project back home", "Appointment", "Endorsement", "Threaten", "Go public"};
-    public static final int[] DEAL_COST = {2, 5, 6, 4, 4, 3};
+    public static final int DL_CALL = 0, DL_PROJECT = 1, DL_APPOINT = 2, DL_ENDORSE = 3, DL_THREAT = 4, DL_PUBLIC = 5, DL_FAVOR = 6;
+    public static final String[] DEAL = {"Call", "Project back home", "Appointment", "Endorsement", "Threaten", "Go public", "Call in a favor"};
+    /** Hours of the president's week each kind of deal takes. */
+    public static final double[] DEAL_HOURS = {1, 1, 1, 1, 1, 0, 0};
+    /** What each kind of deal costs besides time. */
+    public static final String[] DEAL_COST = {"An hour on the phone.", "An hour, a little money, and the deficit hawks' patience.", "An hour and one of your appointments.",
+            "An hour, and a promise to campaign in their state before the election.", "An hour, and their goodwill and their bloc's.", "Your stamina and a news cycle. The other side's leaders resent the pressure.",
+            "The favor they owe you."};
+
+    /** Why a deal can't be made right now, or null if it can. */
+    public static String cannot(Game g, Bill b, Member m, int kind) {
+        Congress c = g.cong;
+        if (kind == DL_PUBLIC) return b.publicPush ? "You've already gone public on this bill." : null;
+        if (m.lastDeal == g.week) return m.name + " has already heard from you this week.";
+        if (kind == DL_FAVOR) return Relations.owed(g, m) == null ? m.name + " doesn't owe you a favor." : null;
+        if (Relations.hoursLeft(g) + 1e-9 < DEAL_HOURS[kind]) return "No time left for Congress this week. Hill meetings on your calendar add hours.";
+        if (kind == DL_APPOINT && c.appointments <= 0) return "You have no appointments left to offer; one opens up every month.";
+        if (kind == DL_ENDORSE && Relations.promised(g, m) != null) return "You've already made " + m.name + " a promise.";
+        return null;
+    }
 
     public static String deal(Game g, Bill b, Member m, int kind) {
-        if (g.capital < DEAL_COST[kind]) return "You don't have enough political capital.";
-        if (m != null && m.lastDeal == g.week) return m.name + " has already heard from you this week.";
+        String no = cannot(g, b, m, kind);
+        if (no != null) return no;
         Random r = g.rng;
-        g.capital -= DEAL_COST[kind];
+        Congress c = g.cong;
+        Relations.spend(g, DEAL_HOURS[kind]);
+        int ch = b.chamberNow();
         if (kind == DL_PUBLIC) {
             b.publicPush = true;
             g.issueSal[b.def().area] = Math.min(2, g.issueSal[b.def().area] + 0.1);
+            g.stamina = Math.max(0, g.stamina - 3);
+            for (Member o : c.members) if (o.role == RO_LEADER && o.party != g.party && o.chamber == ch) o.rel = Math.max(0, o.rel - 2);
             return "You make the case for " + b.name + " to the country. Moderates feel the pressure.";
         }
         m.lastDeal = g.week;
@@ -347,19 +371,33 @@ public final class Legis {
             case DL_PROJECT:
                 boost = m.price == PRICE_PROJECT ? 1.4 : 0.7;
                 g.econ.fiscal += 0.01;
+                for (Bloc bl : c.blocs) if (bl.chamber == ch && bl.hawk > 0.6) bl.rel = Math.max(0, bl.rel - 1.5);
                 msg = "You promise " + m.name + " a project back home.";
                 if (r.nextDouble() < 0.15) g.log(NK_BAD, "\"Pork for votes\": reporters dig into the White House's deal with " + m.name, null, 1.0);
                 break;
-            case DL_APPOINT: boost = m.price == PRICE_APPOINT ? 1.5 : 0.8; msg = "You give " + m.name + " a say in an appointment."; break;
+            case DL_APPOINT:
+                boost = m.price == PRICE_APPOINT ? 1.5 : 0.8;
+                c.appointments--;
+                msg = "You give " + m.name + " a say in an appointment.";
+                break;
             case DL_ENDORSE:
                 boost = m.party == g.party ? (m.price == PRICE_ENDORSE ? 1.5 : 0.9) : 0.2;
-                msg = m.party == g.party ? "You promise to campaign for " + m.name + "." : m.name + " is polite, but your endorsement won't help a member of the other party.";
+                if (m.party == g.party && m.state >= 0) {
+                    Relations.promise(g, m, "Campaign for them in " + STATES[m.state].name, m.state, Relations.nextElectionWeek(g));
+                    msg = "You promise to campaign for " + m.name + " in " + STATES[m.state].name + " before the election. Keep it, or they'll remember.";
+                } else msg = m.name + " is polite, but your endorsement won't help a member of the other party.";
                 break;
             case DL_THREAT:
                 boost = m.party == g.party ? 0.8 : -0.3;
                 m.rel = Math.max(0, m.rel - 15);
+                if (m.bloc >= 0 && m.bloc < c.blocs.size()) c.blocs.get(m.bloc).rel = Math.max(0, c.blocs.get(m.bloc).rel - 3);
                 msg = m.party == g.party ? "You make it clear you'd back a primary challenger. " + m.name + " is furious, but listening." : "The threat backfires: " + m.name + " goes on TV to complain.";
                 if (r.nextDouble() < 0.3) g.log(NK_BAD, m.name + " says the White House threatened them over " + b.name, null, 1.2);
+                break;
+            case DL_FAVOR:
+                Relations.callIn(g, m);
+                boost = 1.8;
+                msg = "You call in the favor " + m.name + " owes you.";
                 break;
             default:
                 boost = 0.35 * (g.pres.a[A_CHA] + g.pres.a[A_EST]) / 140;
@@ -371,13 +409,12 @@ public final class Legis {
         if (m.role == RO_SWING || m.role == RO_CHAIR) {
             // a named member moves their bloc a little and votes with you
             b.sweet[m.bloc] += boost * (m.role == RO_CHAIR ? 0.35 : 0.22);
-            b.deals.add(DEAL[kind] + ": " + m.name);
-            if (m.role == RO_CHAIR) m.rel = Math.min(100, m.rel + 6 * boost);
+            if (m.role == RO_CHAIR && kind != DL_THREAT) m.rel = Math.min(100, m.rel + 6 * boost);
         } else {
             b.sweet[m.bloc] += boost * 0.3;
-            m.rel = Math.min(100, m.rel + 5 * boost);
-            b.deals.add(DEAL[kind] + ": " + m.name);
+            if (kind != DL_THREAT) m.rel = Math.min(100, m.rel + 5 * boost);
         }
+        b.deals.add(DEAL[kind] + ": " + m.name);
         return msg;
     }
 
@@ -390,16 +427,18 @@ public final class Legis {
         return clamp(0.06 + 0.06 * (g.mySenate() - 50) + (rel - 55) / 120 + (g.approval - 50) / 100, 0.02, 0.6);
     }
 
+    /** Hours of calls it takes to whip the Senate on the rules. */
+    public static final double NUKE_HOURS = 3;
+
     public static String nuke(Game g) {
-        if (g.capital < 15) return "You need 15 political capital.";
-        g.capital -= 15;
+        if (!Relations.spend(g, NUKE_HOURS)) return "Whipping the Senate on its rules takes " + Relations.hours(NUKE_HOURS) + " hours of your week. Schedule Hill meetings first.";
         if (g.rng.nextDouble() < nukeChance(g)) {
             g.filibusterGone = true;
             for (Bloc b : g.cong.blocs) if (b.chamber == SENATE && b.party != g.party) b.rel = Math.max(0, b.rel - 15);
             g.log(NK_BIG, "SENATE ENDS THE FILIBUSTER FOR LEGISLATION", "A simple majority can now pass bills. The minority vows to remember.", 4);
             return "The Senate changes its rules: bills now pass with a simple majority.";
         }
-        for (Bloc b : g.cong.blocs) if (b.chamber == SENATE && b.party == g.party && b.name.contains("oderate")) b.rel = Math.max(0, b.rel - 8);
+        for (Bloc b : g.cong.blocs) if (b.chamber == SENATE && b.party == g.party && Relations.moderate(b)) b.rel = Math.max(0, b.rel - 8);
         g.perf -= 0.5;
         g.log(NK_BAD, "Senate " + PARTIES[g.party] + " lack the votes to end the filibuster", "Several of your own senators say they won't change the rules.", 2.2);
         return "Not enough of your own senators would go along.";

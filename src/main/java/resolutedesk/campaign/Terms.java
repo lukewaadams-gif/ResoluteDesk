@@ -8,6 +8,7 @@ import static resolutedesk.model.NewsKinds.*;
 import static resolutedesk.model.Parties.*;
 
 import java.util.Random;
+import resolutedesk.congress.Relations;
 import resolutedesk.executive.Cabinet;
 import resolutedesk.executive.Person;
 import resolutedesk.model.Game;
@@ -41,7 +42,7 @@ public final class Terms {
         g.re = null;
         g.cong.midDone = false;
         g.honeymoon += 2;
-        g.capital = Math.min(100, g.capital + 10);
+        if (re != null) Relations.elected(g, re.popMe - re.popOpp);
         if (re != null && re.nomVp != null && re.nomVp != g.vp) g.vp = re.nomVp;
         // second-term departures: a few secretaries and senior staff move on
         Random r = g.rng;

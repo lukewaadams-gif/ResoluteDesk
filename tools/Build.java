@@ -55,7 +55,7 @@ public final class Build {
             "--add-exports", "jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED",
             "--add-exports", "jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED");
     /** Simulations compared in the equivalence check: seeds, era, president (- for the real one), scenario, weeks. */
-    private static final String[] EQUIVALENCE = {"check", "sim 1 2029 - 0 210", "sim 1 2025 - 3 210", "sim 1 1961 - 0 420", "sim 1 1933 - 0 300"};
+    private static final String[] EQUIVALENCE = {"check", "sim 1 2029 - 0 210", "sim 1 2025 - 3 210", "sim 1 1961 - 0 420", "sim 1 1933 - 0 300", "transition 2025 52", "transition 1953 40"};
 
     private Build() {
     }

@@ -386,8 +386,8 @@ public final class SitRoom {
         u.panel(g, 48, 160, cw, 316, "NATO");
         gauge(g, "Cohesion", w.nato, false, 66, 206, cw - 36);
         text(g, "Allies spend about " + fmt1(w.allySpend) + "% of GDP on defense", 66, 252, F_XS, C_TEXT);
-        boolean a5 = game.capital >= 3 && game.week - w.art5Week >= 13, pr = game.week - w.pressWeek >= 13, dr = game.week - w.drillWeek >= 13;
-        u.button(g, 66, 276, cw - 36, 32, "Reaffirm Article 5 (3 capital)", a5 ? B_NORM : B_OFF, a5 ? () -> { w.art5Week = game.week; game.capital -= 3; w.nato = Math.min(100, w.nato + 6); for (int c = 0; c < NC; c++) if (align(game, c) == AL_TREATY && CT_REGION[c] == RG_EUROPE) w.rel[c] += 2; msg = "You reaffirm the commitment to defend every ally."; } : null);
+        boolean a5 = game.week - w.art5Week >= 13, pr = game.week - w.pressWeek >= 13, dr = game.week - w.drillWeek >= 13;
+        u.button(g, 66, 276, cw - 36, 32, "Reaffirm Article 5", a5 ? B_NORM : B_OFF, a5 ? () -> { w.art5Week = game.week; w.nato = Math.min(100, w.nato + 6); for (int c = 0; c < NC; c++) if (align(game, c) == AL_TREATY && CT_REGION[c] == RG_EUROPE) w.rel[c] += 2; msg = "You reaffirm the commitment to defend every ally."; } : null);
         u.button(g, 66, 316, cw - 36, 32, "Press allies to spend more", pr ? B_NORM : B_OFF, pr ? () -> { w.pressWeek = game.week; w.allySpend += 0.1; w.nato = Math.max(0, w.nato - 4); msg = "Allies grumble, then pledge more."; } : null);
         text(g, "Each of these works once a quarter.", 66, 368, F_T, C_DIM);
         u.panel(g, 48, 486, cw, 326, "Asia-Pacific alliances");

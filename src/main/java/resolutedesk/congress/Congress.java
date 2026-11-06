@@ -30,4 +30,12 @@ public final class Congress implements Serializable {
     double midMargin;
     public String midSummary;
     public int overrides, vetoes, laws, shutdowns, shutdownTotal;
+    // relationships: what the president has built with Congress (see Relations)
+    public double margin;                                  // the popular-vote margin of the last election won, in points
+    public double mandate, mandate0;                       // the election's verdict (0-15), fading over the first year of a term
+    public double hoursUsed;                               // the president's time for Congress spent this week
+    public int appointments = 4;                           // ambassadorships, boards and commissions to offer
+    public List<Favor> favors = new ArrayList<Favor>();
+    public int kept, broken;                               // promises kept and broken
+    public int nextAsk = 7;                                // the week a member next asks for something
 }

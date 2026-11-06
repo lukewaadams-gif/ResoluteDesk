@@ -137,7 +137,7 @@ public final class Screens {
         g.drawString("DESK", (float) tx, 360f);
         text(g, "Four years, or eight, in the Oval Office. Govern, negotiate, survive the crises, and answer to history.", tx + 4, 400, F_SERIF_S, C_DIM);
         double by = 460;
-        u.button(g, tx, by, 340, 54, "New presidency", B_GOLD, () -> { u.setup = new Settings(); showEra(u); u.go(SC_SETUP); });
+        u.button(g, tx, by, 340, 54, "New presidency", B_GOLD, () -> { u.setup = new Settings(); u.setup.transition = true; showEra(u); u.go(SC_SETUP); });
         by += 66;
         boolean has = SaveGame.exists(SaveGame.AUTO);
         u.button(g, tx, by, 340, 46, has ? "Continue: " + SaveGame.describe(SaveGame.AUTO) : "Continue", has ? B_PRIMARY : B_OFF, has ? () -> SaveGame.load(u, SaveGame.AUTO) : null);
@@ -230,7 +230,10 @@ public final class Screens {
         y += 44;
         u.button(g, bx + 18, y, 200, 30, "Reset to the era", B_GHOST, () -> { s.cApproval = Double.NaN; s.cUnemp = Double.NaN; s.cInfl = Double.NaN; s.cGdp = Double.NaN; s.cHouse = -1; s.cSenate = -1; });
         y += 50;
-        u.button(g, bx + 18, y, bw - 36, 30, (s.tutorial ? "[x] " : "[  ] ") + "Show me around the Oval Office (a one-minute tour)", B_GHOST, () -> s.tutorial = !s.tutorial);
+        double hw = (bw - 36 - 8) / 2;
+        u.button(g, bx + 18, y, hw, 30, (s.tutorial ? "[x] " : "[  ] ") + "A tour of the Oval Office", B_GHOST, () -> s.tutorial = !s.tutorial, "A one-minute tour when you take office.");
+        u.button(g, bx + 26 + hw, y, hw, 30, (s.transition ? "[x] " : "[  ] ") + "Play the transition", B_GHOST, () -> s.transition = !s.transition,
+                "Start the day after the election, with ten weeks to choose your cabinet and staff from shortlists. Otherwise your team picks them for you.");
         y += 44;
         wrap(g, cur.blurb, bx + 18, y, bw - 36, F_XS, C_DIM);
         // the era at a glance
@@ -368,7 +371,7 @@ public final class Screens {
         if (c != null) candidatePanel(u, g, c, px, pw);
         else wrap(g, "Pick a running mate.", px + 20, 170, pw - 40, F_S, C_DIM);
         u.button(g, 48, 832, 180, 44, "Back", B_GHOST, () -> u.go(s.custom != null ? SC_CREATE : SC_PICK));
-        u.button(g, DW - 48 - 300, 832, 300, 44, "Take the oath", c != null ? B_GOLD : B_OFF, c != null ? () -> start(u) : null);
+        u.button(g, DW - 48 - 300, 832, 300, 44, u.setup.transition ? "Begin the transition" : "Take the oath", c != null ? B_GOLD : B_OFF, c != null ? () -> start(u) : null);
     }
 
     /** A seed for a new game. Kept well under 2^31: game code multiplies and adds to it, and the browser
@@ -381,6 +384,7 @@ public final class Screens {
         Game g = Setup.newGame(s);
         g.tut = s.tutorial ? 0 : -1;
         u.game = g;
-        Oval.begin(u);
+        if (g.trans != null) TransitionUI.begin(u);
+        else Oval.begin(u);
     }
 }
