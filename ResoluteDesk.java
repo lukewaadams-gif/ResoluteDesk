@@ -1676,9 +1676,9 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     static final int NSLOT = 21;
     static final String[] SLOT = {"Morning", "Afternoon", "Evening"};
     static final int AC_FREE = 0, AC_REST = 1, AC_EXERCISE = 2, AC_FAMILY = 3, AC_POLICY = 4, AC_REMARKS = 5, AC_TRIP = 6, AC_FUNDRAISER = 7,
-            AC_CEREMONY = 8, AC_CONGRESS = 9, AC_CAMPDAVID = 10, AC_WORKLATE = 11, AC_TRAVEL = 12, AC_CAMPAIGN = 13, AC_CABINET = 14, NAC = 15;
+            AC_CEREMONY = 8, AC_CONGRESS = 9, AC_CAMPDAVID = 10, AC_WORKLATE = 11, AC_TRAVEL = 12, AC_CAMPAIGN = 13, AC_CABINET = 14, AC_ABROAD = 15, NAC = 16;
     static final String[] AC_NAME = {"Open time", "Rest", "Exercise", "Family time", "Policy time", "White House remarks", "Trip", "Fundraiser",
-            "Ceremony", "Hill meetings", "Camp David", "Work late", "Travel", "Campaign stop", "Cabinet meeting"};
+            "Ceremony", "Hill meetings", "Camp David", "Work late", "Travel", "Campaign stop", "Cabinet meeting", "Trip abroad"};
     static final String[] AC_DESC = {
             "Nothing scheduled. Staff fill it with calls and paperwork.",
             "Sleep in or nap. Restores stamina and lowers stress.",
@@ -1694,17 +1694,18 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             "Stay at your desk into the night. Gets work done but costs sleep.",
             "In the air.",
             "Rally for your party's candidates in a state. Only in the weeks before the midterms.",
-            "Meet the whole cabinet. Lifts their morale and their departments' readiness."};
-    static final double[] AC_STAMINA = {0, 6, 2.5, 3, -2.5, -3, -5, -3.5, -1.5, -3, 8, -4.5, -2, -5, -2};
-    static final double[] AC_STRESS = {0, -1.2, -1.2, -1.8, 0.6, 0.6, 0.8, 0.6, -0.3, 0.8, -2.5, 1.5, 0.5, 0.8, 0.3};
+            "Meet the whole cabinet. Lifts their morale and their departments' readiness.",
+            "Fly abroad to meet a foreign leader. A big lift in relations, but long flights and jet lag are hard on stamina."};
+    static final double[] AC_STAMINA = {0, 6, 2.5, 3, -2.5, -3, -5, -3.5, -1.5, -3, 8, -4.5, -2, -5, -2, -4};
+    static final double[] AC_STRESS = {0, -1.2, -1.2, -1.8, 0.6, 0.6, 0.8, 0.6, -0.3, 0.8, -2.5, 1.5, 0.5, 0.8, 0.3, 1.0};
     static boolean TRACE;                   // the test harness prints every headline
 
     static final String[] PARTIES = {"Democrats", "Republicans", "Greens", "Libertarians", "Forward", "America Party", "Independents", "Your party"};
 
     static boolean isTrip(int a) { return a == AC_TRIP || a == AC_CAMPAIGN; }
 
-    static final boolean[] AC_ISSUE = {false, false, false, false, true, true, false, false, false, false, false, false, false, false, false};
-    static final boolean[] AC_STATE = {false, false, false, false, false, false, true, false, false, false, false, false, false, true, false};
+    static final boolean[] AC_ISSUE = {false, false, false, false, true, true, false, false, false, false, false, false, false, false, false, false};
+    static final boolean[] AC_STATE = {false, false, false, false, false, false, true, false, false, false, false, false, false, true, false, false};
 
     // ---- the issues voters judge a president on -----------------------------------------------------------
     static final int PI_ECON = 0, PI_PRICES = 1, PI_JOBS = 2, PI_HEALTH = 3, PI_IMMIG = 4, PI_CRIME = 5, PI_FOREIGN = 6, PI_SECURITY = 7,
@@ -1788,6 +1789,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         Econ econ = new Econ();
         Congress cong;
         Exec ex;
+        World world;
         boolean removed;                    // convicted by the Senate
         double capital = 30;                // political capital: spent on deals, earned by approval and wins
         List<Decision> inbox = new ArrayList<Decision>();
@@ -2589,6 +2591,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 double v = a == AC_REST || a == AC_FAMILY || a == AC_CAMPDAVID ? 7.4 : a == AC_FREE || a == AC_EXERCISE ? 6.8 : a == AC_WORKLATE ? 4.8 : a == AC_TRIP || a == AC_FUNDRAISER ? 5.6 : 6.2;
                 int m = g.act[d * 3];
                 if (isTrip(m) && g.arg[d * 3] >= 0 && flight(g.arg[d * 3]) > 3.5) v -= 1;
+                if (a == AC_ABROAD || m == AC_ABROAD) v -= 1.2;
                 h += v;
             }
             return h / 7;
@@ -2600,6 +2603,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             for (int i = 0; i < NSLOT; i++) {
                 double v = AC_STAMINA[g.act[i]];
                 if (isTrip(g.act[i]) && g.arg[i] >= 0) v -= Math.min(6, flight(g.arg[i]) * 0.9);
+                if (g.act[i] == AC_ABROAD && g.arg[i] >= 0 && (i == 0 || g.act[i - 1] != AC_ABROAD)) v -= Math.min(12, flightAbroad(g.arg[i]) * 0.8);
                 c += v < 0 ? v * ageFactor(g) : v;
             }
             return c;
@@ -2648,6 +2652,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                     case AC_EXERCISE: g.fitness = Math.min(100, g.fitness + 1.2); break;
                     case AC_CAMPDAVID: campDavid++; break;
                     case AC_CABINET: Cabinet.meeting(g); break;
+                    case AC_ABROAD: if (arg >= 0 && g.world != null && (i == 0 || g.act[i - 1] != AC_ABROAD || g.arg[i - 1] != arg)) Diplo.visit(g, arg, true); break;
                     case AC_CAMPAIGN: if (arg >= 0 && g.cong != null) { g.cong.campaign[arg] += cha / 70; g.stateBump[arg] += 0.8; g.location = arg; trips++; } break;
                     case AC_WORKLATE: { int t = topIssue(g); g.command[t] = Math.min(100, g.command[t] + 1.5); break; }
                     default: break;
@@ -2678,6 +2683,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 Actions.week(g);
                 Courts.week(g);
                 Trouble.week(g);
+                if (g.world != null) Diplo.week(g);
                 g.issueAdj[PI_ECON] = clamp(g.issueAdj[PI_ECON] + 0.003 * (Cabinet.sq(g, S_NEC) - 0.6), -1.5, 1.5);
             }
             record(g);
@@ -2846,6 +2852,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             Economy.init(g);
             Hill.setup(g);
             Cabinet.setup(g);
+            Diplo.setup(g);
             Approval.init(g);
             Week.routine(g);
             Week.record(g);
@@ -4023,7 +4030,8 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     //  Things only the president can decide land in the inbox. Each choice comes with what your advisers say.
     // =====================================================================
     static final int D_SIGN = 1, D_CR = 2, D_SHUTDOWN = 3, D_DEBT = 4, D_BUDGET = 5, D_INFO = 6, D_MUSTPASS = 7,
-            D_CRA = 8, D_EMERG_END = 9, D_COURT = 10, D_SCANDAL = 11, D_LEAK = 12, D_PARDON = 13, D_SUBPOENA = 14, D_IMPEACH = 15;
+            D_CRA = 8, D_EMERG_END = 9, D_COURT = 10, D_SCANDAL = 11, D_LEAK = 12, D_PARDON = 13, D_SUBPOENA = 14, D_IMPEACH = 15,
+            D_WORLD = 16, D_SUMMIT = 17, D_GSUMMIT = 18;
 
 
     static final class Decision implements Serializable {
@@ -4117,6 +4125,13 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 case D_LEAK: return 1;
                 case D_CRA: case D_EMERG_END: return 0;
                 case D_IMPEACH: return 0;
+                case D_WORLD: {
+                    String[] o = CR_OPTS[d.a].split(";;");
+                    int best = 0; double bv = -9;
+                    for (int i = 0; i < o.length; i++) { String[] t = o[i].split("\\|"); double q = Diplo.p(g, t[2], Double.parseDouble(t[3])); double v = q - (t[2].equals("m") ? 0.12 : 0) - (q >= 1 ? 0.45 : 0); if (v > bv) { bv = v; best = i; } }
+                    return best;
+                }
+                case D_SUMMIT: case D_GSUMMIT: return 0;
                 default: return 0;
             }
         }
@@ -4161,6 +4176,13 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             if (g.week == 30 && g.party == REP && !x.emergency[EM_BORDER]) Actions.issue(g, EM_BORDER);
             if (g.week == 31 && x.emergency[EM_BORDER] && Actions.available(g, actionIdx("eo_troops"))) Actions.issue(g, actionIdx("eo_troops"));
             if (g.week == 12 && Actions.available(g, actionIdx(g.party == REP ? "eo_freeze" : "eo_ai_safety"))) Actions.issue(g, actionIdx(g.party == REP ? "eo_freeze" : "eo_ai_safety"));
+            if (g.world != null) {
+                World w = g.world;
+                if (g.week % 5 == 2) { int[] friends = {CC_GB, CC_JP, CC_DE, CC_FR, CC_CA, CC_MX, CC_KR, CC_IN}; Diplo.call(g, friends[(g.week / 5) % friends.length]); }
+                if (g.week % 7 == 3) Diplo.call(g, g.week % 14 == 3 ? CC_CN : CC_RU);
+                if (g.week % 40 == 20 && w.summitCountry < 0) Diplo.proposeSummit(g, w.uaStage == 2 ? CC_RU : CC_CN);
+                if (g.week % 13 == 6 && w.visitAt[CC_GB] < 0) Diplo.invite(g, new int[]{CC_GB, CC_JP, CC_IN, CC_DE, CC_FR, CC_CA, CC_AU, CC_KR}[(g.week / 13) % 8]);
+            }
             if (g.week % 26 == 10 && g.vp != null) VicePres.start(g, g.week % 52 == 10 ? VM_TOUR : VM_TASK, Week.topIssue(g));
         }
 
@@ -4188,6 +4210,9 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             heard(g, d, k);
             switch (d.kind) {
                 case D_COURT: Courts.courtDecision(g, d.caseRef, k); break;
+                case D_WORLD: Diplo.crisisDecision(g, d.a, k); break;
+                case D_SUMMIT: Summit.round(g, d.codes != null ? d.codes[k] : k); break;
+                case D_GSUMMIT: Summit.multiDecision(g, d, k); break;
                 case D_PARDON: Trouble.pardonDecision(g, d, k); break;
                 case D_SUBPOENA: Trouble.subpoenaDecision(g, d.probeRef, k); break;
                 case D_SCANDAL: Trouble.scandalDecision(g, d.scandalRef, d.codes[k]); break;
@@ -4521,8 +4546,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
 
     /** Who speaks for each adviser label in decisions: staff roles, or 100 + a cabinet post. */
     static final String[] ADV_LABEL = {"Chief of staff", "National security adviser", "Press secretary", "Counsel", "Economic adviser", "Domestic policy adviser", "Legislative director",
-            "Political director", "Communications director", "Budget director", "Treasury secretary", "Attorney general"};
-    static final int[] ADV_WHO = {S_COS, S_NSA, S_PRESS, S_COUNSEL, S_NEC, S_DPC, S_LEG, S_POL, S_COMMS, 100 + P_OMB, 100 + P_TREAS, 100 + P_DOJ};
+            "Political director", "Communications director", "Budget director", "Treasury secretary", "Attorney general", "Defense secretary", "Secretary of State",
+            "Homeland Security secretary", "Director of national intelligence", "Commerce secretary", "Energy secretary"};
+    static final int[] ADV_WHO = {S_COS, S_NSA, S_PRESS, S_COUNSEL, S_NEC, S_DPC, S_LEG, S_POL, S_COMMS, 100 + P_OMB, 100 + P_TREAS, 100 + P_DOJ, 100 + P_DEF, 100 + P_STATE,
+            100 + P_DHS, 100 + P_DNI, 100 + P_COM, 100 + P_DOE};
     // =====================================================================
     //  18.  THE CABINET AND THE STAFF
     //  Nominees go to the Senate for a vote; staff serve at your pleasure. Everyone has skill, loyalty and morale.
@@ -7870,7 +7897,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     static final String[] ROOM_NAME = {"The Resolute Desk", "The Country", "The Economy", "The Residence", "The West Wing", "The Roosevelt Room", "The Situation Room", "The Press Briefing Room"};
     static final String[] ROOM_SUB = {"Your week, slot by slot", "Approval, by issue, group and state", "Jobs, prices, markets and the budget", "Your health, your sleep and your family",
             "Your staff and your cabinet", "Congress: the leaders, the votes, the budget", "The world: allies, rivals and crises", "The press corps and the media"};
-    static final boolean[] ROOM_OPEN = {true, true, true, true, true, true, false, false};
+    static final boolean[] ROOM_OPEN = {true, true, true, true, true, true, true, false};
     static final String[] ROOM_LATER = {"", "", "", "",
             "Your chief of staff, national security adviser, press secretary and counsel, each with skills, traits and loyalty; all 15 departments and their secretaries; cabinet meetings; leaks and resignations; and your vice president's missions.",
             "Named leaders, committee chairs and swing votes; bills you negotiate provision by provision; the filibuster, reconciliation and the Byrd rule; your budget, the 12 spending bills, shutdowns, the debt ceiling and vetoes.",
@@ -8294,7 +8321,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     // =====================================================================
     //  25.  THE ROOMS
     // =====================================================================
-    static final Color[] AC_COL = {rgb(0x34415a), rgb(0x2f8f5a), rgb(0x2f8f5a), rgb(0x2f8f5a), rgb(0x2f6fe0), rgb(0x7c4dff), rgb(0xd4a52a), rgb(0x1fbf6a), rgb(0x5aa0d8), rgb(0xc8323a), rgb(0x2f8f5a), rgb(0x8a6a1a), rgb(0x55607a), rgb(0xb8452e), rgb(0x3d6b9e)};
+    static final Color[] AC_COL = {rgb(0x34415a), rgb(0x2f8f5a), rgb(0x2f8f5a), rgb(0x2f8f5a), rgb(0x2f6fe0), rgb(0x7c4dff), rgb(0xd4a52a), rgb(0x1fbf6a), rgb(0x5aa0d8), rgb(0xc8323a), rgb(0x2f8f5a), rgb(0x8a6a1a), rgb(0x55607a), rgb(0xb8452e), rgb(0x3d6b9e), rgb(0x1f7a8c)};
 
     static final class Rooms {
         static int room = R_DESK, pendingSlot = -1, pendingAct = AC_TRIP, mapMode = 0, selState = -1, chartSel = 0;
@@ -8345,6 +8372,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 case R_RESIDENCE: residence(u, g, game); break;
                 case R_CONGRESS: HillUI.draw(u, g, game); break;
                 case R_WESTWING: WestWing.draw(u, g, game); break;
+                case R_SITROOM: SitRoom.draw(u, g, game); break;
                 default: later(u, g, game); break;
             }
         }
@@ -8396,6 +8424,11 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 ty += 18;
                 if (++n >= 8) break;
             }
+            for (int i = 0; i < NSLOT && n < 8; i++) if (game.act[i] == AC_ABROAD && game.arg[i] >= 0 && (i == 0 || game.act[i - 1] != AC_ABROAD)) {
+                text(g, DOW3[dowOf(game.day() + i / 3)] + ": " + CT_NAME[game.arg[i]], px + 18, ty, F_XS, C_TEXT);
+                textR(g, fmt1(flightAbroad(game.arg[i])) + " hours each way", px + pw - 18, ty, F_XS, C_AMBER);
+                ty += 18; n++;
+            }
             if (n == 0) text(g, "No trips this week.", px + 18, ty, F_XS, C_DIM);
             // the map, for picking trip destinations
             u.panel(g, px, 482, pw, 330, pendingSlot >= 0 ? "Click a state for the trip" : "Where you're going");
@@ -8420,10 +8453,11 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             g.fill(new RoundRectangle2D.Double(x + 8, y + 10, 5, h - 20, 4, 4));
             label(g, SLOT[i % 3].toUpperCase(), x + 20, y + 22, C_DIM);
             text(g, AC_NAME[a], x + 20, y + 46, F_BB, a == AC_FREE ? C_DIM : Color.white);
-            String sub = arg >= 0 && AC_ISSUE[a] ? PISSUE[arg] : arg >= 0 && AC_STATE[a] ? STATES[arg].name : pend ? "pick a state on the map" : null;
+            String sub = arg >= 0 && a == AC_ABROAD ? CT_NAME[arg] : arg >= 0 && AC_ISSUE[a] ? PISSUE[arg] : arg >= 0 && AC_STATE[a] ? STATES[arg].name : pend ? "pick a state on the map" : null;
             if (sub != null) wrap(g, sub, x + 20, y + 64, w - 28, F_XS, pend ? C_GOLD : C_TEXT);
             double c = AC_STAMINA[a];
             if (isTrip(a) && arg >= 0) c -= Math.min(6, Week.flight(arg) * 0.9);
+            if (a == AC_ABROAD && arg >= 0 && (i == 0 || game.act[i - 1] != AC_ABROAD)) c -= Math.min(12, flightAbroad(arg) * 0.8);
             text(g, (c >= 0 ? "+" : "") + fmt1(c) + " stamina", x + 20, y + h - 14, F_T, c >= 0 ? C_GOOD : C_DIM);
         }
 
@@ -8447,6 +8481,13 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                     String[] iss = new String[NPI];
                     for (int j = 0; j < NPI; j++) iss[j] = PISSUE[j] + "  (" + Math.round(game.issueApp[j]) + "% approve)";
                     u.openPopup(Math.min(u.mx, DW - 340), 140, 320, AC_NAME[a] + ": which issue?", iss, j -> { game.act[i] = a; game.arg[i] = j; });
+                } else if (a == AC_ABROAD) {
+                    Integer[] ord = new Integer[NC];
+                    for (int j = 0; j < NC; j++) ord[j] = j;
+                    Arrays.sort(ord, (x1, x2) -> Double.compare(flightAbroad(x1), flightAbroad(x2)));
+                    String[] cs = new String[NC];
+                    for (int j = 0; j < NC; j++) cs[j] = CT_NAME[ord[j]] + "  (" + fmt1(flightAbroad(ord[j])) + " hours)";
+                    u.openPopup(Math.min(u.mx, DW - 340), 120, 320, "Where to?", cs, j -> { int c0 = ord[j]; for (int s2 = i; s2 < Math.min(NSLOT, i + 3); s2++) { game.act[s2] = AC_ABROAD; game.arg[s2] = c0; } });
                 } else if (AC_STATE[a]) {
                     pendingSlot = i; pendingAct = a;
                 } else { game.act[i] = a; game.arg[i] = -1; }
@@ -9721,6 +9762,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 for (int k = 0; k < NPOST; k++) if (g.ex.nominee[k] != null) { Person p = g.ex.nominee[k]; p.confirmed = true; p.since = g.week; g.ex.post[k] = p; g.ex.nominee[k] = null; g.ex.voteAt[k] = -1; }
                 g.ex.nextPardon = g.week + 8; g.ex.nextProbe = g.week + 14;
             }
+            if (g.world == null) Diplo.setup(g);
         }
 
         static void resume(ResoluteDesk u, Game g) {
@@ -9734,6 +9776,1298 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             u.setup = g.set;
             u.go(SC_OVAL);
             u.toast("Welcome back. " + dateLong(g.day()) + ".", C_ACCENT);
+        }
+    }
+    // =====================================================================
+    //  31.  THE WORLD: forty countries, their leaders, trade and alliances
+    //  2025 leaders are the real ones on January 20, 2025, with the real handovers that followed.
+    //  2029 leaders project today's (late 2026) into 2029; where a leader is term-limited by then, the successor is fictional.
+    // =====================================================================
+    static final String[] CT_ID = {"CN", "RU", "UA", "GB", "FR", "DE", "IT", "CA", "MX", "JP", "KR", "KP", "TW", "IN", "PK", "IL", "IR", "SA", "TR", "EG",
+            "QA", "AE", "JO", "IQ", "SY", "BR", "AR", "VE", "CU", "PA", "PL", "HU", "DK", "FI", "AU", "PH", "ID", "VN", "NG", "ZA"};
+    static final int NC = 40;
+    static final int CC_CN = 0, CC_RU = 1, CC_UA = 2, CC_GB = 3, CC_FR = 4, CC_DE = 5, CC_IT = 6, CC_CA = 7, CC_MX = 8, CC_JP = 9, CC_KR = 10, CC_KP = 11, CC_TW = 12, CC_IN = 13, CC_PK = 14, CC_IL = 15, CC_IR = 16, CC_SA = 17, CC_TR = 18, CC_EG = 19,
+            CC_QA = 20, CC_AE = 21, CC_JO = 22, CC_IQ = 23, CC_SY = 24, CC_BR = 25, CC_AR = 26, CC_VE = 27, CC_CU = 28, CC_PA = 29, CC_PL = 30, CC_HU = 31, CC_DK = 32, CC_FI = 33, CC_AU = 34, CC_PH = 35, CC_ID = 36, CC_VN = 37, CC_NG = 38, CC_ZA = 39;
+    static final String[] CT_NAME = {"China", "Russia", "Ukraine", "United Kingdom", "France", "Germany", "Italy", "Canada", "Mexico", "Japan", "South Korea", "North Korea",
+            "Taiwan", "India", "Pakistan", "Israel", "Iran", "Saudi Arabia", "Turkey", "Egypt", "Qatar", "United Arab Emirates", "Jordan", "Iraq", "Syria", "Brazil", "Argentina",
+            "Venezuela", "Cuba", "Panama", "Poland", "Hungary", "Denmark", "Finland", "Australia", "Philippines", "Indonesia", "Vietnam", "Nigeria", "South Africa"};
+    static final int RG_ASIA = 0, RG_EUROPE = 1, RG_MIDEAST = 2, RG_AMERICAS = 3, RG_AFRICA = 4, RG_SOUTHASIA = 5;
+    static final String[] REGION = {"East Asia and the Pacific", "Europe", "The Middle East", "The Americas", "Africa", "South Asia"};
+    static final int[] CT_REGION = {0, 1, 1, 1, 1, 1, 1, 3, 3, 0, 0, 0, 0, 5, 5, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 1, 1, 1, 1, 0, 0, 0, 0, 4, 4};
+    /** Leaders on January 20, 2025: "name|title". */
+    static final String[] LEADER25 = {"Xi Jinping|President", "Vladimir Putin|President", "Volodymyr Zelensky|President", "Keir Starmer|Prime Minister", "Emmanuel Macron|President",
+            "Olaf Scholz|Chancellor", "Giorgia Meloni|Prime Minister", "Justin Trudeau|Prime Minister", "Claudia Sheinbaum|President", "Shigeru Ishiba|Prime Minister",
+            "Choi Sang-mok|Acting President", "Kim Jong Un|Supreme Leader", "Lai Ching-te|President", "Narendra Modi|Prime Minister", "Shehbaz Sharif|Prime Minister",
+            "Benjamin Netanyahu|Prime Minister", "Ali Khamenei|Supreme Leader", "Mohammed bin Salman|Crown Prince", "Recep Tayyip Erdogan|President", "Abdel Fattah el-Sisi|President",
+            "Tamim bin Hamad Al Thani|Emir", "Mohamed bin Zayed|President", "Abdullah II|King", "Mohammed Shia al-Sudani|Prime Minister", "Ahmed al-Sharaa|Leader",
+            "Luiz Inacio Lula da Silva|President", "Javier Milei|President", "Nicolas Maduro|President", "Miguel Diaz-Canel|President", "Jose Raul Mulino|President",
+            "Donald Tusk|Prime Minister", "Viktor Orban|Prime Minister", "Mette Frederiksen|Prime Minister", "Alexander Stubb|President", "Anthony Albanese|Prime Minister",
+            "Ferdinand Marcos Jr.|President", "Prabowo Subianto|President", "To Lam|General Secretary", "Bola Tinubu|President", "Cyril Ramaphosa|President"};
+    /** Real handovers after inauguration day 2025: "country|week|name|title". */
+    static final String[] CHANGES25 = {"CA|7|Mark Carney|Prime Minister", "DE|15|Friedrich Merz|Chancellor", "KR|19|Lee Jae-myung|President", "JP|39|Sanae Takaichi|Prime Minister",
+            "HU|68|Peter Magyar|Prime Minister", "IQ|69|Ali al-Zaidi|Prime Minister", "GB|78|Andy Burnham|Prime Minister"};
+    /** Leaders in the 2029 projection. Starred names are fictional successors to leaders who will be term-limited by then. */
+    static final String[] LEADER29 = {"Xi Jinping|President", "Vladimir Putin|President", "Volodymyr Zelensky|President", "Andy Burnham|Prime Minister", "*Claire Morel|President",
+            "Friedrich Merz|Chancellor", "Giorgia Meloni|Prime Minister", "Mark Carney|Prime Minister", "Claudia Sheinbaum|President", "Sanae Takaichi|Prime Minister",
+            "Lee Jae-myung|President", "Kim Jong Un|Supreme Leader", "Lai Ching-te|President", "Narendra Modi|Prime Minister", "Shehbaz Sharif|Prime Minister",
+            "Benjamin Netanyahu|Prime Minister", "Mojtaba Khamenei|Supreme Leader", "Mohammed bin Salman|Crown Prince", "Recep Tayyip Erdogan|President", "Abdel Fattah el-Sisi|President",
+            "Tamim bin Hamad Al Thani|Emir", "Mohamed bin Zayed|President", "Abdullah II|King", "Ali al-Zaidi|Prime Minister", "Ahmed al-Sharaa|President",
+            "Luiz Inacio Lula da Silva|President", "Javier Milei|President", "Delcy Rodriguez|President", "*Ernesto Valdes|President", "Jose Raul Mulino|President",
+            "Donald Tusk|Prime Minister", "Peter Magyar|Prime Minister", "Mette Frederiksen|Prime Minister", "Alexander Stubb|President", "Anthony Albanese|Prime Minister",
+            "*Ramon Delgado|President", "Prabowo Subianto|President", "To Lam|General Secretary", "Bola Tinubu|President", "Cyril Ramaphosa|President"};
+    /** 0 none, 1 partner, 2 treaty ally, 3 adversary. */
+    static final int AL_NONE = 0, AL_PARTNER = 1, AL_TREATY = 2, AL_ADVERSARY = 3;
+    static final String[] ALIGN = {"Neutral", "Partner", "Treaty ally", "Adversary"};
+    static final int[] CT_ALIGN = {3, 3, 1, 2, 2, 2, 2, 2, 1, 2, 2, 3, 1, 1, 0, 1, 3, 1, 2, 1, 1, 1, 1, 1, 0, 0, 1, 3, 3, 1, 2, 2, 2, 2, 2, 2, 0, 0, 0, 0};
+    /** Starting relations with Washington, -100 to 100. */
+    static final double[] CT_REL = {-35, -60, 55, 65, 50, 55, 55, 50, 35, 70, 60, -85, 60, 40, 5, 70, -75, 40, 20, 30, 40, 45, 50, 15, -20, 10, 55, -55, -60, 30, 60, 30, 45, 60, 65, 55, 25, 15, 15, 0};
+    /** Weight in the world, 1 to 10. */
+    static final double[] CT_POWER = {10, 8, 4, 7, 7, 7, 5, 6, 5, 7, 5, 4, 4, 7, 4, 5, 5, 5, 5, 4, 3, 3, 2, 2, 2, 5, 3, 2, 1, 1, 4, 2, 3, 3, 5, 3, 4, 3, 3, 3};
+    /** Two-way goods trade with the US, $ billions a year (2024), and the US balance (negative: a deficit). */
+    static final double[] CT_TRADE = {582, 3.5, 4, 148, 103, 236, 102, 762, 840, 228, 197, 0, 158, 129, 7, 37, 0.1, 26, 33, 9, 6, 34, 5, 9, 0.1, 92, 16, 6, 0.5, 9, 18, 9, 14, 9, 51, 23, 38, 149, 9, 22};
+    static final double[] CT_BAL = {-295, -2.5, 2, 12, -16, -85, -44, -63, -172, -69, -66, 0, -74, -46, -3, -7, 0, 0.5, -0.5, 3.5, 2.5, 19, -1, -6, 0, 7, 2, -1.5, 0.4, 9, -2, -6, -10, -3, 18, -5, -18, -123, -1.5, -9};
+    static final boolean[] CT_NUKE = {true, true, false, true, true, false, false, false, false, false, false, true, false, true, true, true, false, false, false, false,
+            false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false};
+    /** Map label positions in world units. */
+    static final double[] CT_LX = {772, 668, 575, 492, 508, 525, 531, 298, 220, 854, 832, 826, 828, 726, 684, 593, 640, 620, 594, 583, 638, 647, 598, 617, 600, 344, 332, 315, 284, 278, 545, 548, 519, 554, 860, 835, 816, 791, 523, 566};
+    static final double[] CT_LY = {128, 61, 93, 78, 99, 86, 110, 67, 170, 134, 131, 120, 170, 170, 150, 146, 140, 171, 125, 155, 166, 170, 148, 140, 134, 276, 362, 222, 178, 219, 85, 97, 80, 44, 319, 198, 246, 193, 215, 336};
+    /** Stylised flags: "h:" stripes across, "v:" stripes down, "d:" a disc, "x:" a Nordic cross, "s:" a star in the corner, "c:" a centred star;
+     *  then optional "|t:" a triangle at the hoist, "|k:" a canton and "|o:" a small centred disc. */
+    static final String[] CT_FLAG = {"s:de2910,ffde00", "h:ffffff,0039a6,d52b1e", "h:0057b7,ffd700", "x:012169,c8102e|k:012169", "v:0055a4,ffffff,ef4135", "h:000000,dd0000,ffce00",
+            "v:009246,ffffff,ce2b37", "v:d52b1e,ffffff,ffffff,d52b1e|o:d52b1e", "v:006847,ffffff,ce1126", "d:ffffff,bc002d", "d:ffffff,c60c30|o:003478", "h:024fa2,ed1c27,ed1c27,024fa2|o:ffffff",
+            "h:fe0000,fe0000|k:000095", "h:ff9933,ffffff,138808|o:000080", "v:ffffff,01411c,01411c,01411c", "h:ffffff,0038b8,ffffff,ffffff,0038b8,ffffff", "h:239f40,ffffff,da0000",
+            "s:006c35,ffffff", "s:e30a17,ffffff", "h:ce1126,ffffff,000000", "v:ffffff,8a1538,8a1538,8a1538", "h:00732f,ffffff,000000|t:ff0000", "h:000000,ffffff,007a3d|t:ce1126",
+            "h:ce1126,ffffff,000000", "h:007a3d,ffffff,000000", "d:009c3b,ffdf00|o:002776", "h:74acdf,ffffff,74acdf", "h:ffcc00,00247d,cf142b", "h:002a8f,ffffff,002a8f,ffffff,002a8f|t:cf142b",
+            "v:ffffff,da121a|k:ffffff", "h:ffffff,dc143c", "h:ce2939,ffffff,477050", "x:c8102e,ffffff", "x:ffffff,003580", "h:00008b,00008b|k:012169", "h:0038a8,ce1126|t:ffffff",
+            "h:ff0000,ffffff", "c:da251d,ffff00", "v:008751,ffffff,008751", "h:e03c31,007749,002395|t:000000"};
+
+    static int ctIdx(String id) { for (int i = 0; i < NC; i++) if (CT_ID[i].equals(id)) return i; return -1; }
+
+    /** Hours on Air Force One from Washington. */
+    static double flightAbroad(int c) {
+        double dx = (CT_LX[c] - 280) * 0.042, dy = (CT_LY[c] - 125) * 0.06;
+        return Math.max(1.5, Math.sqrt(dx * dx + dy * dy) * 1.35 + 0.5);
+    }
+    // =====================================================================
+    //  31b. WORLD OUTLINES (generated by worldgeo/encode.py from world-atlas 2.0.2, Natural Earth 1:110m)
+    // =====================================================================
+    /** Country outlines (Natural Earth 1:110m via world-atlas), Robinson projection, 1000 x ~447 units, half-unit encoded like the US map. */
+    static final String[][] WORLD = {
+            {"CN", "#4i#'4JMNIRMTMROQQMRNS~#2[#%PMLRMFDXMQMNDZQPMMIRNQKQNRTURWQTTQVRR]QWSROTUTS`PVNTPXSUOSQSLVLVOTMTJJJPKWQSLULPKQMVOSOOMBIMQJNLPMMNDVQSKMMOHPMMLKNQLZMWQUQ`]UUYQXSU"
+                    + "UVORLUMQUNQRVPUHNLQTTSWLOQRJKOSHQRSJNLNNSKRMSIQMRJQPLMLQKJLLQLSMTJONRTSSPQRTQSJTRSOQRHQORKRNTVRSUZZQTLPRSRQPYLOK_LWBZIPLRMLLSHRJPNULPMJPMGMMPIMLMOKJNLLKSFOIRQVL"
+                    + "ONKKQHKPJKNMIJPNHSIMELNLKLPINQLKKLRJMJSKTKPLMHMMQLTNJLPBMFKLLLNIKJMMPAGKHSPOLLLNIHHEMLJIJMILNMOLIPNNNSLRMUPOKVNPMUL"},
+            {"RU", "#1^##.VNXQ]SSSHP<LIKIO~#2,##5[RQQ=QNH~#3j##DYObQRSAOJPCLLL~#48##H[PNQHNEMMN~#4(##QOMSOZR~#/m##0[NPPSMUPCRKNPN~#/=#$bANOMUMWQ~#0D##OVKMM`I[NTNUNSQNP:TGTIXRTYS?OM"
+                    + "LGNMLSNMLTK~#5U#$fUUTUe`FMSXXURTIKOTJJ>5GIHGQLKMPN~#6U#$$MQIOeXSSEMITLOLWPQDLISKMMQHORRPURQVQXWKORTTRJRTVIPTUMU05HGOKLLUNPBQJHGKPRSLVBHGQOXVS@QKKHNLR@NBPGjWOTSU"
+                    + "PPLTP[UTUPUUVTYNWPTKbJRLOJLKTOQLKROKGJJRMVPNILHPMMIIQLRHOIIFKEMII?BIMGMDQMRSPQRNQOVQQKSHMIOHMKSFQCNDIJOEQGLKKDLHMNUSSMSBMJLJOJMIRITHQKKIPLLKNKLLNIPFLNR=@GJPMFUK"
+                    + "ONLHMJPKIFNLQEQMQ>QNQTSKQPPLRXSORHONQHLHOJQ=IHOGUOTIKMVQPMTTSSOSSPRQPNSJPLUUUOSVWLSMNKKJNMLJNLPFKCMGJIMJKSNRJLMULONKPNLRMSOPMMLPKONDMLLKPIMLKKOOMPMKLIONQMNKJTNQ"
+                    + "NMMLNONIJPNNLJMLPNNJMLIMNPMMIRLNNSLJLZDPMHKPKJKPJIIRKHKNL]JWRZQbUSQPSLRHP;KMPVSRWYROLLMQMZRRNKKWJSOSQPKKLPLJK[QSRJPPRSQUMOLcHROMRTPQMWOTMURRKILPM]QhWQLHKJNOMIIS"
+                    + "KNJQN[PQROSRQSSSVURPSKVUPOMSNNLQMKLOKJOLLOIFKTLKKQOSRQTTPKKTMWOXRHJKJTNaOJLPLTNSMXOOMXOSPULUONMPMUNWPLPXPSQQNYOaSRRFSNP[QQNUSOMTN^PRRaOKL_OYRUROQYSXRLIXQTNXQPMW"
+                    + "PEJRMwRWR`S_NXPUQUSVQRM`PVO^TRMFKNM_QVN`R~#&&##iSSQUJRPPTKYPPTGRGOHULPKONMLMQMLNJOOMSMHQMQIR~#&<##[SOSPGQIO~#/y#%:PMUQSRTOOQIPISLMPMIMPNSM"},
+            {"UA", "#/k#$oQPPMUOSRNQOQSORSUQSNRRZQOPNSQRNQKOLQPRKOLQJPLQORNNIMNQGMNLKPJWMNLPMNPNQKNNUOKIMNOMMNILIQNPJQLMIOMPNMMNPKPONLSJQOOMLJQNRNRO`QQNQQUOOLPN"},
+            {"GB", "#-k#$eLNLOPKNLSOTS~#-y#$hPKLKINNNQLNMLROJMLQISJXOJUXNNTKTSPTVRPSXUQNRMQQRKRHOGQMNLRJNLQLNVITNGMNMTMMLPK"},
+            {"FR", "#*w#(2JZMQLOONMNNQLNRGMKOJRJUQTU~#.K#%$QQVPMSOTMPMNOQLRORQNQROPPRNQPSRPNRKRENHQNRIPJLMQELMMRKPCFEHMOJUNWPNHSRZJQJSNPQQOUUQNUS~#.Y#%ORLPTNTMNMK"},
+            {"DE", "#.p#$ePSNPQQQSNQRRMPMNFTQTTSNRMPOTNMLOLPKONQLMNOJMNQKOOJQKHNMMOMNMPKMIROPMPINMPNSOPPRLNIRPRNOQTQOQTNQM"},
+            {"IT", "#.a#%4RPPNTNPQVQORPQKNKQOTQRTSRTUTSOPPNP]WPPNQLLJNMSSQOSMOLTMPPJPMKIMNMLLNLLLOFHKLMHHMMPLQMPPLLNNKPMNLONQPQORMPPQNPMSPQN~#.z#%kSONTOQNRAIPLUO~#.Y#%YRMRTOWLOMQMM"
+                    + "OGNL"},
+            {"CA", "#'O#%'IIMMILPJSKJMRJMJRLTLRLJKRDLJPLATNIMMJOs/h;UPSRRO]LTOaLOQTMSMQPPSXLKSUNRMTPSQVQTPSNRRGRUP`MPSVLMMTMWNRPPRTOTQ]NQLTNTQJTVKROUJMKLMUIWLTPPQPUIQUPKUXKQRKSPS^F"
+                    + "SIZPRRNRJRPQLRESHPLMBYGSIOJQLSIP>ZJSJVUPMYVNVQRQPRTQSQ[PKTNUOVSUTMTIREMLXLVKTKPKOJLKWIQIRGSMZQSNVTOQVPMSMWRPQRWLZFUcLSSRRSVPQQOTSPPQMVGTFQGTGPEMBPJSHR=^TNYG[IWO"
+                    + "RRISOZTRWNWHNTQQHSCSBVKNQJYJAPMKRGMMLPNNISIWKPNQ>OEUMQEOLPOSHRIPHRNOMNXEQDKLPNMNOLMPOLAFJQHNKOKNGMNNPLMONQ~#*)#$2TLUOGTLN~#*c##TMMPMQNXPSROP~#*8#$4RMPOPQKRNN~#*"
+                    + "7##IKQJOLMSMVNPQ~#*D##=GOONVOQP~#*@##8RPLQHPNNQK~#*I##LAMRJNMHNMNRMVORQVOPPLQTQXP_MUPQQNQEQKN~#)d##:SPLQGPKM~#+2#$tFXSMQPMRSPRNSQLSSNOVLULOLNRJNNGTMOSLKN@OOMRMN"
+                    + "MTKWFSKTMQP~#*3#$#WSMQSOQQJPINNMAUPKHPULWFRONQRN~#*e##WTMVQRRNQWNQRWQQQPTFQWSUPRTUOLSDVKLLJIPMRWVOUKSBIUWOQDMHKKMRMEINQBPMMTKaNOMRLXJOKJLHMSNMLKNMNLPHPANBLMNULJ"
+                    + "ORJVKUMZMIRPSVKZLQULR~#*/##NWOUPFSIPGSKOQKQL~#)+##DhHZOJRIQ;R~#'7#$dTNHVOTMONHRJ~#*%##5]QORNQJNKNGNTNMN~#'J#%*LPILOMLMOMKNOLQMYRPTRR~#)%##LSPYORS;TFRMQARPMILcFO"
+                    + "L~#)b##EWOMQIQBPCQIOQNYL=PKNaIWQRRUOPJUNRO~#)V##SQQJWXTMRHOOQLQCMAQ<POMKMKPNKfMIMAPOMZMIOJN]I]LRPKQYNQQWLPQMTSMRJSN~#)m##UNKVMRPWNNQIQSRJSGQKOOMIKQM~#)Y##PTOQPH"
+                    + "RML~#*.##APQFUHPLNSLHOSL~#*M##0WMNNWOQQXQOQRQ>TBOMMQMSNIOMMOM~#*c##+bMUNUPTM[NeOgPZPNP9RVO?SFRDQDOSPLOOR:UNPVONPBRGMCPDNQMWNQLQNWQMLJNTNVNRMLMPM[PVM;OKNNMLN~#*a"
+                    + "##qKQJOPMSLSNQP~#)n##fOQKQKNKOLMYKSQ~#*_#$}QNTQTQNQMOIM~#*Z#%3PRWPLQMPILOM"},
+            {"MX", "#'8#&4]NNPbV_OOMYOTVPURQSQSJTORRQWRRPVVSQOJYLZQ[UZTQQQaKSLSDYLWOQPNRKSNSPPKVNNMOMSNNNPEONSMOTTNQHOLTPQNRGFJMES8EJKGLMLJLLKOLQNNMQNOMMFKIJJMKKLONQKJJOKLOKHMDPLLM"
+                    + "MOMMMRNWTWORPOOSQRQSPTPUORRPRTOPKRNKLKIKQGJJNPNMLNMKQORLPMLJLM"},
+            {"JP", "#66#%eNURVPTQROSJRFPJVKLLKGPJRIOVTPZLQLMNIKMKKSMPKSLQJYNUPODTRUFNGJHOKSNXX~#61#%FQMUVHPOUDKQVIOKINJTOIAZV~#5q#&.PKSPPLSQQQMRLMMQOSKM"},
+            {"KR", "#5D#%nQOPLTNONZZSVOSKPKQKPLGIHSN"},
+            {"KP", "#5K#%PPPMONSRSMQNRLPNPOSVSOPJPNRMOLNNPNOKMOLPNMJHLQKSLPKRPTPLKVMOK"},
+            {"TW", "#5J#&hL_KJNJQIRJRQ"},
+            {"IN", "#3u#&OPQNPPSKNISPSMTORNTJNPUNRPQMQJENOOSKKPLROPILNENMKMOJLNSSSLQOQRQOSSYNQEPPTMSGSJVGWORHSLONTQ]NUOZMOLTQQJQMSMQJII@JFLCIGI:NHMIHSKNGGQMMMHISKZONJKLNJKLTHUPSHRI"
+                    + "RHNKSKJLIEQMWPUNSJVVPURRORKNSV^WLRNUcXWPSRZQSONFRNPUUQRNXPOKLMSNSJTKTQRLSSMR"},
+            {"PK", "#2]#%|KTIPGNMQUYTRKSPSLVLUKVINJVSRPTSRPTDOKSKNMJJJ5RPGWLNLLNNJJLIHXRTNSPPMRPVLNJQKSOONSNQOQNNKPKRNLJUPOLOMQLKIRMZMTMSRRT"},
+            {"IL", "#06#&3NQMNNSQPMOOQRNORMYKDPMQESN"},
+            {"IR", "#0}#&DLLNKMOPKKJHLKIOJRMNKKMFCPMLGSNSTSPPOUJPNQQNRSSPNRTTPSRWQVMPMSNRLROQNSOVRSPVUSOQTM]ROMSSXSPQSKUUVTRPTRPPRGRNW9JKHMNKPJRHMIJIMFALPLM"},
+            {"SA", "#04#&HUPRJSOPLPNIIZKVQWSa]_PPRSORTRQPQSQPVSUPPQNSZaRPMRTL]?U@QJRKVMPMMGNGOMNMRPQMQLHLMKJNJKJLNKINGLHILKFD@MO"},
+            {"TR", "#0b#%rMPMMINMPFPIQKOLNJQMNORMRLLQMLOJNLSGOKLIONQLPILJOKIKKQJKLTIWOQJXPUKUMWOaVUNTPTKTOURPQORVSKPRWNQ~#/W#%STNTOPRSQOPIPITMKPNPK"},
+            {"EG", "#0A#&w!#/[#&w!#/Y#&HMJPKNMPLVO^SUKSOSPQRPMWQRMSZLYNPJKKFNO[gX^NPPS"},
+            {"QA", "#12#&fNJPLPNQQPSNRMP"},
+            {"AE", "#16#&iPOOPTNVPYBRWLOOSPPMPOQMV>L"},
+            {"JO", "#05#&5PMUQXHRWDSUUNPNRKOLTINNNQE"},
+            {"IQ", "#0H#&6LGZIPGNKRMQKQNUPQQQNTVSQPSLQOTSUVRSTNSQOPSRRHNLUEO>BGK"},
+            {"SY", "#06#&3PHQLNMMNNKRIOLQPTMRPSOUMXNMSLQPSNW;]"},
+            {"BR", "#*}#*nMKQLKKDGMOIKLOZAWINJLKLPPDMNMPMOLEKMMPINOGMKPNOKPMOJNKLMNLOLEOLGQOMGLMKOILMMHNIIODGPHTNQHNLPLOOEKSJNMLKOPLLKLJQMOMRMNLPLPLUKTMTOR;NLLLOKRNPOPMKNOKZPQLRUPN"
+                    + "RSSNPMVMOLSMONJOOFLNPNXRQMYLQLNNRNPQOQPPQRMRNTQURRROPNSNQMVPOJRPQNURPMQPOPROQMTDQOT^RPOTJTQQYPOUSKaUQSORUMZSWNWUWVSPTPQQRZMZD]LVKTNONTO[N^MQOXJWNUKRNSIOGQKRIQIT"
+                    + "LUNTQRMYLRKZHWMU"},
+            {"AR", "#*Q#,-VWVRWQNRJOLMGO~#*c#*VN[PUNPPWWTOSSRORLWHSEPINQSOTQRMQJPIMNPQUSQQMRSKQLRPYJOLROTVSTPOUJROWKQORSUSS=MKKMKLOMMLHQMOKNLOINGMLQMNMLNPLLMKHQMLHNCQMLIMIRKNIPINJM"
+                    + "MKDQIMIPIRIRKMMPMMDTLQINMSJVPSTPJUO[ZTPVTUQPRKY[RSMSKOIRNRSPTGU"},
+            {"VE", "#*D#(,PPMRERMQFLNPRPOXTOOPKQORHQNQKPLKMILLQKMHOJRJMNEPLJKNHONMNOOHMKLORGSJQLRNOQLOPROSLRQTROPJNMOJVMNLQMQSSORSOQZNRRSPRMPM]OJQQRSOTROTROQQKRNRQQJQORNQ"},
+            {"CU", "#)1#&oXPTQPQUOWWTPOQSOSRNPKP@OSLMMKONMNKLPHLHNNNQMJOJRMONPLPMOVI"},
+            {"PA", "#)C#'qNPPRNQMOORMMNLPMJKMONQKQNPRSMQLONKNPNONLINNPPJNNOMQNQQOQRNPQXLQMROOPTP"},
+            {"PL", "#/A#$eQVMPTZOQMOKTPRJLKPMOLPLMMPMKKONMLNNQMNOMKNMMLLPMMKMMPNNK`ITPOPcPQP"},
+            {"HU", "#/?#%+QPPQLPKXKPLOIQKNHIPKNNROOMSQSNPNVMQNUP"},
+            {"DK", "#.[#$^LPLNLLOIQLSNTLORNQOQRONRNNLS~#.g#$WQQLTJLNL~#,F##(]MZOTNvOcRIP0PPO[OYPVNQPJRjLYOQQ>SDOWOGVMTSRCQUQOSKOSTFOSQNQDPSRNQHMMQTPSRPSHPHJOSJQ`P7X>QKQGTES@RJRNSKS"
+                    + "GTOSHYHPJJGOLLNIJHNLQJKJSKMMVHVMTICRKNPKRLZQHJJOMNVJKEKMQMGL4OHKbMANIMQMnKRMGMSNdLOMcNZOQPZMaRIM"},
+            {"FI", "#/F##iPRVSLSUUNTTSNSVSNQDZGOASKLKMOILJQLRKZHNMILMMMGBHQNTRUOSPSLPKTNUQ"},
+            {"AU", "#6N#+?QOKWLQKTNMISKOOIQKPJQLRPSQ~#5R#*dCTJTGPKNGPKRMOISHOHIPLRNQMRIOKOIPHOIMLPJMHPQOIQQPRPKMGSFOLRJNTRK]GQOQPWLRMROUMXFPITIPURNMLRLQPPJUJQNPMQOONUMRRRSVONLRJRMN"
+                    + "NRKSMRPSMPLKMRNRQRQSQQNRQSMQPPNQRKUMOORKUOQSRSQTUSQPQTQSLVAOFQKPMNMSGQLQRNSQPORPROUPTSLRUNQOUPRPPOTNRPSTSVTMQRSOVRMPRQNNVWZNTLWPTMUH[FYJRD]KSGZKQIOIRFTMLLNRLKPH"
+                    + "SBJNKQGNMJNSLOJKTJPSLUHPJIUJQKTLLQLMJNMPMJLKNLLEP@S"},
+            {"PH", "#5Q#'VLKTOQQNU~#5^#'iPMOKRNOTRIOUJWLJ~#5s#'rQWMUMHMSQSMRILMJPLKLNRLNKSNMQJUKRQSNOLSOOJSR~#5G#'mHUQJVGQIPT~#5T#'4OQRTNTLQOTQTRPQNWSNRQQOQKLLLNQKLJPLMOMQMMMNRKHNI"
+                    + "QQNFPIROSQQM~#5Y#'_NLRQSOORMRKQ~#5l#'ZRVJMQUMQNJMONKROOMKJTO"},
+            {"ID", "#6m#(^LyKIINNQHOQJSMNHMJDJKNGJMRMONMOLKLUMSONMGOMKJNMLVNRMXQQ]URTIUKTOXS~#5k#)*PRKTJPNOPMRK~#6E#(yNJRKPPOR~#5E#(2LUSUNRVUHONTOTITOULYOLHRMKKOMMHQMLGONFLNMINJPIR"
+                    + "KPSSRRNSPRKROTQSMRGQLQHUO~#6+#(_UQQTJLDOPK~#5x#(eKNNLUOPQ~#6##(?PRRPPQNUMNNSQRMPMKMGPJ~#5c#(GUNTKPPKVKPJNAPNTSTSLYMNRMNMSJQTWNQSWOSLQMLRJIRNMPMKKOILQO`KPMMQINIM"
+                    + "OMKRKT>SJTQ~#5P#)3HJTNTSNQ~#5W#)(RNTMNSGPHOOLSN~#5F#)'RNPRBQQKROQM~#4k#(vPQYPQLYRQSWPUSIQIMDNDLKNMPEMNLJNSIVP~#4U#(SOSQSSPRSMaHOKJHJIFHAJJKEJKLIEENL]PbdTOTSRUTR"
+                    + "LTSQ"},
+            {"VN", "#4R#'eSMUNLLXJOGMKOIMJJKFBGKQMRMLJHOHDRMXOSKRRTPOSRQUQHTLUNS[_TSSTS[PZEWKTHUMKPK"},
+            {"NG", "#.<#(%OAPKSIOMPMNKOGRIPNUNUQQRQORMVSQNSMROQNVQSLPOSVPOQQORJTK]LRLWKQLMMOLSMOKYIRMNMQKNLLMJKK"},
+            {"ZA", "#/+#*LQLQQPQUQRNTLP8PPRUNSPQSNUKPLRMTRSOSNPJRNSITJWJTPQOQOS^NXLNMOMSOQRSRNQLSOLYMRJSHZDYKRFROQKNMPINJOESKQMOMMMOMLOPNJNJPNPJ~#/o#*NMMLQIUSTQNPMRNRJ"},
+            {"US", "#'O#%'!#(|#%'PMQONRPPWQSPSOVPTM^XORQNORQPNPSRMZFXOPQPeHOKRNYOQMYIaOPMSNUGUKPPRNQQLWQU=VJTNRPSQOOMPPNQ?QKQVNQPGQLOONMQPOMTJSONLMPRPPNRHVRKMLPJMROSLNRQMUQOMXKSIQK"
+                    + "SLOLRMQISHVMSNSRYNRPVNVMSMPMNNLMNLBQKNKLJMNIRLLLMIPJNIQNSPPNPMNMPKOLLJOLNFQ@YMRNSOUMOHKNHLLMGLLJOKTKMLMNIJHEOOQ@O=HPNBPOKMLMNOMLONMJONNPKMIOFONMGPJNLVDPKTIWDTFQ"
+                    + "GPNUQNUQM~#$b#'(RSIRNNOKQL~#%x#$>ROMQKPMM~#&I#$LQOOQBTNMQM~#'o##e7d,pTOQQPU^JNRRTLZTSLRJRNMMMRJMJRJDNKNLHFLHPJLLMIPKS:TRKWJVMOM4[OQFTASKQERKR'YONgGVNgFZGHQONJQP"
+                    + "LKQQLHRLOVINMHPNLNNSLOLbFSOQOVMROTMQMNNUMFPMPMNHPJMQMNLfJROKRXNPLMMPLNMLMUMWNdH`LROZMSPNQSNUOMPTPSO_RVN~#%z#$*PPSOPPSPIQMMKONO"},
+            {"_", "#8z#)aPNQQMRIOOMQM~#9'#)]KPOMWK"},
+            {"_", "#05#(Re^PRVVMVOSSQMZSYQPJS?THMKPNFLJINDJLGLKNCQNUHMIQOOKMK"},
+            {"_", "#-X#&RO[=NO`JPNRPX9ONQOM]NRJQFVIRGQNQJXOTN"},
+            {"_", "#2m#%&MSLPQUNQDMPZDSXZLQQRHL=OGLMQORFMLPORGTNTMOMLHOMILONIGKAPII@HCSUgMOJJKMJQMQOKNLHMHFTPNJSNTPLEJPKMESMNNLKKKOJKQJMNQHUSOJWIVObUTMVOVRPMVOOLFKRLNNSMJKPMaMQMYM"
+                    + "RMXPSUTNVQPRSOXINQWTb_PLXRUN^WUN"},
+            {"_", "#1;#%WI8[K_VUU^NWSPUROQUVOQRQOPJWJPOLSTRRMVRJTINNKHPNWJNORSQQSNVHMNLAIDHKHGNMNMJHLHTPS"},
+            {"_", "#6m#(^cWVUPSWSPRJPPSTSRVRNORSPMPURNQKONNEMHHMIHLFSOTKQFN~#7R#(dQQPSMPMIEIQM~#7J#(rIRLOGKPMWPQLORROTJOKROPTMSLO~#7^#(oVVNQMPMLMKNKPN"},
+            {"_", "#*Q#,-T^WOOQLQ@LAHFIdVPHRM~#)s#)bRSPTRQNUV`SNPQMUJRQZNQQQIYNUQUMUU]PTNUPULST[MQP[RVMQSVRQNRSRMQQRP^PROSMQRVQQROQSSS`PKOJSQUGM@GLKNLKKJDOISKFMRIMEUQNCKMPWKNL:PKI"
+                    + "BROP1LFPJMGPGO(K<RM"},
+            {"_", "#/w#(jP[RSRWFOKTQRM]TSPNPVJOKHKONKLQJNMMINOMCPPGMMNAIOOMLOOPLOLULNJPIA>OIQOMPNPKQMQPPMRORRWFOIQIVGT2TJWSWQRKQOULSPRMYORUROVMUVOWQOKSLVM[NPMWPR"},
+            {"_", "#0a#(WLJN8VFROTJVOf3NC[KOWMXDiD_=`"},
+            {"_", "#0R#(kHHNL:AOIVCIAVGRPORQQROWUWPPLTLQRSOJVPgRTGTL["},
+            {"_", "#/[#'tIJOHLKKCMOQJNMQMNMRGTON4UNOC!#0A#&wTeTSMSKPMQMeGaLPN]MDLMOFMNNQLOQUIWMOJLITENMPJIKPLWKQ"},
+            {"_", "#/U#'+PiJOLWPQMQPQMTQORXISKVJRHOPQITIQLNNPKPOMMHIJPLWPKIM?LOOKMMQGVIOGR?JINETL"},
+            {"_", "#)i#'*NUNPPSENLPMMOMXPRNLLPMKNQM"},
+            {"_", "#)h#'5NKPNPHXQPQROOQQOQQMRHMLQNMKU"},
+            {"_", "#)I#&cPOPTOSNOLJ"},
+            {"_", "#*s#,)SKTPQMTRNQIQMMKQ"},
+            {"_", "#.c##3PNTOaTFQNRLPNSKOGLRMAJLLXMRP~#/P##fERPKIMJPNSKRENJLKQORGNNRKODbQQNQKOLTPWRQNVJVLLGVIPHLL<SKZJWI_=aEWLVOTK^N]SJQ~#/2##2JQEPENNNJOKMYNTPRM~#/+##<HQHNQMMNVNQ"
+                    + "Q"},
+            {"_", "#1o#+pVRLSHO"},
+            {"_", "#5k#)*PNTMWOBU"},
+            {"_", "#/o#*NQQLTISKJUIRM"},
+            {"_", "#*c#*VROc[SSMRQSNSIRKNLOJMLOKL"},
+            {"_", "#)p#)7VPWHWNOZUUVPWTSORQQWMORWYOPURQPSNVOSNPOMILAQMTMZNNIONTKJHNKTKPH?PILMNJLKRHLJPMNLQLNEPM"},
+            {"_", "#)l#(hJODUMUPRLQOQMQUXNRSOQRTPSKOYUNTYNQPYMRPRNQRTKYLQIKNL5>LJPM9(GHPLLIQKSKPQNQOQSORRRMSEVMUHPKNJQOWVRV]NSRLVPO"},
+            {"_", "#)}#(DNPLIMRDNOSSPNQKPOSRRPRLdLLNORHKLBPLHGHMOJLNPJNNLHLNMRNPJQNTHMNPKNIPNOIMLOLQOPMNLSNUJQGRMSNONTPXGSQMQLPIWLWROQSOVQQZPRTYNQPLYQVMSRR"},
+            {"_", "#)&#'kMPPRNTLMNKJLMLNRLMPJMNRMXRPMPS"},
+            {"_", "#(|#'bNQJMJOECTMOLROPMQPTIQPWMLXOVLV"},
+            {"_", "#)&#'HGQMNJUMNNQLOORLQLLOLLOJLQKVJUOYNSP"},
+            {"_", "#(^#'LTRQNQQNSCK"},
+            {"_", "#(N#'KOJRJVOPMJJQOPKYOM[TPJTMSKSIN"},
+            {"_", "#(b#'6SKQPLZLSMO"},
+            {"_", "#*[#(@KOHSLOLLMIRGLKOMNMLPLJPMOLTMMMPLSLVUORQOTUNTLQNTQSQO"},
+            {"_", "#*g#(>GMOTLNKFMOMKPJRMPJVPTMUQLTOTQS"},
+            {"_", "#)L#(MPTNSIVHQKYLQLLKOOMPMNMRJNLMRLLPNNIPNSGNLVLVRPRTPPN"},
+            {"_", "#*+#'2RQNPGOPL"},
+            {"_", "#)G#'2RPSRIPLNLMPM"},
+            {"_", "#/}#*$FNLLJNNIMNIIJEYPWFQNPMRMSNPQSOXTMg"},
+            {"_", "#/t#*#BYKULPNTKPKOJLEXKPNMPKKHO=UNO9]MQQSMTNTYUUQPPUTP"},
+            {"_", "#/?#*4NgGSIMLKMRIFK:NDKHKCKINJUMSORRgNSR]P_KTQGSMMBQOfIP"},
+            {"_", "#-+#'QMJLMQMVFWNURVXPWQQPSIPKMBOIPNKTOTLSQRMNNKPMMLQ"},
+            {"_", "#-H#'XNKMMNGQNPLTPUNPNfOPJ!#-e#&dWOulPRUQOSUOO^LSOSCQMQHOMNLPJRIUMPLOMTJUNWLQNLLPNQINMMOMMOQLKIIRJLMP"},
+            {"_", "#-*#&}PMfONFPLTNO?bPOEd_GO!#-k#'@NT9ONPIPJNNRMPHFILGPMQNKRFNC"},
+            {"_", "#.<#(%JPNJOANJKKPLQNPMRNRKQOSSPUNSKUNS"},
+            {"_", "#/$#&qPYTUL`OWHUMWQQOSROMUIHKRHMDSHKJQMLIMIPNPLUOUKKKQOKIMNLLKOISOQM[MOKRKOAWL`CbCXQRS"},
+            {"_", "#/##'UQSOXSUGNNRUTQVKXNYWYOWGL5OOJMKMNLKQIQIQORKQORQSMRGRLSBTJOLMMOM"},
+            {"_", "#.2#'bNRSSPTO^PTKPLIPFNMNEMLOM"},
+            {"_", "#.-#'bSaNXRU>WJMOLMJSCM="},
+            {"_", "#-[#'gUPPMRNPRRMUTTMRQQXK[QTOREN>TPFIKQCRMLH"},
+            {"_", "#-;#'WVQUNOQQNTRULSUMRQOOQQQMRRVLQOSMONQMOLHKPNIMJGPKUDBRLTM"},
+            {"_", "#-+#'XUNYOOTJQLRJL"},
+            {"_", "#-X#'wNWUSNXHLBCUDRORV"},
+            {"_", "#->#'oSIWNQTPUPNIZILLK"},
+            {"_", "#-j#'fPGTIOKQNROQNUITLRNTPOURSPRUQNULPNQMP:OOXLMJQ"},
+            {"_", "#/l#(+EOKQLNIRMOLSGMGKJTNSHNIXNJGEOJPJSHSNPNRPUMUJNMVOTLSHUKSVOVXVOQUUQS"},
+            {"_", "#/9#(6LZN^HWMUOUGXLLLONQKLKSKHSLMKTLPMRRTOQHOJLKQHNMKPMLPLVOWRSFRL"},
+            {"_", "#.m#(>XOQUSNPQMVRSOTMVJOLLNQJRQSKREDLHSBYO"},
+            {"_", "#.d#(>XOOWEONN"},
+            {"_", "#0##)'ZTRRPTMVPTKWRQ>TOTKPLQNQMPGXENLLGPHFP;ZOOCQOOQUPQQTPRMPSSOSVTONHNPJKQBMLSJ"},
+            {"_", "#0.#),UPRTPXMSPXQOQQQSOWMQMSLKPELNNOIJSGNJQHNJ"},
+            {"_", "#08#);SNVQTNQMROUMTKPlKXKRDU@^NSRYPON]AWMQORPOORKOMHQHKAXCQ8FJKONHaJRRPORPNYRSQKQMOGMKMMMONF"},
+            {"_", "#0&#*@MRLPLKQITP"},
+            {"_", "#.v#(kKVMJSK~#.r#(tUMaOU^TNRPRIROONROOQUOP^QQNWWNQOPQNYDONdVXERBNKL8PLLKOIQOKRARGTHPJOLJEQK"},
+            {"_", "#/}#([QUIVMPNGNLRPQK"},
+            {"_", "#06#&/KPQJQJQPPQMR"},
+            {"_", "#10#)ARVPYORNQMKNQOVMQOT?|ESHKLAPFRNSDMCRGYMWGQLOLQPRKOKQL"},
+            {"_", "#-+#'QUORMQQSNPPLQKMJRJO"},
+            {"_", "#.a#&BLCGHOJRKPATLSPORSMPPLRORQQOTKRPSROSSNTHUOT"},
+            {"_", "#-X#&TPFWJYMQKUMPJROQLVNPMJ?TLTNXJaMRPSM[PN^LSOTWVSaOcMQUZQNTRQS=[?[AROKIMNL"},
+            {"_", "#0z#&DRXKONLJNRI"},
+            {"_", "#1K#&rPHQNNJROUUVQVWI[LNNQOWMOLQMTLOMPORLQLNIRH@`IRB"},
+            {"_", "#4G#'ZMGRJVNYRQKTQQSOWFTRRIPKQJN"},
+            {"_", "#4T#'MJNHPLTQWJLJOOJJOPVK_PSSOR[YVMRLONLKMNPECORMLQESBLCIGQNPJE@QNPHSOUKQQPSSOP[TKTPPMSPTTPUTTPU"},
+            {"_", "#4a#'MJMMSJMQLNIJJNIJJKNNQJNJSNCKONKMMTHOQROMHRNVZVORTJSWS^aQT"},
+            {"_", "#43#'&ISKONVMPY_NTMPUWR[K]NJPJMLOHLKK@LJFVHMPHMIJGOMLNJJNJQPOKQMNDTPPJQGNKUKSPNKPNNMRNUTQYKUPVTNQUSPNTVSSMPQ"},
+            {"_", "#2o#%%TN[GYQTR]QQKKKPIbTSSWRYMTOZU[PXMSKVQUOPZQQWOQM]UOQDOMQNSIRKRGMNSTTJTJQHOHRKRKMIOAJHP?NEEDKBMLLMHJJGMIL"},
+            {"_", "#3d#&wOSMNPTHBJOPQNSHNKEOKLMRKKKPKVRQS]QNULONRSSOKPO"},
+            {"_", "#3W#&RRQOSCOILRJQM"},
+            {"_", "#3D#&QPX@MKLGN<FPITKj^"},
+            {"_", "#1y#%pXQRMQQPLROQIRQRVQQUKXOQQ?SLQSUMROTINRTLPNSPSMPIPOPKOMSPTHRBPFLSIMKKNKFQKLOQBTQSOPLULOJSNOM"},
+            {"_", "#2%#%rPHMKKMOLTPPGVNORPPQONQINOSUNVQXNRUTPQUFOISMMLHLMMULONRMMLQ"},
+            {"_", "#2,#%QOLRNXQOLQMWRbOVRNQIRNQHPOSINHTPPNPFPHMIPOKUPPMSPTJHLLQJLRK"},
+            {"_", "#1)#%TQMTMSQTTWONKVJVRQTQPWPSVZV^UPRJNOQKPOTIRNRKOJMMJKOHIDKFPLRKPLDKMOKLOOITQSMHHKPPT"},
+            {"_", "#0i#%hNOLJLOFJNJVNRRNPSQNQTR"},
+            {"_", "#._#$FTHPHLMNGRJSOPMMMZ=SOPLWPOLQN]VQWQQHQKRQSAXMWWVLVKPNYMUINMTJO"},
+            {"_", "#/T#$VURRNTQOSUUTRHQSTKPNS5LGQMIQNMHSOTLPLRMNL"},
+            {"_", "#/&#%-OQLOPPMTHQDMNMIQHMOLPORQPMVNSQOJRKSQSLUQRP"},
+            {"_", "#/U#%,SMURWYIOMUMG"},
+            {"_", "#/`#%=VPOQLONWHLGRBNLKPNNONPKMOMLMKKSNSFTMXQWLWX"},
+            {"_", "#/M#$YPRLQNRJRKOKLOLGMNJTM[O"},
+            {"_", "#/O#$OQPRUHRGKCOJQNKQKSMSSSOOKSNUR"},
+            {"_", "#/P#$CPPLRQUNQKOILKPOKMPLMNKZM"},
+            {"_", "#/D#%EQQ]PWLVRLVQRJOJPPSJOKMKQLONJLMRJLLNM"},
+            {"_", "#/]#%}OQGPONIMPMRQ~#/H#%WROSMSQTONKRQMTINIQSRJPKLOPSVMPUTOSJMQRLPQTLOKMKEIGSH"},
+            {"_", "#/>#%ZKVKKOFNLQLSRPV"},
+            {"_", "#/%#%7TRSPQNRSNRELKQMMNRZZTQNPBIKJPOLJLNNRMMOMSNSPQJ"},
+            {"_", "#.]#%0ORSPORMPKNNQLOJQKKMPOLRLOMWOPM"},
+            {"_", "#.K#$wLWKLMPIIMONM[M"},
+            {"_", "#.M#$gPQNUNQLOQUIKGPQMSFVM"},
+            {"_", "#-Y#%SSMPRVNQRLQNXMOQSMSQQLSOQMQJNOGMNNMSB"},
+            {"_", "#-a#%rOMRKMMQKMKQOPFRMMLHPNLKQPKMLVKbQ[OQQYRQMTRUNOSKSHQJYQSLRMSLPKTCOJSLOLI"},
+            {"_", "#-k#$ePSKTFSINSIMIYGPRNS"},
+            {"_", "#80#)xTVMPLMIIMIQO"},
+            {"_", "#8'#)/NPLINLQO"},
+            {"_", "#82#+:EWIQONNNVJPKKMPLUMUFQJNBQOPRRQMUNURKPQMSRQRPSMROFXKO~#7W#+P[H[FULMTULLU@YNREQBYETDLPMVJ"},
+            {"_", "#30#'xNVHRMJMFQDSS"},
+            {"_", "#-K##wMRTSIS>T>LTMFLVNPMFNSLUNUSVLTPVL"},
+            {"_", "#0e#%SWTRKVVTQKPNVMPPRJLPLMMHUOJJLPMIIPNVQLK~#0h#%hKNKJTP"},
+            {"_", "#0B#%I[QXSRNTPTSNPRRLPKMGQILJOOMMJ"},
+            {"_", "#4<#($PNSQPRROQLTTQSP]QPRWKPCEH?OJ~#5E#(2DNHbKQJMLOLSHOKLNKSQSNPIXMVFQRPMROOHVFQORRORXRORKOPR"},
+            {"_", "#57#(*OVLONQML"},
+            {"_", "#.r#%7SOWLQRKPMTKNKPPN"},
+            {"_", "#/@#%'MSINATKMNLPMSORKRORQXM"},
+            {"_", "#.v#$uUROQQPPMRPPQSOQRGUFLKRFIMJXJ"},
+            {"_", "#0A#'LOLQBQMSNQKU]edNQMNFEJMKONNLPKLNT"},
+            {"_", "#*X#)rQSOWUPQNSQRYSNQPNaKSKQCLSENLBHJNDEQDQJ^MUR"},
+            {"_", "#1;#'/V_KPOTAUJSKOLREQLRGPI?PNOHQMNMQLQP`PQQQNSHTL"},
+            {"_", "#0$#&#PNXMKRPP"},
+            {"_", "#0$#&#VPJRLNNM"},
+            {"_", "#-}#&#T`NQHPMRLONTIQMSEQGTNZJPFOMTMPLWHUMXLTBPPLSJPHTJSDSMUFTN[DNGRFRKYJTDSORR"},
+            {"_", "#/[#&wO[IPOQ#7FULKFMMKJLMPIDQMP?MGQMOJVIPJdTQUcVTJMKTISNVPQRXQPQNRPQNSQT"},
+            {"_", "#1(#'u?cHOJTLOMQKOMLJRNRGNGILOMMOLLNKHMMKJKNQLROQ@RNRGRLQDVPPJSRRNPPSOTQSTTTKUPSSNPQNQVXbV"},
+            {"_", "#0d#'WQPPMQQORLPQQMSNMKPNK"},
+            {"_", "#1-#'`P[IXJO=HHFRIUV"},
+            {"_", "#05#(R>PJQMOQCRHSKMOOGQMSQWMSMQSSYH["},
+            {"_", "#/}#(SQSOSJOMSLNQG"},
+            {"_", "#/1#%NJMHIKJPLQQSMZRNQRRORKQ"},
+            {"_", "#/D#%PRQPTERMMNLPL"},
+            {"_", "#/0#%:VNSSRQOQSQPNPONSSTLTKPPLJKLRIKQLLLPMNOPL"},
+            {"_", "#/8#%ONOONMROQJKPKQMUS"},
+            {"_", "#/;#%SLKSJTSNR"},
+            {"_", "#*@#'dTNNTIOQM"},
+            {"_", "#0$#(6IHHQLOKGKMMKIIOMHJSMRGSNTUQNYPUJTRQOUGMIROPMQPOXRQQZNQLOMRSPRRVZDYGQKM"}
+    };
+    static final double WORLD_TOP = 245.635;
+    // =====================================================================
+    //  32.  THE WORLD CC_IN MOTION
+    //  Relations drift toward what your policies earn. Six hot spots evolve week by week and throw up crises.
+    //  Crises, operations and covert actions are tables of options whose odds depend on your people and your posture.
+    // =====================================================================
+    static final String[] TW_STAGE = {"Calm", "Pressure campaign", "Large-scale drills", "Customs quarantine", "Blockade", "War"};
+    static final String[] UA_STAGE = {"Peace agreement", "Ceasefire", "Full-scale war"};
+    static final String[] POSTURE_AREA = {"The Pacific", "Europe", "The Middle East"};
+    static final String[] POSTURE = {"Light", "Normal", "Heavy", "Surge"};
+    static final String[] TARIFF_OPT = {"0%", "10%", "25%", "50%"};
+    static final int[] TARIFF_VAL = {0, 10, 25, 50};
+    static final String[] LEVEL = {"None", "Light", "Heavy", "Maximum"};
+
+    /** Crises: id, condition, cooldown in weeks, title, body, then options "label|adviser|kind|odds|success fx|failure fx|success story|failure story" joined by ";;".
+     *  Kinds: m military, d diplomatic, i intelligence, s domestic. */
+    static final String[] CR_ID = {"tw_drills", "tw_quarantine", "tw_war", "ua_breakthrough", "ua_drone", "ua_talks", "ru_nuclear", "me_gaza", "me_iran", "me_redsea", "me_proxy",
+            "kp_test", "terror_plot", "terror_abroad", "cyber", "hostage", "migration", "cn_rare", "oil_cut", "india_pak"};
+    static final String[] CR_COND = {"twstage>1", "twstage>2", "twstage>4", "ukr<30", "ua>1,p=0.012", "talks>55,ua>1", "ua>1,ukr>70,p=0.01", "gaza>70", "iran>85", "redsea>65", "proxy>65",
+            "nk>78", "terror>55", "terror>45,p=0.008", "cyber>62", "p=0.006", "migr>72", "tcn>24,p=0.04", "p=0.004", "p=0.003"};
+    static final int[] CR_COOL = {30, 40, 200, 26, 30, 26, 60, 30, 40, 26, 26, 40, 20, 40, 26, 40, 30, 52, 70, 100};
+    static final String[] CR_TITLE = {"China surrounds Taiwan with drills", "China declares a quarantine of Taiwan", "Chinese forces attack Taiwan", "Russia breaks through in Ukraine",
+            "A Russian drone crashes in Poland", "Moscow signals it is ready to talk", "Russia puts its nuclear forces on alert", "The Gaza ceasefire collapses", "Iran is weeks from a bomb",
+            "Houthi missiles hit a tanker in the Red Sea", "A drone strike kills American troops", "North Korea tests a nuclear weapon", "Intelligence warns of a terror plot",
+            "Americans killed in a terror attack abroad", "Hackers shut down a major pipeline", "An American is detained abroad", "A surge at the southern border", "China cuts off rare earths",
+            "OPEC cuts oil output", "India and Pakistan trade strikes"};
+    static final String[] CR_BODY = {
+            "The People's Liberation Army has launched its largest exercises yet, encircling the island with ships and aircraft. Taiwan's leaders are asking what Washington will do.",
+            "Beijing says all ships bound for Taiwan must now submit to Chinese customs inspections. Shipping firms are rerouting; chip supplies are at risk.",
+            "Missile strikes and an amphibious assault have begun. Taiwan is fighting back. Allies are waiting to see what America does.",
+            "Russian forces have broken through Ukrainian lines and are advancing. Kyiv is pleading for air defense and ammunition.",
+            "A Russian attack drone crashed in eastern Poland, a NATO member. No one was hurt. Warsaw has asked for consultations.",
+            "Through back channels, the Kremlin says it is ready for talks on a ceasefire in Ukraine. Kyiv is wary.",
+            "Russia has announced exercises of its nuclear forces and moved warheads closer to the front. The Pentagon is watching closely.",
+            "Fighting has resumed in Gaza. Civilian deaths are mounting and allies want Washington to act.",
+            "The intelligence community says Iran could have enough weapons-grade uranium for a bomb within weeks.",
+            "A Houthi missile struck a tanker in the Red Sea. Insurers are pulling out, and shipping is diverting around Africa.",
+            "An Iranian-backed militia's drone struck a base in Syria, killing three American soldiers.",
+            "North Korea has carried out an underground nuclear test. Japan and South Korea want a strong response.",
+            "The FBI and CIA are tracking a cell planning an attack on a crowded American city in the coming weeks.",
+            "A bombing at a hotel abroad killed several Americans. A terrorist group has claimed responsibility.",
+            "A ransomware gang has shut down a pipeline that carries nearly half the East Coast's fuel. Gas lines are forming.",
+            "An American journalist has been detained on espionage charges that Washington calls fabricated.",
+            "Border crossings have jumped to their highest level in years. Shelters in border towns are overflowing.",
+            "Beijing has stopped exports of rare-earth magnets in retaliation for your tariffs. Carmakers warn of shutdowns within weeks.",
+            "OPEC and its allies announced a surprise cut in oil production. Prices jumped overnight.",
+            "After a deadly attack in Kashmir, India and Pakistan have exchanged missile strikes. Both have nuclear weapons."};
+    static final String[] CR_OPTS = {
+            "Sail a carrier group through the Strait|Defense secretary|m|0.8|deter=8 twt=3 rel:CN=-8 pacific=5 sec=0.15|deter=3 twt=10 rel:CN=-12|The carrier transit passes without incident and reassures allies.|A Chinese warship's close pass raises tensions further.;;"
+                    + "Call Beijing and lower the temperature|Secretary of State|d|0.6|twt=-12 rel:CN=6|twt=-3|Beijing scales back the drills after the call.|Beijing pockets the call and keeps the drills going.;;"
+                    + "Quietly speed up arms deliveries to Taiwan|National security adviser|i|0.75|deter=10 rel:CN=-5 rel:TW=8|deter=5 rel:CN=-12|The arms move quietly.|The deliveries leak, and Beijing is furious.;;"
+                    + "Say nothing in public|Chief of staff|s|1|twt=4 deter=-4 rel:TW=-6|twt=4|Allies notice the silence.|Allies notice the silence.",
+            "Escort ships with the Navy|Defense secretary|m|0.65|twt=-10 deter=12 rel:CN=-15 pacific=8 rally=3 sec=0.3|twt=12 kia=7 rel:CN=-20 fin=-1.5|Chinese ships back off and the quarantine quietly lapses.|A collision between warships kills seven American sailors.;;"
+                    + "Organize sanctions with allies|Secretary of State|d|0.55|twt=-8 rel:CN=-10 pacific=6 fin=-0.6|twt=4 fin=-1.2 pacific=-4|Facing allied sanctions, Beijing eases the inspections.|Allies split on sanctions and the quarantine tightens.;;"
+                    + "Negotiate a face-saving way out|National security adviser|d|0.5|twt=-14 rel:CN=8 rel:TW=-6|twt=3 rel:TW=-8 deter=-6|A quiet deal ends the quarantine.|Talks drag on while the quarantine holds.;;"
+                    + "Accept it and stay out|Chief of staff|s|1|twt=6 deter=-15 rel:TW=-20 pacific=-12 fin=-1|twt=6|Allies question whether America would ever defend them.|Allies question whether America would ever defend them.",
+            "Defend Taiwan with American forces|Defense secretary|m|0.55|twstage=3 twt=-20 kia=900 rally=8 fin=-4 oil=20 rel:CN=-60 pacific=15 def=1.5|twstage=5 kia=3000 fin=-7 oil=30 rel:CN=-70 perf=-4 def=2|A brutal fight ends with Chinese forces pulling back. America lost hundreds of service members.|The war grinds on with thousands of American dead.;;"
+                    + "Arm Taiwan and impose total sanctions|Secretary of State|d|0.35|twstage=3 twt=-8 fin=-5 rel:CN=-50 pacific=5|twstage=5 fin=-6 pacific=-15 rel:TW=-30|Taiwan holds, with American weapons and allied sanctions.|Taiwan's defenses are buckling.;;"
+                    + "Stay out of the war|Chief of staff|s|1|twstage=4 fin=-5 pacific=-35 rel:TW=-50 rel:JP=-25 rel:KR=-20 perf=-3|twstage=4|Allies across Asia begin to hedge.|Allies across Asia begin to hedge.",
+            "Rush air defense and ammunition|Defense secretary|m|0.75|ukr=12 rel:UA=8 nato=4 rel:RU=-6 def=0.03|ukr=5 rel:UA=4|The new weapons stabilize the front.|The weapons arrive too late to retake lost ground.;;"
+                    + "Push both sides toward a ceasefire|Secretary of State|d|0.4|talks=20 rel:RU=6 rel:UA=-6|talks=5 rel:UA=-10|Both sides agree to sit down.|Kyiv accuses you of pressuring the victim.;;"
+                    + "Let Europe take the lead|Chief of staff|s|1|ukr=-6 nato=-6 rel:UA=-8|ukr=-6|European capitals scramble to fill the gap.|European capitals scramble to fill the gap.",
+            "Call for NATO consultations|Secretary of State|d|0.8|nato=8 rel:PL=8 rel:RU=-4|nato=3|NATO allies close ranks.|Allies argue over the response.;;"
+                    + "Send more air defense to NATO's eastern flank|Defense secretary|m|0.9|nato=10 rel:PL=12 rel:RU=-8 def=0.02|nato=5 rel:RU=-8|American Patriot batteries arrive in Poland.|American Patriot batteries arrive in Poland.;;"
+                    + "Call it an accident|Chief of staff|s|1|nato=-8 rel:PL=-10|nato=-8|Warsaw is dismayed.|Warsaw is dismayed.",
+            "Open talks yourself at a summit|Secretary of State|d|0.55|talks=25 rel:RU=10 for=0.3|talks=5 rel:UA=-6|The talks make real progress.|The talks stall over territory.;;"
+                    + "Let Kyiv lead and back its terms|National security adviser|d|0.6|talks=8 rel:UA=10 nato=4|talks=-5|Ukraine sets the agenda, with American backing.|Moscow walks away.;;"
+                    + "Dismiss it as a stalling tactic|Defense secretary|s|1|talks=-15 rel:RU=-6 ukr=3|talks=-15|The opening closes.|The opening closes.",
+            "Open a back channel to the Kremlin|National security adviser|d|0.7|ua=2 defcon=4 rel:RU=4|defcon=3 fin=-1.5|The alert is called off quietly.|The standoff continues for days; markets fall.;;"
+                    + "Raise our own alert level|Defense secretary|m|0.6|defcon=4 rel:RU=-8 nato=6|defcon=3 fin=-2.5 stress=10|Moscow stands down after Washington signals resolve.|Both sides stay on alert for a tense week.;;"
+                    + "Warn Moscow in public|Secretary of State|d|0.5|defcon=4 nato=4 rel:RU=-10|defcon=3 fin=-1.5|The warning lands.|The war of words escalates.",
+            "Press Israel to restore the truce|Secretary of State|d|0.55|gaza=-30 rel:IL=-10 for=0.2|gaza=-5 rel:IL=-15|The ceasefire is back in place.|The fighting goes on, and Israel resents the pressure.;;"
+                    + "Back Israel fully|National security adviser|d|1|gaza=10 rel:IL=12 rel:SA=-8 rel:EG=-6 rel:JO=-8 terror=4|gaza=10|Arab partners condemn the operation.|Arab partners condemn the operation.;;"
+                    + "Push for a humanitarian corridor|Secretary of State|d|0.65|gaza=-12 rel:EG=6 rel:JO=6|gaza=-3|Aid trucks start moving.|The corridor fails to open.",
+            "Strike the nuclear sites|Defense secretary|m|0.75|iran=-55 proxy=20 rel:IR=-25 oil=6 terror=8 sec=0.2 rel:IL=10|iran=-20 kia=5 proxy=25 oil=9 perf=-1|American bombers destroy Iran's main enrichment sites.|The strikes damage but don't destroy the program.;;"
+                    + "Snap back sanctions and offer talks|Secretary of State|d|0.4|iran=-20 rel:IR=5 oil=2|iran=5 oil=2|Iran agrees to slow enrichment while talks go on.|Iran keeps enriching.;;"
+                    + "Back an Israeli strike|National security adviser|m|0.55|iran=-35 proxy=15 rel:IR=-20 oil=5 rel:IL=12|iran=-10 proxy=20 oil=7|Israeli jets hit the sites with American refueling and intelligence.|The Israeli strike falls short.;;"
+                    + "Accept it and contain Iran|Chief of staff|s|1|iran=10 rel:IL=-15 rel:SA=-10 sec=-0.3|iran=10|Allies in the region are alarmed.|Allies in the region are alarmed.",
+            "Strike Houthi missile sites|Defense secretary|m|0.7|redsea=-30 oil=-2 rel:IR=-5|redsea=-8 kia=1|The strikes knock out launchers and radars.|The Houthis keep firing.;;"
+                    + "Escort tankers with the Navy|Defense secretary|m|0.85|redsea=-15 oil=-1|redsea=-5|Convoys start moving again.|Convoys start moving again.;;"
+                    + "Seek a deal through Oman|Secretary of State|d|0.45|redsea=-25 rel:IR=4|redsea=5|The attacks stop, for now.|The attacks continue.",
+            "Strike the militia's leaders|Defense secretary|m|0.75|proxy=-25 rally=2 rel:IQ=-8 sec=0.2|proxy=-8 kia=2|The strikes kill the militia's commanders.|The militia scatters and strikes again.;;"
+                    + "Strike targets inside Iran|National security adviser|m|0.6|proxy=-35 iran=-5 rel:IR=-25 oil=6 rally=3|proxy=10 oil=8 terror=6 fin=-1|Tehran reins in its proxies.|Iran retaliates against American bases.;;"
+                    + "Pull back from the exposed outposts|Chief of staff|s|1|proxy=-10 sec=-0.3 rel:IL=-5|proxy=-10|Critics call it a retreat.|Critics call it a retreat.",
+            "Push new sanctions at the UN|Secretary of State|d|0.4|nk=-10 rel:CN=-3|nk=4|The Security Council tightens sanctions.|China and Russia veto the resolution.;;"
+                    + "A show of force with Seoul and Tokyo|Defense secretary|m|0.85|nk=-6 pacific=8 rel:JP=6 rel:KR=6|nk=5 pacific=5|Joint drills reassure allies.|Pyongyang answers with more missile tests.;;"
+                    + "Offer direct talks with Kim|National security adviser|d|0.35|nk=-18 rel:KP=15 rel:KR=-4|nk=4 rel:JP=-5|Kim agrees to a freeze on testing.|Pyongyang ignores the offer.",
+            "Raise the alert and surge security|Homeland Security secretary|i|0.75|terror=-25 sec=0.3|terror=-10 kia=0 perf=-0.5|The FBI arrests the plotters before they can strike.|The cell goes quiet; the threat lingers.;;"
+                    + "Keep the investigation quiet|Attorney general|i|0.6|terror=-30 sec=0.4|terror=10 kia=0 perf=-3 rally=4|Agents arrest the cell in a coordinated raid.|The plotters strike before they can be stopped.;;"
+                    + "Warn the public|Press secretary|s|0.8|terror=-15 sec=0.1 fin=-0.3|terror=-5 fin=-0.6|The plot is disrupted, and nothing happens.|Fear spreads, and businesses close for days.",
+            "Strike the group's camps|Defense secretary|m|0.75|terror=-20 rally=3 sec=0.3|terror=-5 kia=2|The strikes kill the group's leaders.|The leaders escape.;;"
+                    + "Send special forces after the planners|Director of national intelligence|i|0.6|terror=-28 rally=5 sec=0.4|kia=4 perf=-1.5|Special forces capture the planner alive.|The raid goes wrong; four commandos are killed.;;"
+                    + "Work with local partners|Secretary of State|d|0.6|terror=-12|terror=3|Local forces arrest the cell.|Local forces let the suspects slip away.",
+            "Hit the hackers back|National security adviser|i|0.6|cyber=-25 rel:RU=-5|cyber=-5|American cyber forces knock the gang offline.|The gang resurfaces under a new name.;;"
+                    + "An all-out federal response|Homeland Security secretary|s|0.8|cyber=-12 oil=-1|cyber=-3|Fuel flows again within days.|The outage stretches to a week.;;"
+                    + "Name and sanction the state behind it|Secretary of State|d|0.7|cyber=-15 rel:RU=-10|cyber=-5 rel:RU=-10|Moscow quietly reins the gang in.|The attacks continue.",
+            "Negotiate a prisoner swap|Secretary of State|d|0.65|rally=2 for=0.2|perf=-0.3|The journalist comes home in a swap.|Talks on a swap collapse.;;"
+                    + "Impose sanctions until they release her|Treasury secretary|d|0.4|rally=1|perf=-0.4|Under pressure, the journalist is released.|The detention drags on.;;"
+                    + "Work quietly through intermediaries|National security adviser|d|0.5|rally=2|perf=-0.2|Qatari mediators win the journalist's release.|Months pass with no progress.",
+            "Emergency border measures|Homeland Security secretary|s|0.75|migr=-25 imm=0.3 rel:MX=-6|migr=-8 imm=-0.1|Crossings fall sharply.|Crossings dip, then climb again.;;"
+                    + "A deal with Mexico|Secretary of State|d|0.6|migr=-20 rel:MX=8 imm=0.2|migr=-5|Mexico deploys troops to its southern border.|The deal falls apart.;;"
+                    + "Ask Congress for emergency money|Legislative director|s|0.5|migr=-12 def=0.02|migr=-3|Congress passes the money.|The request stalls on the Hill.",
+            "Negotiate: a tariff truce|Treasury secretary|d|0.6|tcn=-15 rel:CN=10 fin=0.8|tcn=-10 fin=-0.5|Beijing restores exports under a 90-day truce.|Beijing pockets the concession.;;"
+                    + "Escalate with export controls|Commerce secretary|d|0.5|rel:CN=-15 fin=-1.2|rel:CN=-15 fin=-2|Beijing backs down first.|Factories start shutting down.;;"
+                    + "Tap the strategic stockpile and wait it out|National security adviser|s|0.5|fin=-0.6|fin=-1.5|The stockpile holds until Beijing relents.|Shortages spread.",
+            "Call Riyadh|Secretary of State|d|0.55|oil=-6 rel:SA=4|oil=-1|The Saudis quietly boost output.|The Saudis hold firm.;;"
+                    + "Release oil from the strategic reserve|Energy secretary|s|0.9|oil=-4 def=0.01|oil=-1|Prices ease.|Prices ease.;;"
+                    + "Wait it out|Economic adviser|s|1|oil=0|oil=0|Prices stay high.|Prices stay high.",
+            "Mediate between them|Secretary of State|d|0.55|rel:IN=4 rel:PK=6 for=0.4|rel:IN=-6|A ceasefire takes hold.|India rejects American mediation.;;"
+                    + "Back India|National security adviser|d|1|rel:IN=10 rel:PK=-15|rel:IN=10|Pakistan turns to China.|Pakistan turns to China.;;"
+                    + "Stay out of it|Chief of staff|s|1|for=-0.1|for=-0.1|The fighting burns out on its own.|The fighting burns out on its own."};
+
+    /** Military operations: name, description, condition, odds, success fx, failure fx, story. */
+    static final String[] OP_NAME = {"Strike Iran's nuclear sites", "Strike Houthi missile sites", "Strike militias in Iraq and Syria", "Raid a terrorist leader's compound", "Send a carrier group to the Taiwan Strait",
+            "Send a carrier group to the Red Sea", "Cyber operation against Russian hackers", "Cyber operation against North Korea's missiles", "Strike cartel drug labs in Mexico", "Airlift food into Gaza"};
+    static final String[] OP_DESC = {"B-2 bombers with bunker-busters against the enrichment halls.", "Air and missile strikes on launchers and radars.", "Strikes on militia commanders and weapons depots.",
+            "A special-forces raid on the leader of a group plotting against Americans.", "A visible show of resolve near China.", "Escort shipping and deter attacks.",
+            "Take down the servers and wallets of Russian ransomware gangs.", "Sabotage the networks behind North Korea's missile program.", "Drone strikes on fentanyl labs, with or without Mexico's consent.",
+            "Air-drop and ship food to civilians in Gaza."};
+    static final String[] OP_COND = {"iran>50", "redsea>35", "proxy>35", "terror>25", "", "redsea>25", "cyber>30", "nk>40", "cartel>55", "gaza>45"};
+    static final String[] OP_FX = {"0.75|iran=-55 proxy=20 rel:IR=-25 oil=6 terror=8 sec=0.2 rel:IL=10|iran=-20 kia=5 proxy=25 oil=9 perf=-1",
+            "0.7|redsea=-30 oil=-2|redsea=-8 kia=1", "0.75|proxy=-25 rel:IQ=-8 sec=0.15|proxy=-8 kia=2", "0.6|terror=-20 rally=4 sec=0.3|kia=4 perf=-1.5 terror=5",
+            "0.95|deter=8 twt=3 rel:CN=-8 pacific=5|deter=3 twt=8 rel:CN=-12", "0.9|redsea=-12 oil=-1|redsea=-4", "0.65|cyber=-20 rel:RU=-5|cyber=5 rel:RU=-8",
+            "0.6|nk=-12 rel:KP=-5|nk=6", "0.7|cartel=-20 rel:MX=-25 migr=5 crime=0.2|kia=2 rel:MX=-30", "0.85|gaza=-8 rel:IL=-3 for=0.15|gaza=-2"};
+    /** Covert actions: name, description, odds of working, chance of exposure, fx when it works, fx when exposed. */
+    static final String[] CV_NAME = {"Sabotage Iran's centrifuges", "Penetrate North Korea's missile program", "Give Ukraine targeting intelligence", "Hack China's military networks",
+            "Disrupt cartel finances", "Back opposition groups in Venezuela", "Support dissidents inside Iran"};
+    static final String[] CV_DESC = {"Malware and supply-chain tampering to wreck enrichment.", "Bad parts and bad code in the supply chain.", "Help Kyiv hit Russian logistics and air bases.",
+            "Map the PLA's command networks before a crisis.", "Freeze cartel money in banks and crypto exchanges.", "Money and communications gear for Venezuela's opposition.",
+            "Secure communications and money for protest movements."};
+    static final double[] CV_ODDS = {0.6, 0.55, 0.8, 0.7, 0.7, 0.4, 0.35};
+    static final double[] CV_EXPOSE = {0.2, 0.2, 0.25, 0.25, 0.2, 0.4, 0.45};
+    static final String[] CV_FX = {"iran=-22", "nk=-10", "ukr=8 talks=4", "deter=6", "cartel=-14", "rel:VE=-5 migr=-4", "iran=-6"};
+    static final String[] CV_EXPFX = {"rel:IR=-15 proxy=12", "rel:KP=-8 nk=6", "rel:RU=-12 defcon=4", "rel:CN=-15 twt=6", "rel:MX=-10", "rel:VE=-20 rel:CU=-10 for=-0.2", "rel:IR=-20 proxy=8 for=-0.2"};
+
+    static final String[] SUMMITS = {"G7|6|14", "NATO|7|9", "UN General Assembly|9|23", "G20|11|18"};
+
+    static final class World implements Serializable {
+        private static final long serialVersionUID = 1L;
+        double[] rel = new double[NC];
+        String[] leader = new String[NC], ltitle = new String[NC];
+        int[] tariff = new int[NC], sanction = new int[NC], aid = new int[NC], lastCall = new int[NC], visits = new int[NC], visitAt = new int[NC];
+        int callsThisWeek, callWeek = -1;
+        double tariffAdd, oilAdd;
+        double twt = 45, deter = 55, ukr = 55, ruGain = 20, talks = 10, gaza = 40, iran = 70, redsea = 50, proxy = 30, nk = 55, terror = 35, cyber = 45, migr = 50, cartel = 55;
+        int twStage = 1, uaStage = 2, defcon = 5;
+        double nato = 60, pacific = 65, allySpend = 2.0;
+        int[] posture = {1, 1, 1};
+        int[] cool = new int[CR_ID.length];
+        int kia, ops, covert, exposed, crises, deals;
+        int summitCountry = -1, summitWeek = -1, summitRound, summitAsk = -1;
+        double summitMood, summitLeverage;
+        List<String> record = new ArrayList<String>();
+        int[] opCool = new int[OP_NAME.length], cvCool = new int[CV_NAME.length];
+        int art5Week = -99, pressWeek = -99, drillWeek = -99;
+    }
+
+    static final class Diplo {
+        static void setup(Game g) {
+            World w = new World();
+            g.world = w;
+            boolean y29 = g.era.year >= 2029;
+            for (int c = 0; c < NC; c++) {
+                String[] t = (y29 ? LEADER29 : LEADER25)[c].split("\\|");
+                w.leader[c] = t[0].replace("*", ""); w.ltitle[c] = t[1];
+                w.rel[c] = CT_REL[c] + (y29 ? 0 : 0);
+                w.lastCall[c] = -10; w.visitAt[c] = -1;
+            }
+            int[] sanc = {CC_RU, CC_IR, CC_KP, CC_CU, CC_VE, CC_SY};
+            int[] lvl = {3, 3, 3, 3, 2, 2};
+            for (int i = 0; i < sanc.length; i++) w.sanction[sanc[i]] = lvl[i];
+            w.sanction[CC_CN] = 1;
+            w.aid[CC_UA] = g.era.year == 2025 ? 2 : 1; w.aid[CC_IL] = 2; w.aid[CC_TW] = 1; w.aid[CC_EG] = 1; w.aid[CC_JO] = 1;
+            if (y29) { w.twt = 55; w.iran = 45; w.ukr = 45; w.ruGain = 30; w.nato = 50; w.allySpend = 2.6; w.migr = 40; w.redsea = 35; }
+            if (g.set.scenario == 2) { w.twt = Math.max(w.twt, 50); w.proxy = 60; w.terror = 50; }
+            // what's already in the economy's tariff stays; tariffs set here are on top of it
+            w.tariffAdd = 0;
+        }
+
+        static double totalTrade() { double t = 0; for (double v : CT_TRADE) t += v; return t + 900; }
+
+        static void setTariff(Game g, int c, int level) {
+            World w = g.world;
+            w.tariff[c] = level;
+            double add = 0, tot = totalTrade();
+            for (int i = 0; i < NC; i++) add += TARIFF_VAL[w.tariff[i]] * CT_TRADE[i] / tot;
+            g.econ.tariff += add - w.tariffAdd;
+            w.tariffAdd = add;
+            if (level > 0) { w.rel[c] -= 4 + level * 3; g.log(NK_ECON, "New " + TARIFF_VAL[level] + "% tariffs on goods from " + CT_NAME[c], null, CT_TRADE[c] > 100 ? 1.6 : 0.7); }
+            else g.log(NK_ECON, "Tariffs on " + CT_NAME[c] + " are lifted", null, 0.8);
+        }
+
+        static void setSanction(Game g, int c, int level) {
+            World w = g.world;
+            int old = w.sanction[c];
+            w.sanction[c] = level;
+            w.rel[c] -= (level - old) * 6;
+            if (c == CC_RU || c == CC_IR || c == CC_VE) oil(g, (level - old) * (c == CC_RU ? 2.0 : 1.0));
+            g.log(NK_WORLD, (level > old ? "Tougher" : "Lighter") + " sanctions on " + CT_NAME[c], null, CT_POWER[c] >= 5 ? 1.4 : 0.6);
+        }
+
+        static void setAid(Game g, int c, int level) {
+            World w = g.world;
+            int old = w.aid[c];
+            w.aid[c] = level;
+            w.rel[c] += (level - old) * 6;
+            g.econ.fiscal += (level - old) * (c == CC_UA ? 0.06 : 0.015);
+            g.log(NK_WORLD, (level > old ? "More" : "Less") + " American aid for " + CT_NAME[c], null, c == CC_UA || c == CC_IL ? 1.3 : 0.5);
+        }
+
+        static void oil(Game g, double d) { g.econ.oilBase += d; g.world.oilAdd += d; }
+
+        /** A phone call: warmer relations, with diminishing returns. */
+        static String call(Game g, int c) {
+            World w = g.world;
+            if (w.callWeek != g.week) { w.callWeek = g.week; w.callsThisWeek = 0; }
+            if (w.callsThisWeek >= 3) return "You've made three calls this week.";
+            w.callsThisWeek++;
+            double k = (g.pres.a[A_CHA] + g.pres.a[A_FPC]) / 140.0;
+            double gain = (3 + 4 * k) * (g.week - w.lastCall[c] < 4 ? 0.4 : 1) * (CT_ALIGN[c] == AL_ADVERSARY ? 0.6 : 1);
+            w.rel[c] = clamp(w.rel[c] + gain, -100, 100);
+            w.lastCall[c] = g.week;
+            if (CT_POWER[c] >= 6 || CT_ALIGN[c] == AL_ADVERSARY) g.log(NK_WORLD, "President " + g.pres.last + " speaks with " + w.leader[c], null, 0.8);
+            if (c == CC_CN) w.twt = Math.max(0, w.twt - 1.5);
+            if (c == CC_RU && w.uaStage == 2) w.talks = Math.min(100, w.talks + 2);
+            return "You speak with " + w.leader[c] + ". Relations " + (gain >= 4 ? "warm noticeably" : "warm a little") + ".";
+        }
+
+        static String invite(Game g, int c) {
+            World w = g.world;
+            if (w.visitAt[c] >= 0) return w.leader[c] + " is already coming.";
+            w.visitAt[c] = g.week + 3 + g.rng.nextInt(4);
+            return w.leader[c] + " accepts an invitation to the White House around " + dateStr(w.visitAt[c] * 7) + ".";
+        }
+
+        static String proposeSummit(Game g, int c) {
+            World w = g.world;
+            if (w.summitCountry >= 0) return "You already have a summit planned with " + CT_NAME[w.summitCountry] + ".";
+            if (w.rel[c] < -70 && g.rng.nextDouble() < 0.5) { w.rel[c] -= 2; return CT_NAME[c] + " turns down the invitation."; }
+            w.summitCountry = c; w.summitWeek = g.week + 4 + g.rng.nextInt(5); w.summitRound = 0;
+            g.log(NK_WORLD, "The White House announces a summit with " + w.leader[c] + " around " + dateStr(w.summitWeek * 7), null, CT_POWER[c] >= 6 ? 2.0 : 1.0);
+            return "Summit with " + w.leader[c] + " set for around " + dateStr(w.summitWeek * 7) + ".";
+        }
+
+        /** A state visit or a trip abroad. */
+        static void visit(Game g, int c, boolean abroad) {
+            World w = g.world;
+            double k = (g.pres.a[A_CHA] * 0.6 + g.pres.a[A_FPC] * 0.4) / 70.0;
+            w.rel[c] = clamp(w.rel[c] + (abroad ? 9 : 7) * k, -100, 100);
+            w.visits[c]++;
+            g.issueAdj[PI_FOREIGN] = clamp(g.issueAdj[PI_FOREIGN] + 0.03 * k, -1.5, 1.5);
+            if (CT_ALIGN[c] == AL_TREATY) { if (CT_REGION[c] == RG_EUROPE) w.nato = Math.min(100, w.nato + 2); else w.pacific = Math.min(100, w.pacific + 2); }
+            g.log(NK_WORLD, abroad ? "President " + g.pres.last + " visits " + CT_NAME[c] : w.leader[c] + " visits the White House", null, CT_POWER[c] >= 6 ? 1.4 : 0.8);
+        }
+
+        // ---- the weekly turn ----
+        static void week(Game g) {
+            World w = g.world;
+            Random r = g.rng;
+            Econ e = g.econ;
+            if (g.era.year == 2025) for (String ch : CHANGES25) {
+                String[] t = ch.split("\\|");
+                if (Integer.parseInt(t[1]) != g.week) continue;
+                int c = ctIdx(t[0]);
+                w.leader[c] = t[2]; w.ltitle[c] = t[3];
+                g.log(NK_WORLD, t[2] + " becomes " + t[3].toLowerCase() + " of " + CT_NAME[c], null, CT_POWER[c] >= 6 ? 1.6 : 0.8);
+            }
+            // relations drift toward what policy earns
+            double fpc = g.pres != null ? (g.pres.a[A_FPC] - 60) / 4.0 : 0;
+            for (int c = 0; c < NC; c++) {
+                double target = CT_REL[c] + w.aid[c] * 4 - w.sanction[c] * 5 - TARIFF_VAL[w.tariff[c]] / 2.0 + fpc
+                        + (CT_ALIGN[c] == AL_TREATY ? ((CT_REGION[c] == RG_EUROPE ? w.nato : w.pacific) - 60) / 8 : 0);
+                if (c == CC_TW || c == CC_JP || c == CC_KR || c == CC_PH || c == CC_AU) target += (w.deter - 55) / 4;
+                if (c == CC_UA) target += w.aid[c] * 4;
+                w.rel[c] = clamp(w.rel[c] + (target - w.rel[c]) * 0.012 + r.nextGaussian() * 0.4, -100, 100);
+            }
+            // tariffs invite retaliation
+            for (int c = 0; c < NC; c++) if (w.tariff[c] >= 2 && CT_POWER[c] >= 5 && r.nextDouble() < 0.015) {
+                e.farm = Math.max(40, e.farm - 4); e.finShock -= 0.25;
+                g.log(NK_ECON, CT_NAME[c] + " retaliates with tariffs on American farm goods", null, 1.4);
+                w.rel[c] -= 3;
+            }
+            theaters(g);
+            // the economy feels the world
+            double oilT = (w.redsea - 40) * 0.08 + (w.twStage >= 3 ? 4 : 0) + (w.uaStage == 2 ? 2 : 0) + (w.iran > 90 ? 3 : 0);
+            double dOil = (oilT - w.oilAdd) * 0.05;
+            oil(g, dOil);
+            if (w.twStage >= 3) e.supplyShock += 0.004 * (w.twStage - 2);
+            // standing on foreign policy and security
+            double ally = 0; int n = 0;
+            for (int c = 0; c < NC; c++) if (CT_ALIGN[c] == AL_TREATY) { ally += w.rel[c]; n++; }
+            ally /= Math.max(1, n);
+            g.issueAdj[PI_FOREIGN] = clamp(g.issueAdj[PI_FOREIGN] + (ally - 55) * 0.0002 + (w.uaStage < 2 ? 0.002 : 0) - (w.twStage >= 3 ? 0.004 : 0), -1.5, 1.5);
+            g.issueAdj[PI_SECURITY] = clamp(g.issueAdj[PI_SECURITY] - (w.terror - 40) * 0.0002 - (w.defcon < 5 ? 0.004 : 0), -1.5, 1.5);
+            g.issueAdj[PI_IMMIG] = clamp(g.issueAdj[PI_IMMIG] - (w.migr - 50) * 0.0002, -1.5, 1.5);
+            g.issueSal[PI_FOREIGN] = clamp(g.issueSal[PI_FOREIGN] * 0.995 + (w.twStage >= 3 || w.defcon < 5 ? 0.02 : 0), 0.2, 2);
+            if (w.defcon < 5 && r.nextDouble() < 0.25) { w.defcon++; if (w.defcon == 5) g.log(NK_WORLD, "The Pentagon returns to normal readiness", null, 1.0); }
+            for (int i = 0; i < w.cool.length; i++) if (w.cool[i] > 0) w.cool[i]--;
+            for (int i = 0; i < w.opCool.length; i++) if (w.opCool[i] > 0) w.opCool[i]--;
+            for (int i = 0; i < w.cvCool.length; i++) if (w.cvCool[i] > 0) w.cvCool[i]--;
+            crises(g);
+            // visits and summits
+            for (int c = 0; c < NC; c++) if (w.visitAt[c] >= 0 && g.week >= w.visitAt[c]) { w.visitAt[c] = -1; visit(g, c, false); g.stamina = Math.max(0, g.stamina - 2); }
+            if (w.summitCountry >= 0 && g.week >= w.summitWeek && w.summitRound == 0) Summit.start(g);
+            int[] d = dateOf(g.day());
+            for (String s : SUMMITS) {
+                String[] t = s.split("\\|");
+                int m = Integer.parseInt(t[1]) - 1, day = Integer.parseInt(t[2]);
+                if (Economy.weekHas(g, m, day)) Summit.multilateral(g, t[0]);
+            }
+        }
+
+        static void theaters(Game g) {
+            World w = g.world;
+            Random r = g.rng;
+            double dq = Cabinet.pq(g, P_DEF), iq = (Cabinet.pq(g, P_CIA) + Cabinet.pq(g, P_DNI)) / 2;
+            // Taiwan
+            double detT = 30 + w.posture[0] * 9 + w.aid[CC_TW] * 6 + w.pacific * 0.25 + dq * 10;
+            w.deter += (detT - w.deter) * 0.03;
+            w.twt = clamp(w.twt + 0.10 - (w.deter - 55) * 0.006 - (w.rel[CC_CN] + 30) * 0.002 + r.nextGaussian() * 0.9, 0, 100);
+            if (w.twStage < 5 && w.twt > 42 + 12 * w.twStage && r.nextDouble() < 0.05) { w.twStage++; g.log(w.twStage >= 3 ? NK_BIG : NK_WORLD, ("China escalates around Taiwan: " + TW_STAGE[w.twStage].toLowerCase()).toUpperCase(), null, w.twStage >= 3 ? 3.5 : 1.4); }
+            else if (w.twStage > 0 && w.twStage < 5 && w.twt < 26 + 12 * w.twStage && r.nextDouble() < 0.08) { w.twStage--; g.log(NK_WORLD, "Tensions ease around Taiwan", null, 1.0); }
+            if (w.twStage == 5 && w.deter > 60 && r.nextDouble() < 0.05) { w.twStage = 3; g.log(NK_BIG, "A CEASEFIRE HALTS THE FIGHTING AROUND TAIWAN", null, 4); }
+            // Ukraine
+            if (w.uaStage == 2) {
+                w.ukr = clamp(w.ukr - 0.32 + w.aid[CC_UA] * 0.1 + (w.nato - 60) * 0.003 + (w.posture[1] - 1) * 0.03 + (40 - w.ukr) * 0.004 + r.nextGaussian() * 0.7, 5, 95);
+                w.ruGain = clamp(w.ruGain + (50 - w.ukr) * 0.006 + r.nextGaussian() * 0.25, 0, 100);
+                w.talks = clamp(w.talks + 0.01 + (w.ukr < 35 ? 0.04 : 0) - (w.talks > 50 ? 0.04 : 0) + r.nextGaussian() * 0.4, 0, 100);
+                if (w.talks > 80 && r.nextDouble() < 0.03) {
+                    w.uaStage = 1;
+                    g.log(NK_BIG, "RUSSIA AND UKRAINE AGREE TO A CEASEFIRE", "The guns fall silent along the front for the first time in years.", 4.5);
+                    g.perf += 1.5; g.issueAdj[PI_FOREIGN] = clamp(g.issueAdj[PI_FOREIGN] + 0.3, -1.5, 1.5); oil(g, -2);
+                    w.record.add(dateStr(g.day()) + ": a ceasefire in Ukraine");
+                }
+            } else if (w.uaStage == 1) {
+                w.talks = clamp(w.talks + 0.1 + r.nextGaussian() * 0.5, 0, 100);
+                if (w.talks > 95 && r.nextDouble() < 0.02) { w.uaStage = 0; g.log(NK_BIG, "A PEACE AGREEMENT ENDS THE WAR IN UKRAINE", null, 5); g.perf += 2; w.record.add(dateStr(g.day()) + ": peace in Ukraine"); }
+                else if (r.nextDouble() < 0.004 + Math.max(0, 50 - w.talks) * 0.0004) { w.uaStage = 2; w.talks = 15; g.log(NK_BIG, "THE CEASEFIRE IN UKRAINE COLLAPSES", null, 4); g.perf -= 1; }
+            }
+            // the Middle East
+            w.gaza = clamp(w.gaza + (45 - w.gaza) * 0.01 + r.nextGaussian() * 1.2, 0, 100);
+            w.iran = clamp(w.iran + 0.12 - w.sanction[CC_IR] * 0.02 + r.nextGaussian() * 0.5, 0, 100);
+            w.redsea = clamp(w.redsea + (w.gaza * 0.6 + 15 - w.redsea) * 0.02 - w.posture[2] * 0.12 + r.nextGaussian() * 1.0, 0, 100);
+            w.proxy = clamp(w.proxy + (w.iran * 0.3 + w.gaza * 0.2 - w.proxy) * 0.015 - (w.posture[2] - 1) * 0.15 + r.nextGaussian() * 1.0, 0, 100);
+            if (w.iran >= 100) { w.iran = 99; if (r.nextDouble() < 0.1) { g.log(NK_BIG, "IRAN TESTS A NUCLEAR WEAPON", null, 5); g.perf -= 2; w.iran = 80; w.record.add(dateStr(g.day()) + ": Iran goes nuclear"); } }
+            // Korea, terror, cyber, the hemisphere
+            w.nk = clamp(w.nk + (55 - w.nk) * 0.01 + 0.04 + r.nextGaussian() * 1.0, 0, 100);
+            w.terror = clamp(w.terror + (30 + w.proxy * 0.15 - w.terror) * 0.02 - (iq - 0.55) * 0.4 + r.nextGaussian() * 1.0, 0, 100);
+            w.cyber = clamp(w.cyber + (42 + (w.rel[CC_RU] < -50 ? 6 : 0) - w.cyber) * 0.02 + r.nextGaussian() * 1.1, 0, 100);
+            w.migr = clamp(w.migr + (48 - (w.rel[CC_MX] - 30) / 4 - w.migr) * 0.02 + r.nextGaussian() * 1.0, 0, 100);
+            w.cartel = clamp(w.cartel + (55 - w.cartel) * 0.01 + r.nextGaussian() * 0.8, 0, 100);
+            // alliances
+            double natoT = 40 + (avgRel(w, RG_EUROPE) - 40) * 0.3 + w.posture[1] * 4 + w.aid[CC_UA] * 2 - (w.allySpend - 2) * 4;
+            w.nato = clamp(w.nato + (natoT - w.nato) * 0.02, 0, 100);
+            double pacT = 40 + (w.rel[CC_JP] + w.rel[CC_KR] + w.rel[CC_AU] + w.rel[CC_PH]) / 4 * 0.3 + w.posture[0] * 4;
+            w.pacific = clamp(w.pacific + (pacT - w.pacific) * 0.02, 0, 100);
+        }
+
+        static double avgRel(World w, int region) { double s = 0; int n = 0; for (int c = 0; c < NC; c++) if (CT_REGION[c] == region && CT_ALIGN[c] == AL_TREATY) { s += w.rel[c]; n++; } return n == 0 ? 0 : s / n; }
+
+        static double var(Game g, String k) {
+            World w = g.world;
+            if (k.equals("twstage")) return w.twStage; if (k.equals("twt")) return w.twt; if (k.equals("ua")) return w.uaStage; if (k.equals("ukr")) return w.ukr;
+            if (k.equals("talks")) return w.talks; if (k.equals("gaza")) return w.gaza; if (k.equals("iran")) return w.iran; if (k.equals("redsea")) return w.redsea;
+            if (k.equals("proxy")) return w.proxy; if (k.equals("nk")) return w.nk; if (k.equals("terror")) return w.terror; if (k.equals("cyber")) return w.cyber;
+            if (k.equals("migr")) return w.migr; if (k.equals("cartel")) return w.cartel; if (k.equals("tcn")) return TARIFF_VAL[w.tariff[CC_CN]] + g.econ.tariff - g.era.tariff;
+            return 0;
+        }
+
+        /** "a>5,b<3,p=0.01": every clause must hold; p is a weekly chance. */
+        static boolean cond(Game g, String c) {
+            if (c.isEmpty()) return true;
+            for (String t : c.split(",")) {
+                if (t.startsWith("p=")) { if (g.rng.nextDouble() >= Double.parseDouble(t.substring(2))) return false; continue; }
+                int i = t.indexOf('>'), j = t.indexOf('<');
+                if (i > 0) { if (!(var(g, t.substring(0, i)) > Double.parseDouble(t.substring(i + 1)))) return false; }
+                else if (j > 0) { if (!(var(g, t.substring(0, j)) < Double.parseDouble(t.substring(j + 1)))) return false; }
+            }
+            return true;
+        }
+
+        static void crises(Game g) {
+            World w = g.world;
+            for (int i = 0; i < CR_ID.length; i++) {
+                if (w.cool[i] > 0) continue;
+                if (!cond(g, CR_COND[i])) continue;
+                w.cool[i] = CR_COOL[i];
+                w.crises++;
+                g.log(NK_WORLD, CR_TITLE[i], null, 2.0);
+                String[] opts = CR_OPTS[i].split(";;");
+                String[] lab = new String[opts.length], adv = new String[opts.length];
+                for (int k = 0; k < opts.length; k++) {
+                    String[] t = opts[k].split("\\|");
+                    lab[k] = t[0];
+                    adv[k] = t[1] + ": \"" + odds(g, t[2], Double.parseDouble(t[3])) + "\"";
+                }
+                Decision d = Decisions.add(g, D_WORLD, CR_TITLE[i], CR_BODY[i] + " Your advisers each have a view; the odds are their best guess.", lab, adv);
+                d.a = i;
+                if (i == 2 || i == 6) g.stress = Math.min(100, g.stress + 12);
+                return;
+            }
+        }
+
+        /** How likely an option is to work, given who's doing it. */
+        static double p(Game g, String kind, double base) {
+            if (base >= 1) return 1;
+            double fpc = g.pres != null ? (g.pres.a[A_FPC] - 60) / 250.0 : 0;
+            double m = kind.equals("m") ? (g.ex.ready[P_DEF] - 60) / 300.0 + (Cabinet.pq(g, P_DEF) - 0.6) * 0.2
+                    : kind.equals("d") ? (Cabinet.pq(g, P_STATE) - 0.6) * 0.3 + (Cabinet.sq(g, S_NSA) - 0.6) * 0.15
+                    : kind.equals("i") ? ((Cabinet.pq(g, P_CIA) + Cabinet.pq(g, P_DNI)) / 2 - 0.6) * 0.35 : (Cabinet.sq(g, S_COS) - 0.6) * 0.15;
+            return clamp(base + fpc + m, 0.05, 0.97);
+        }
+
+        static String odds(Game g, String kind, double base) {
+            double q = p(g, kind, base);
+            return q >= 0.99 ? "This one is in our hands." : q >= 0.75 ? "I think it works: maybe " + Math.round(q * 100) + "%." : q >= 0.5 ? "Better than even, about " + Math.round(q * 100) + "%." : "A long shot, maybe " + Math.round(q * 100) + "%.";
+        }
+
+        static void crisisDecision(Game g, int i, int k) {
+            String[] t = CR_OPTS[i].split(";;")[k].split("\\|");
+            boolean ok = g.rng.nextDouble() < p(g, t[2], Double.parseDouble(t[3]));
+            fx(g, ok ? t[4] : t[5]);
+            String story = ok ? t[6] : t[7];
+            g.log(ok ? NK_GOOD : NK_BAD, story, null, 1.8);
+            Decisions.info(g, ok ? "It worked" : "It didn't go as hoped", story);
+        }
+
+        /** Applies "key=value" effects to the world and the country. */
+        static void fx(Game g, String fx) {
+            World w = g.world;
+            Econ e = g.econ;
+            for (String tok : fx.split(" ")) {
+                if (tok.isEmpty()) continue;
+                String[] kv = tok.split("=");
+                String k = kv[0];
+                double v = Double.parseDouble(kv[1]);
+                if (k.startsWith("rel:")) { int c = ctIdx(k.substring(4)); if (c >= 0) w.rel[c] = clamp(w.rel[c] + v, -100, 100); }
+                else if (k.equals("twt")) w.twt = clamp(w.twt + v, 0, 100); else if (k.equals("deter")) w.deter = clamp(w.deter + v, 0, 100);
+                else if (k.equals("twstage")) w.twStage = (int) v; else if (k.equals("ua")) w.uaStage = (int) v; else if (k.equals("defcon")) w.defcon = (int) v;
+                else if (k.equals("ukr")) w.ukr = clamp(w.ukr + v, 0, 100); else if (k.equals("talks")) w.talks = clamp(w.talks + v, 0, 100);
+                else if (k.equals("gaza")) w.gaza = clamp(w.gaza + v, 0, 100); else if (k.equals("iran")) w.iran = clamp(w.iran + v, 0, 100);
+                else if (k.equals("redsea")) w.redsea = clamp(w.redsea + v, 0, 100); else if (k.equals("proxy")) w.proxy = clamp(w.proxy + v, 0, 100);
+                else if (k.equals("nk")) w.nk = clamp(w.nk + v, 0, 100); else if (k.equals("terror")) w.terror = clamp(w.terror + v, 0, 100);
+                else if (k.equals("cyber")) w.cyber = clamp(w.cyber + v, 0, 100); else if (k.equals("migr")) w.migr = clamp(w.migr + v, 0, 100);
+                else if (k.equals("cartel")) w.cartel = clamp(w.cartel + v, 0, 100);
+                else if (k.equals("nato")) w.nato = clamp(w.nato + v, 0, 100); else if (k.equals("pacific")) w.pacific = clamp(w.pacific + v, 0, 100);
+                else if (k.equals("perf")) g.perf += v; else if (k.equals("rally")) g.rally += v;
+                else if (k.equals("for")) g.issueAdj[PI_FOREIGN] = clamp(g.issueAdj[PI_FOREIGN] + v, -1.5, 1.5);
+                else if (k.equals("sec")) g.issueAdj[PI_SECURITY] = clamp(g.issueAdj[PI_SECURITY] + v, -1.5, 1.5);
+                else if (k.equals("imm")) g.issueAdj[PI_IMMIG] = clamp(g.issueAdj[PI_IMMIG] + v, -1.5, 1.5);
+                else if (k.equals("crime")) g.issueAdj[PI_CRIME] = clamp(g.issueAdj[PI_CRIME] + v, -1.5, 1.5);
+                else if (k.equals("oil")) oil(g, v); else if (k.equals("fin")) e.finShock += v; else if (k.equals("def")) e.fiscal += v;
+                else if (k.equals("stress")) g.stress = clamp(g.stress + v, 0, 100);
+                else if (k.equals("tcn")) { if (w.tariff[CC_CN] > 0) setTariff(g, CC_CN, Math.max(0, w.tariff[CC_CN] - 1)); }
+                else if (k.equals("kia") && v > 0) {
+                    int n = (int) v;
+                    w.kia += n;
+                    g.perf -= Math.min(6, 0.3 + n * 0.12);
+                    g.log(NK_BIG, n + (n == 1 ? " AMERICAN SERVICE MEMBER KILLED" : " AMERICAN SERVICE MEMBERS KILLED"), "The president will meet the families at Dover.", 3);
+                }
+            }
+        }
+
+        // ---- operations and covert action ----
+        static boolean opReady(Game g, int i) { return g.world.opCool[i] == 0 && cond(g, OP_COND[i]); }
+
+        static double opOdds(Game g, int i) { return p(g, "m", Double.parseDouble(OP_FX[i].split("\\|")[0])); }
+
+        static String order(Game g, int i) {
+            World w = g.world;
+            String[] t = OP_FX[i].split("\\|");
+            boolean ok = g.rng.nextDouble() < opOdds(g, i);
+            w.ops++; w.opCool[i] = 8;
+            g.ex.ready[P_DEF] = Math.max(5, g.ex.ready[P_DEF] - 1.5);
+            g.econ.fiscal += 0.01;
+            fx(g, ok ? t[1] : t[2]);
+            String s = ok ? OP_NAME[i] + ": the operation succeeds." : OP_NAME[i] + ": the operation falls short.";
+            g.log(ok ? NK_GOOD : NK_BAD, s, null, 2.4);
+            if (!Hill.majority(g, HOUSE, g.party) && i <= 3 && g.rng.nextDouble() < 0.3) g.log(NK_BAD, "Lawmakers say the president needed Congress's approval under the War Powers Act", null, 1.2);
+            return s;
+        }
+
+        static double cvOdds(Game g, int i) { return p(g, "i", CV_ODDS[i]); }
+
+        static String covert(Game g, int i) {
+            World w = g.world;
+            Random r = g.rng;
+            w.covert++; w.cvCool[i] = 26;
+            boolean ok = r.nextDouble() < cvOdds(g, i);
+            if (ok) fx(g, CV_FX[i]);
+            boolean exp = r.nextDouble() < CV_EXPOSE[i] * (1.3 - Cabinet.pq(g, P_CIA) * 0.6);
+            if (exp) {
+                w.exposed++;
+                fx(g, CV_EXPFX[i]);
+                Trouble.add(g, SK_POWER, "A secret program is exposed", "Reporters reveal a covert operation: " + CV_NAME[i].toLowerCase() + ".", 2.5, null, false);
+            }
+            return ok ? (exp ? "It worked, but the program has leaked." : "The program is under way, and it's working.") : (exp ? "It failed, and the program has leaked." : "It isn't working yet.");
+        }
+
+        static void setPosture(Game g, int area, int level) {
+            World w = g.world;
+            int old = w.posture[area];
+            w.posture[area] = level;
+            g.econ.fiscal += (level - old) * 0.04;
+            g.ex.ready[P_DEF] = clamp(g.ex.ready[P_DEF] - Math.max(0, level - old) * 2, 5, 100);
+            if (area == 0) { w.rel[CC_CN] -= (level - old) * 5; w.pacific += (level - old) * 3; }
+            if (area == 1) { w.rel[CC_RU] -= (level - old) * 4; w.nato += (level - old) * 3; }
+            g.log(NK_WORLD, "The Pentagon " + (level > old ? "adds forces in " : "draws down forces in ") + POSTURE_AREA[area].toLowerCase().replace("the ", ""), null, 1.0);
+        }
+    }
+
+    /** Summits: a bilateral one is played in three rounds; the big annual ones are a single choice. */
+    static final class Summit {
+        static final String[][] ASKS = {
+                {"A trade deal", "trade"}, {"A deal on fentanyl chemicals", "fent"}, {"Lower tensions over Taiwan", "taiwan"}, {"A ceasefire in Ukraine", "ukraine"},
+                {"A new nuclear arms treaty", "arms"}, {"Limits on Iran's nuclear program", "iran"}, {"A freeze on North Korea's tests", "nk"}, {"More defense spending by allies", "spend"},
+                {"Help at the border", "border"}, {"More oil on the market", "oil"}};
+
+        static List<Integer> asks(Game g, int c) {
+            List<Integer> l = new ArrayList<Integer>();
+            if (CT_TRADE[c] > 20) l.add(0);
+            if (c == CC_CN || c == CC_MX || c == CC_IN) l.add(1);
+            if (c == CC_CN) l.add(2);
+            if (c == CC_RU || c == CC_UA) l.add(3);
+            if (c == CC_RU || c == CC_CN) l.add(4);
+            if (c == CC_IR) l.add(5);
+            if (c == CC_KP) l.add(6);
+            if (CT_ALIGN[c] == AL_TREATY) l.add(7);
+            if (c == CC_MX || c == CC_PA || c == CC_VE || c == CC_CU) l.add(8);
+            if (c == CC_SA || c == CC_AE || c == CC_QA || c == CC_CA) l.add(9);
+            if (l.isEmpty()) l.add(0);
+            return l;
+        }
+
+        static void start(Game g) {
+            World w = g.world;
+            int c = w.summitCountry;
+            w.summitRound = 1; w.summitMood = w.rel[c] / 2 + 10; w.summitLeverage = 0;
+            g.stamina = Math.max(0, g.stamina - 6);
+            Decision d = Decisions.add(g, D_SUMMIT, "Summit with " + w.leader[c] + ": the opening", "You sit down with " + w.leader[c] + " of " + CT_NAME[c] + ". Relations stand at " + Math.round(w.rel[c]) + ". How do you open?",
+                    new String[]{"Warmly: talk about what you share", "Firmly: lay out your red lines", "Personally: flatter and charm"},
+                    new String[]{"Secretary of State: \"Build trust first; the asks come later.\"", "National security adviser: \"Show strength and they'll take you seriously.\"", "Chief of staff: \"You're good in a room. Use it.\""});
+            d.a = c;
+        }
+
+        static void round(Game g, int k) {
+            World w = g.world;
+            int c = w.summitCountry;
+            Random r = g.rng;
+            double cha = g.pres.a[A_CHA], fpc = g.pres.a[A_FPC];
+            if (w.summitRound == 1) {
+                if (k == 0) w.summitMood += 10 + (fpc - 60) / 6; else if (k == 1) { w.summitMood -= 8; w.summitLeverage += 15; } else w.summitMood += (cha - 55) / 2 + r.nextGaussian() * 6;
+                w.summitRound = 2;
+                List<Integer> l = asks(g, c);
+                String[] lab = new String[l.size()];
+                for (int i = 0; i < lab.length; i++) lab[i] = ASKS[l.get(i)][0];
+                Decision d = Decisions.add(g, D_SUMMIT, "Summit with " + w.leader[c] + ": the ask", "The mood in the room is " + (w.summitMood > 35 ? "warm" : w.summitMood > 5 ? "businesslike" : "frosty") + ". What do you ask for?", lab, null);
+                d.codes = new int[l.size()];
+                for (int i = 0; i < l.size(); i++) d.codes[i] = l.get(i);
+            } else if (w.summitRound == 2) {
+                w.summitAsk = k;
+                w.summitRound = 3;
+                Decision d = Decisions.add(g, D_SUMMIT, "Summit with " + w.leader[c] + ": the give", "They want something in return. What do you put on the table?",
+                        new String[]{"Lift some tariffs or sanctions", "More aid or investment", "Nothing: hold firm"},
+                        new String[]{"Treasury secretary: \"A little relief buys a lot of goodwill.\"", "Secretary of State: \"Money talks.\"", "National security adviser: \"Don't pay for what they should do anyway.\""});
+            } else {
+                w.summitRound = 0;
+                int ask = w.summitAsk;
+                double give = k == 0 ? 20 : k == 1 ? 15 : -5;
+                double chance = logistic((w.summitMood + w.summitLeverage * 0.5 + give - 20) / 18 + (fpc - 60) / 40);
+                if (k == 0) { if (w.tariff[c] > 0) Diplo.setTariff(g, c, w.tariff[c] - 1); else if (w.sanction[c] > 0) Diplo.setSanction(g, c, w.sanction[c] - 1); }
+                if (k == 1) g.econ.fiscal += 0.01;
+                boolean ok = r.nextDouble() < chance;
+                finish(g, c, ask, ok);
+                w.summitCountry = -1; w.summitWeek = -1;
+            }
+        }
+
+        static void finish(Game g, int c, int ask, boolean ok) {
+            World w = g.world;
+            String what = ASKS[ask][1];
+            String story;
+            if (ok) {
+                w.deals++;
+                w.rel[c] = clamp(w.rel[c] + 8, -100, 100);
+                g.perf += 0.8; g.issueAdj[PI_FOREIGN] = clamp(g.issueAdj[PI_FOREIGN] + 0.15, -1.5, 1.5);
+                if (what.equals("trade")) { if (w.tariff[c] > 0) Diplo.setTariff(g, c, 0); g.econ.finShock += 0.4; g.econ.farm = Math.min(140, g.econ.farm + 3); }
+                else if (what.equals("fent")) { w.cartel -= 10; g.issueAdj[PI_CRIME] += 0.1; }
+                else if (what.equals("taiwan")) { w.twt -= 15; if (w.twStage > 0) w.twStage--; }
+                else if (what.equals("ukraine")) { w.talks = Math.min(100, w.talks + 18); }
+                else if (what.equals("arms")) { g.issueAdj[PI_SECURITY] += 0.2; w.defcon = 5; }
+                else if (what.equals("iran")) { w.iran -= 25; Diplo.oil(g, -2); }
+                else if (what.equals("nk")) { w.nk -= 20; }
+                else if (what.equals("spend")) { w.allySpend += 0.2; w.nato -= 2; }
+                else if (what.equals("border")) { w.migr -= 15; g.issueAdj[PI_IMMIG] += 0.15; }
+                else if (what.equals("oil")) Diplo.oil(g, -4);
+                story = "A deal with " + CT_NAME[c] + ": " + ASKS[ask][0].toLowerCase() + ".";
+                w.record.add(dateStr(g.day()) + ": " + story);
+                g.log(NK_BIG, story.toUpperCase(), null, CT_POWER[c] >= 6 ? 3.5 : 2);
+            } else {
+                w.rel[c] = clamp(w.rel[c] - 3, -100, 100);
+                g.perf -= 0.3;
+                story = "The summit with " + w.leader[c] + " ends without a deal.";
+                g.log(NK_BAD, story, null, CT_POWER[c] >= 6 ? 2.2 : 1);
+            }
+            Decisions.info(g, ok ? "A deal" : "No deal", story);
+        }
+
+        /** The G7, NATO, the UN and the G20: you go, and pick a theme. */
+        static void multilateral(Game g, String name) {
+            Decision d = Decisions.add(g, D_GSUMMIT, "The " + name + " summit", "World leaders gather for the " + name + " summit. It will take three days of your time. What's your message?",
+                    new String[]{"Reassure allies", "Press allies to do more", "Skip it and send the vice president"},
+                    new String[]{"Secretary of State: \"Allies are nervous. Calm them.\"", "Treasury secretary: \"Make them pay their share.\"", "Chief of staff: \"You need the rest more than they need a photo.\""});
+            d.a = name.equals("NATO") ? 1 : 0;
+        }
+
+        static void multiDecision(Game g, Decision d, int k) {
+            World w = g.world;
+            boolean nato = d.a == 1;
+            if (k == 2) { w.nato -= 5; w.pacific -= 3; g.issueAdj[PI_FOREIGN] -= 0.05; g.log(NK_WORLD, "The president skips the summit; the vice president goes instead", null, 1.2); return; }
+            g.stamina = Math.max(0, g.stamina - 7);
+            if (k == 0) { w.nato += nato ? 4 : 1.5; w.pacific += 1.5; for (int c = 0; c < NC; c++) if (CT_ALIGN[c] == AL_TREATY) w.rel[c] += 1; }
+            else { w.allySpend += 0.15; w.nato -= nato ? 3 : 1; for (int c = 0; c < NC; c++) if (CT_ALIGN[c] == AL_TREATY) w.rel[c] -= 1.5; g.issueAdj[PI_FOREIGN] += 0.05; }
+            g.issueAdj[PI_FOREIGN] = clamp(g.issueAdj[PI_FOREIGN] + 0.05, -1.5, 1.5);
+            g.log(NK_WORLD, "The president attends the summit", null, 1.0);
+        }
+    }
+    // =====================================================================
+    //  33.  THE SITUATION ROOM: the world map, the hot spots, operations, trade and sanctions, and alliances
+    // =====================================================================
+    static final class WorldMap {
+        static Path2D[] shape;
+        static Rectangle2D[] bounds;
+        static String[] code;
+        static int us = -1;
+        static final double AW = 1000, AH = 447;
+
+        static synchronized void load() {
+            if (shape != null) return;
+            int n = WORLD.length;
+            Path2D[] sh = new Path2D[n];
+            Rectangle2D[] bd = new Rectangle2D[n];
+            String[] cd = new String[n];
+            for (int k = 0; k < n; k++) {
+                String[] row = WORLD[k];
+                cd[k] = row[0];
+                Path2D.Double p = new Path2D.Double(Path2D.WIND_EVEN_ODD);
+                for (String ring : row[1].split("~")) {
+                    if (ring.length() < 6) continue;
+                    int x = USMap.num(ring, 0, 3), y = USMap.num(ring, 3, 3);
+                    p.moveTo(x / 2.0, y / 2.0);
+                    int i = 6;
+                    while (i < ring.length()) {
+                        if (ring.charAt(i) == '!') { x = USMap.num(ring, i + 1, 3); y = USMap.num(ring, i + 4, 3); i += 7; }
+                        else { x += USMap.dec(ring.charAt(i)) - 44; y += USMap.dec(ring.charAt(i + 1)) - 44; i += 2; }
+                        p.lineTo(x / 2.0, y / 2.0);
+                    }
+                    p.closePath();
+                }
+                sh[k] = p; bd[k] = p.getBounds2D();
+                if (row[0].equals("US")) us = k;
+            }
+            bounds = bd; code = cd; shape = sh;
+        }
+
+        static double[] last;
+
+        static double[] fit(double x, double y, double w, double h) {
+            double s = Math.min(w / AW, h / AH);
+            return new double[]{s, x + (w - AW * s) / 2, y + (h - AH * s) / 2};
+        }
+
+        /** The country (index into CT_ID) at a screen point on the last map drawn, or -1. */
+        static int at(double px, double py) {
+            if (last == null || shape == null) return -1;
+            double ax = (px - last[1]) / last[0], ay = (py - last[2]) / last[0];
+            for (int k = 0; k < shape.length; k++) { int c = ctIdx(code[k]); if (c >= 0 && bounds[k].contains(ax, ay) && shape[k].contains(ax, ay)) return c; }
+            return -1;
+        }
+
+        static Color relColor(double r) {
+            return r >= 0 ? mix(rgb(0x2b3a55), rgb(0x2f9e6a), Math.min(1, r / 80)) : mix(rgb(0x2b3a55), rgb(0xc0392b), Math.min(1, -r / 80));
+        }
+
+        /** Draws the map; returns the index into CT_ID of the country under the mouse, or -1. */
+        static int draw(ResoluteDesk u, Graphics2D g, Game game, double x, double y, double w, double h, int sel) {
+            load();
+            double[] f = fit(x, y, w, h);
+            last = f;
+            int hover = u.modal == null && u.mx >= x && u.mx < x + w && u.my >= y && u.my < y + h ? at(u.mx, u.my) : -1;
+            AffineTransform at = g.getTransform();
+            g.translate(f[1], f[2]);
+            g.scale(f[0], f[0]);
+            g.setStroke(new BasicStroke((float) (0.7 / f[0])));
+            for (int k = 0; k < shape.length; k++) {
+                int c = ctIdx(code[k]);
+                Color col = k == us ? rgb(0x1f4fa8) : c >= 0 ? relColor(game.world.rel[c]) : rgb(0x253044);
+                if (c >= 0 && (c == sel || c == hover)) col = shade(col, 1.35);
+                g.setColor(col);
+                g.fill(shape[k]);
+                g.setColor(new Color(10, 16, 30, 200));
+                g.draw(shape[k]);
+            }
+            g.setTransform(at);
+            g.setStroke(new BasicStroke(1f));
+            // labels for the bigger players, and the selected one
+            for (int c = 0; c < NC; c++) {
+                boolean big = c == CC_CN || c == CC_RU || c == CC_CA || c == CC_BR || c == CC_AU || c == CC_IN;
+                if (!big && c != sel && c != hover) continue;
+                double lx = f[1] + CT_LX[c] * f[0], ly = f[2] + CT_LY[c] * f[0];
+                textC(g, CT_NAME[c], lx, ly + 4, F_T, c == sel ? C_GOLD : new Color(235, 240, 250, 210));
+            }
+            // flashpoints
+            World wd = game.world;
+            double[][] hot = {{828, 172, wd.twStage >= 2 ? 1 : 0}, {585, 96, wd.uaStage == 2 ? 1 : 0}, {590, 150, wd.gaza > 60 ? 1 : 0}, {640, 140, wd.iran > 80 ? 1 : 0}, {612, 192, wd.redsea > 60 ? 1 : 0}, {826, 117, wd.nk > 75 ? 1 : 0}};
+            for (double[] hp : hot) {
+                if (hp[2] < 1) continue;
+                double px = f[1] + hp[0] * f[0], py = f[2] + hp[1] * f[0];
+                double pulse = 6 + 3 * Math.sin(u.tsec * 4);
+                g.setColor(new Color(255, 80, 60, 90));
+                g.fill(new Ellipse2D.Double(px - pulse, py - pulse, pulse * 2, pulse * 2));
+                g.setColor(rgb(0xff5040));
+                g.fill(new Ellipse2D.Double(px - 3, py - 3, 6, 6));
+            }
+            return hover;
+        }
+    }
+
+    static final class Flag {
+        static Color hex(String s) { return rgb(Integer.parseInt(s.trim(), 16)); }
+
+        static void draw(Graphics2D g, int c, double x, double y, double w, double h) {
+            String[] parts = CT_FLAG[c].split("\\|");
+            Shape clip = g.getClip();
+            g.clip(new RoundRectangle2D.Double(x, y, w, h, 3, 3));
+            String base = parts[0];
+            String kind = base.substring(0, 1);
+            String[] cols = base.substring(2).split(",");
+            if (kind.equals("h") || kind.equals("v")) {
+                int n = cols.length;
+                for (int i = 0; i < n; i++) {
+                    g.setColor(hex(cols[i]));
+                    if (kind.equals("h")) g.fill(new Rectangle2D.Double(x, y + h * i / n, w, h / n + 0.5));
+                    else g.fill(new Rectangle2D.Double(x + w * i / n, y, w / n + 0.5, h));
+                }
+            } else {
+                g.setColor(hex(cols[0]));
+                g.fill(new Rectangle2D.Double(x, y, w, h));
+                g.setColor(hex(cols[1]));
+                if (kind.equals("d")) { double r = h * 0.3; g.fill(new Ellipse2D.Double(x + w / 2 - r, y + h / 2 - r, r * 2, r * 2)); }
+                else if (kind.equals("x")) { g.fill(new Rectangle2D.Double(x + w * 0.3, y, h * 0.2, h)); g.fill(new Rectangle2D.Double(x, y + h * 0.4, w, h * 0.2)); }
+                else if (kind.equals("s")) star(g, x + w * 0.2, y + h * 0.3, h * 0.18);
+                else if (kind.equals("c")) star(g, x + w / 2, y + h / 2, h * 0.28);
+            }
+            for (int i = 1; i < parts.length; i++) {
+                String p = parts[i];
+                Color col = hex(p.substring(2));
+                g.setColor(col);
+                if (p.startsWith("t:")) { Path2D.Double t = new Path2D.Double(); t.moveTo(x, y); t.lineTo(x + w * 0.38, y + h / 2); t.lineTo(x, y + h); t.closePath(); g.fill(t); }
+                else if (p.startsWith("k:")) g.fill(new Rectangle2D.Double(x, y, w * 0.42, h * 0.5));
+                else if (p.startsWith("o:")) { double r = h * 0.16; g.fill(new Ellipse2D.Double(x + w / 2 - r, y + h / 2 - r, r * 2, r * 2)); }
+            }
+            g.setClip(clip);
+            g.setColor(new Color(255, 255, 255, 60));
+            g.draw(new RoundRectangle2D.Double(x, y, w, h, 3, 3));
+        }
+
+        static void star(Graphics2D g, double cx, double cy, double r) {
+            Path2D.Double p = new Path2D.Double();
+            for (int i = 0; i < 10; i++) {
+                double a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 == 0 ? r : r * 0.42;
+                if (i == 0) p.moveTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr); else p.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
+            }
+            p.closePath();
+            g.fill(p);
+        }
+    }
+
+    static final class SitRoom {
+        static int tab, sel = CC_CN, selOp = 0;
+        static String msg;
+        static final String[] TABS = {"The world", "Hot spots", "Operations", "Trade and sanctions", "Alliances"};
+
+        static void draw(ResoluteDesk u, Graphics2D g, Game game) {
+            if (game.world == null) Diplo.setup(game);
+            u.segmented(g, 48, 116, 700, 30, TABS, tab, i -> { tab = i; msg = null; }, null);
+            World w = game.world;
+            text(g, "DEFCON " + w.defcon, 780, 137, F_BB, w.defcon <= 3 ? C_BAD : w.defcon == 4 ? C_AMBER : C_GOOD);
+            if (msg != null) textFit(g, msg, 880, 137, DW - 930, F_XS, C_GOLD);
+            switch (tab) {
+                case 1: hot(u, g, game); break;
+                case 2: ops(u, g, game); break;
+                case 3: trade(u, g, game); break;
+                case 4: alliances(u, g, game); break;
+                default: world(u, g, game); break;
+            }
+        }
+
+        static Color tone(double v, boolean highBad) { double t = highBad ? v : 100 - v; return t >= 70 ? C_BAD : t >= 45 ? C_AMBER : C_GOOD; }
+
+        static void gauge(Graphics2D g, String name, double v, boolean highBad, double x, double y, double w) {
+            text(g, name, x, y, F_XS, C_TEXT);
+            bar(g, x, y + 6, w - 40, 8, v / 100, tone(v, highBad));
+            textR(g, String.valueOf(Math.round(v)), x + w, y + 14, F_XSB, Color.white);
+        }
+
+        // ---- the world ----
+        static void world(ResoluteDesk u, Graphics2D g, Game game) {
+            World w = game.world;
+            u.panel(g, 48, 160, 1010, 652, "The world");
+            int hv = WorldMap.draw(u, g, game, 60, 186, 986, 500, sel);
+            if (hv >= 0) u.tip = CT_NAME[hv] + ": " + w.leader[hv] + ". Relations " + Math.round(w.rel[hv]) + ".";
+            u.hit(60, 186, 986, 500, () -> { int h = WorldMap.at(u.mx, u.my); if (h >= 0) sel = h; }, null);
+            double ly = 712;
+            g.setColor(WorldMap.relColor(-80)); g.fill(new Rectangle2D.Double(66, ly - 9, 14, 10)); text(g, "Hostile", 86, ly, F_T, C_DIM);
+            g.setColor(WorldMap.relColor(0)); g.fill(new Rectangle2D.Double(146, ly - 9, 14, 10)); text(g, "Cool", 166, ly, F_T, C_DIM);
+            g.setColor(WorldMap.relColor(80)); g.fill(new Rectangle2D.Double(206, ly - 9, 14, 10)); text(g, "Friendly", 226, ly, F_T, C_DIM);
+            g.setColor(rgb(0xff5040)); g.fill(new Ellipse2D.Double(296, ly - 8, 7, 7)); text(g, "Flashpoint", 310, ly, F_T, C_DIM);
+            text(g, "Click a country. Trips abroad go on your calendar (the Desk); calls and invitations are here.", 66, ly + 22, F_XS, C_DIM);
+            if (!w.record.isEmpty()) textFit(g, "Your record: " + w.record.get(w.record.size() - 1), 66, ly + 44, 960, F_XS, C_GOLD);
+            // the selected country
+            double px = 1072, pw = DW - 48 - px;
+            int c = sel;
+            u.panel(g, px, 160, pw, 652, CT_NAME[c]);
+            Flag.draw(g, c, px + 18, 192, 72, 48);
+            text(g, w.leader[c], px + 104, 208, F_H3, Color.white);
+            text(g, w.ltitle[c], px + 104, 226, F_XS, C_DIM);
+            text(g, ALIGN[CT_ALIGN[c]] + (CT_NUKE[c] ? ", nuclear-armed" : "") + ", " + REGION[CT_REGION[c]].toLowerCase(), px + 104, 242, F_T, CT_ALIGN[c] == AL_ADVERSARY ? C_REP_L : CT_ALIGN[c] == AL_TREATY ? C_GOOD : C_TEXT);
+            text(g, "Relations", px + 18, 272, F_XS, C_TEXT);
+            g.setColor(new Color(255, 255, 255, 25)); g.fill(new Rectangle2D.Double(px + 18, 280, pw - 76, 10));
+            double mid = px + 18 + (pw - 76) / 2;
+            g.setColor(WorldMap.relColor(w.rel[c]));
+            g.fill(new Rectangle2D.Double(Math.min(mid, mid + w.rel[c] / 100 * (pw - 76) / 2), 280, Math.abs(w.rel[c] / 100 * (pw - 76) / 2), 10));
+            textR(g, (w.rel[c] > 0 ? "+" : "") + Math.round(w.rel[c]), px + pw - 18, 290, F_SB, Color.white);
+            double y = 314;
+            text(g, "Trade with the US: $" + Math.round(CT_TRADE[c]) + " billion a year" + (CT_BAL[c] < -1 ? ", a $" + Math.round(-CT_BAL[c]) + "B deficit" : CT_BAL[c] > 1 ? ", a $" + Math.round(CT_BAL[c]) + "B surplus" : ""), px + 18, y, F_XS, C_TEXT); y += 18;
+            text(g, "Your tariff " + TARIFF_OPT[w.tariff[c]] + ", sanctions " + LEVEL[w.sanction[c]].toLowerCase() + ", aid " + LEVEL[w.aid[c]].toLowerCase(), px + 18, y, F_XS, C_TEXT); y += 18;
+            if (w.visits[c] > 0) { text(g, "Visits: " + w.visits[c], px + 18, y, F_XS, C_DIM); y += 18; }
+            if (w.visitAt[c] >= 0) { text(g, "Coming to the White House around " + dateStr(w.visitAt[c] * 7), px + 18, y, F_XS, C_GOLD); y += 18; }
+            if (w.summitCountry == c) { text(g, "Summit planned around " + dateStr(w.summitWeek * 7), px + 18, y, F_XS, C_GOLD); y += 18; }
+            y += 6;
+            final int cc = c;
+            int calls = w.callWeek == game.week ? 3 - w.callsThisWeek : 3;
+            u.button(g, px + 18, y, pw - 36, 30, "Call " + w.leader[c] + " (" + calls + " calls left this week)", calls > 0 ? B_NORM : B_OFF, calls > 0 ? () -> msg = Diplo.call(game, cc) : null, "A phone call warms relations a little. Calls in quick succession do less.");
+            y += 36;
+            u.button(g, px + 18, y, pw - 36, 30, "Invite to the White House", w.visitAt[c] < 0 ? B_NORM : B_OFF, w.visitAt[c] < 0 ? () -> msg = Diplo.invite(game, cc) : null, "A state visit in a few weeks. A bigger boost than a call.");
+            y += 36;
+            u.button(g, px + 18, y, pw - 36, 30, "Propose a summit", w.summitCountry < 0 ? B_PRIMARY : B_OFF, w.summitCountry < 0 ? () -> msg = Diplo.proposeSummit(game, cc) : null, "A face-to-face negotiation in three rounds: the opening, the ask and the give.");
+            y += 46;
+            // every country, by region
+            label(g, "All countries", px + 18, y, C_GOLD);
+            double top = y + 10, hh = 800 - top;
+            double off = u.beginScroll(g, "ctlist", px + 10, top, pw - 20, hh);
+            int h0 = u.hits.size();
+            int row = 0;
+            for (int rg = 0; rg < REGION.length; rg++) for (int k = 0; k < NC; k++) {
+                if (CT_REGION[k] != rg) continue;
+                double ry = top - off + row * 24;
+                final int kk = k;
+                u.card(g, px + 14, ry, pw - 28, 22, k == sel, () -> sel = kk, w.leader[k]);
+                Flag.draw(g, k, px + 20, ry + 4, 21, 14);
+                text(g, CT_NAME[k], px + 48, ry + 16, F_XS, Color.white);
+                textR(g, (w.rel[k] > 0 ? "+" : "") + Math.round(w.rel[k]), px + pw - 22, ry + 16, F_XSB, WorldMap.relColor(w.rel[k]).brighter());
+                row++;
+            }
+            u.clipHits(h0, top, top + hh);
+            u.endScroll(g, "ctlist", row * 24);
+        }
+
+        // ---- the hot spots ----
+        static void hot(ResoluteDesk u, Graphics2D g, Game game) {
+            World w = game.world;
+            double cw = (DW - 96 - 24) / 3.0, ch = 316;
+            String[] title = {"Taiwan and China", "Russia and Ukraine", "The Middle East", "The Korean Peninsula", "Terrorism and cyber", "The Western Hemisphere"};
+            for (int i = 0; i < 6; i++) {
+                double x = 48 + (i % 3) * (cw + 12), y = 160 + (i / 3) * (ch + 12);
+                u.panel(g, x, y, cw, ch, title[i]);
+                double gx = x + 18, gy = y + 66, gw = cw - 36;
+                switch (i) {
+                    case 0:
+                        text(g, TW_STAGE[w.twStage], gx, y + 46, F_H3, w.twStage >= 3 ? C_BAD : w.twStage == 2 ? C_AMBER : C_GOOD);
+                        gauge(g, "Tension", w.twt, true, gx, gy, gw); gauge(g, "Deterrence", w.deter, false, gx, gy + 34, gw);
+                        wrap(g, "Deterrence rises with forces in the Pacific, arms for Taiwan and strong alliances. Tension rises when deterrence slips and relations with Beijing sour.", gx, gy + 84, gw, F_T, C_DIM);
+                        break;
+                    case 1:
+                        text(g, UA_STAGE[w.uaStage], gx, y + 46, F_H3, w.uaStage == 2 ? C_AMBER : C_GOOD);
+                        gauge(g, "Ukraine's strength", w.ukr, false, gx, gy, gw); gauge(g, "Russian gains", w.ruGain, true, gx, gy + 34, gw); gauge(g, "Progress toward talks", w.talks, false, gx, gy + 68, gw);
+                        wrap(g, "Aid keeps Ukraine in the fight; summits and calls move the talks. A ceasefire comes when the talks are far enough along.", gx, gy + 116, gw, F_T, C_DIM);
+                        break;
+                    case 2:
+                        gauge(g, "Gaza fighting", w.gaza, true, gx, y + 46, gw); gauge(g, "Iran's nuclear program", w.iran, true, gx, y + 80, gw);
+                        gauge(g, "Red Sea attacks", w.redsea, true, gx, y + 114, gw); gauge(g, "Attacks on US troops", w.proxy, true, gx, y + 148, gw);
+                        wrap(g, "At 100, Iran has a bomb. Red Sea attacks raise oil prices.", gx, y + 196, gw, F_T, C_DIM);
+                        break;
+                    case 3:
+                        gauge(g, "North Korean provocations", w.nk, true, gx, y + 46, gw);
+                        wrap(g, "Missile tests, and the risk of a nuclear test. Joint drills with Seoul and Tokyo deter; talks can freeze testing.", gx, y + 96, gw, F_T, C_DIM);
+                        break;
+                    case 4:
+                        gauge(g, "Terror threat", w.terror, true, gx, y + 46, gw); gauge(g, "Cyber threat", w.cyber, true, gx, y + 80, gw);
+                        wrap(g, "Strong intelligence chiefs and a ready Homeland Security department keep plots from becoming attacks.", gx, y + 128, gw, F_T, C_DIM);
+                        break;
+                    default:
+                        gauge(g, "Migration pressure", w.migr, true, gx, y + 46, gw); gauge(g, "Cartel violence", w.cartel, true, gx, y + 80, gw);
+                        wrap(g, "Relations with Mexico matter most at the border.", gx, y + 128, gw, F_T, C_DIM);
+                        break;
+                }
+            }
+        }
+
+        // ---- operations and covert action ----
+        static void ops(ResoluteDesk u, Graphics2D g, Game game) {
+            World w = game.world;
+            u.panel(g, 48, 160, 700, 652, "Military operations");
+            double y = 194;
+            for (int i = 0; i < OP_NAME.length; i++) {
+                final int k = i;
+                boolean ok = Diplo.opReady(game, i);
+                u.card(g, 62, y, 672, 52, selOp == i, () -> selOp = k, OP_DESC[i]);
+                text(g, OP_NAME[i], 76, y + 22, F_SB, ok ? Color.white : C_DIM);
+                textFit(g, OP_DESC[i], 76, y + 40, 470, F_T, C_DIM);
+                textR(g, ok ? Math.round(Diplo.opOdds(game, i) * 100) + "% to succeed" : w.opCool[i] > 0 ? "forces resetting" : "no target", 650, y + 22, F_XS, ok ? C_TEXT : C_DIM);
+                final boolean go = ok;
+                u.button(g, 664, y + 12, 60, 28, "Order", go ? B_GOLD : B_OFF, go ? () -> msg = Diplo.order(game, k) : null, "Defense readiness " + Math.round(game.ex.ready[P_DEF]) + ". Failure can cost American lives.");
+                y += 58;
+            }
+            text(g, "Operations so far: " + w.ops + ".  Americans killed in action: " + w.kia + ".", 66, 800, F_XS, C_DIM);
+            double px = 762, pw = DW - 48 - px;
+            u.panel(g, px, 160, pw, 652, "Covert action");
+            wrap(g, "Covert programs need a presidential finding and are briefed to eight members of Congress. If one leaks, it becomes a scandal and an incident.", px + 18, 196, pw - 36, F_XS, C_DIM);
+            double yy = 232;
+            for (int i = 0; i < CV_NAME.length; i++) {
+                final int k = i;
+                boolean ok = w.cvCool[i] == 0;
+                u.card(g, px + 14, yy, pw - 28, 72, false, null, CV_DESC[i]);
+                text(g, CV_NAME[i], px + 28, yy + 22, F_SB, ok ? Color.white : C_DIM);
+                textFit(g, CV_DESC[i], px + 28, yy + 40, pw - 200, F_T, C_DIM);
+                text(g, Math.round(Diplo.cvOdds(game, i) * 100) + "% to work, " + Math.round(CV_EXPOSE[i] * (1.3 - Cabinet.pq(game, P_CIA) * 0.6) * 100) + "% to leak", px + 28, yy + 58, F_T, C_TEXT);
+                u.button(g, px + pw - 160, yy + 22, 130, 28, ok ? "Sign the finding" : "Under way", ok ? B_NORM : B_OFF, ok ? () -> msg = Diplo.covert(game, k) : null);
+                yy += 80;
+            }
+            text(g, "Programs: " + w.covert + ", exposed: " + w.exposed, px + 18, 800, F_XS, C_DIM);
+        }
+
+        // ---- trade and sanctions ----
+        static void trade(ResoluteDesk u, Graphics2D g, Game game) {
+            World w = game.world;
+            u.panel(g, 48, 160, DW - 96, 652, "Trade, sanctions and aid");
+            text(g, "Country", 66, 196, F_TB, C_FAINT); text(g, "Trade", 290, 196, F_TB, C_FAINT); text(g, "Balance", 370, 196, F_TB, C_FAINT);
+            text(g, "Your tariff", 470, 196, F_TB, C_FAINT); text(g, "Sanctions", 830, 196, F_TB, C_FAINT); text(g, "Aid", 1190, 196, F_TB, C_FAINT);
+            textR(g, "Average tariff on imports: " + fmt1(game.econ.tariff) + "%", DW - 66, 196, F_XSB, C_GOLD);
+            Integer[] order = new Integer[NC];
+            for (int i = 0; i < NC; i++) order[i] = i;
+            Arrays.sort(order, (a, b) -> Double.compare(CT_TRADE[b], CT_TRADE[a]));
+            double top = 206, hh = 594;
+            double off = u.beginScroll(g, "trade", 58, top, DW - 116, hh);
+            int h0 = u.hits.size();
+            for (int n = 0; n < NC; n++) {
+                int c = order[n];
+                final int cc = c;
+                double ry = top - off + n * 34;
+                Flag.draw(g, c, 66, ry + 8, 24, 16);
+                text(g, CT_NAME[c], 98, ry + 21, F_XS, Color.white);
+                text(g, "$" + Math.round(CT_TRADE[c]) + "B", 290, ry + 21, F_XS, C_TEXT);
+                text(g, CT_BAL[c] >= 0 ? "+" + Math.round(CT_BAL[c]) : String.valueOf(Math.round(CT_BAL[c])), 370, ry + 21, F_XS, CT_BAL[c] < -20 ? C_AMBER : C_DIM);
+                u.segmented(g, 470, ry + 4, 330, 24, TARIFF_OPT, w.tariff[c], i -> { if (i != w.tariff[cc]) Diplo.setTariff(game, cc, i); }, null);
+                u.segmented(g, 830, ry + 4, 330, 24, LEVEL, w.sanction[c], i -> { if (i != w.sanction[cc]) Diplo.setSanction(game, cc, i); }, null);
+                u.segmented(g, 1190, ry + 4, 330, 24, LEVEL, w.aid[c], i -> { if (i != w.aid[cc]) Diplo.setAid(game, cc, i); }, null);
+            }
+            u.clipHits(h0, top, top + hh);
+            u.endScroll(g, "trade", NC * 34);
+        }
+
+        // ---- alliances and posture ----
+        static void alliances(ResoluteDesk u, Graphics2D g, Game game) {
+            World w = game.world;
+            double cw = 480;
+            u.panel(g, 48, 160, cw, 316, "NATO");
+            gauge(g, "Cohesion", w.nato, false, 66, 206, cw - 36);
+            text(g, "Allies spend about " + fmt1(w.allySpend) + "% of GDP on defense", 66, 252, F_XS, C_TEXT);
+            boolean a5 = game.capital >= 3 && game.week - w.art5Week >= 13, pr = game.week - w.pressWeek >= 13, dr = game.week - w.drillWeek >= 13;
+            u.button(g, 66, 276, cw - 36, 32, "Reaffirm Article 5 (3 capital)", a5 ? B_NORM : B_OFF, a5 ? () -> { w.art5Week = game.week; game.capital -= 3; w.nato = Math.min(100, w.nato + 6); for (int c = 0; c < NC; c++) if (CT_ALIGN[c] == AL_TREATY && CT_REGION[c] == RG_EUROPE) w.rel[c] += 2; msg = "You reaffirm the commitment to defend every ally."; } : null);
+            u.button(g, 66, 316, cw - 36, 32, "Press allies to spend more", pr ? B_NORM : B_OFF, pr ? () -> { w.pressWeek = game.week; w.allySpend += 0.1; w.nato = Math.max(0, w.nato - 4); msg = "Allies grumble, then pledge more."; } : null);
+            text(g, "Each of these works once a quarter.", 66, 368, F_T, C_DIM);
+            u.panel(g, 48, 486, cw, 326, "Asia-Pacific alliances");
+            gauge(g, "Cohesion", w.pacific, false, 66, 532, cw - 36);
+            gauge(g, "Deterrence in the Taiwan Strait", w.deter, false, 66, 570, cw - 36);
+            u.button(g, 66, 610, cw - 36, 32, "Joint exercises with Japan, Korea and Australia", dr ? B_NORM : B_OFF, dr ? () -> { w.drillWeek = game.week; w.pacific = Math.min(100, w.pacific + 4); w.rel[CC_CN] -= 3; w.rel[CC_KP] -= 3; w.nk = Math.min(100, w.nk + 3); msg = "The exercises reassure allies and irritate Beijing and Pyongyang."; } : null);
+            double px = 48 + cw + 14, pw = 520;
+            u.panel(g, px, 160, pw, 652, "Force posture");
+            double y = 204;
+            for (int a = 0; a < 3; a++) {
+                final int aa = a;
+                text(g, POSTURE_AREA[a], px + 18, y, F_H3, Color.white);
+                u.segmented(g, px + 18, y + 10, pw - 36, 28, POSTURE, w.posture[a], i -> { if (i != w.posture[aa]) Diplo.setPosture(game, aa, i); }, null);
+                y += 70;
+            }
+            wrap(g, "More forces deter rivals and reassure allies, but they cost money, wear down the Pentagon's readiness and anger the countries they're aimed at.", px + 18, y, pw - 36, F_XS, C_DIM);
+            y += 60;
+            text(g, "Pentagon readiness: " + Math.round(game.ex.ready[P_DEF]), px + 18, y, F_S, WestWing.good(game.ex.ready[P_DEF]));
+            double rx = px + pw + 14, rw = DW - 48 - rx;
+            u.panel(g, rx, 160, rw, 652, "The record");
+            double yy = 200;
+            String[] rec = {"Agreements reached: " + w.deals, "Crises handled: " + w.crises, "Military operations: " + w.ops, "Covert programs: " + w.covert + " (" + w.exposed + " exposed)", "Americans killed in action: " + w.kia};
+            for (String s : rec) { text(g, s, rx + 18, yy, F_S, C_TEXT); yy += 22; }
+            yy += 10;
+            for (int i = w.record.size() - 1; i >= 0 && yy < 790; i--) { yy += wrap(g, w.record.get(i), rx + 18, yy, rw - 36, F_XS, C_GOLD) + 6; }
         }
     }
     // =====================================================================
@@ -9814,6 +11148,11 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                     .append(" readiness ").append(fmt0(rd)).append(" failures ").append(x.failures).append(" actions ").append(x.actions.size()).append(" live ").append(live).append(" blocked ").append(blocked).append(" struck ").append(struck)
                     .append(" cases ").append(x.cases.size()).append(" judges ").append(x.judges).append(" justices ").append(x.justices).append(" court R ").append(Courts.count(g, REP)).append("-D ").append(Courts.count(g, DEM))
                     .append(" scandals ").append(scs).append(" pardons ").append(x.pardons).append(" probes ").append(x.probes.size()).append(" impeach ").append(x.impeachments).append(" removed ").append(g.removed).append("\n");
+            World wd = g.world;
+            b.append("  world: taiwan ").append(TW_STAGE[wd.twStage]).append(" (t").append(fmt0(wd.twt)).append(" d").append(fmt0(wd.deter)).append(") ukraine ").append(UA_STAGE[wd.uaStage]).append(" (s").append(fmt0(wd.ukr)).append(" talks ").append(fmt0(wd.talks))
+                    .append(") gaza ").append(fmt0(wd.gaza)).append(" iran ").append(fmt0(wd.iran)).append(" redsea ").append(fmt0(wd.redsea)).append(" nk ").append(fmt0(wd.nk)).append(" terror ").append(fmt0(wd.terror))
+                    .append(" crises ").append(wd.crises).append(" deals ").append(wd.deals).append(" kia ").append(wd.kia).append(" nato ").append(fmt0(wd.nato)).append(" pacific ").append(fmt0(wd.pacific))
+                    .append(" relCN ").append(fmt0(wd.rel[CC_CN])).append(" relRU ").append(fmt0(wd.rel[CC_RU])).append(" oil ").append(fmt0(g.econ.oil)).append(" ").append(wd.leader[CC_GB]).append("\n");
             b.append("  news ").append(g.news.size()).append(", last: ").append(g.news.isEmpty() ? "" : g.news.get(g.news.size() - 1).head);
             System.out.println(b);
         }
@@ -9835,6 +11174,21 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             System.out.println(b);
         }
 
+        static final String[] FX_KEYS = {"twt", "deter", "twstage", "ua", "defcon", "ukr", "talks", "gaza", "iran", "redsea", "proxy", "nk", "terror", "cyber", "migr", "cartel", "nato", "pacific",
+                "perf", "rally", "for", "sec", "imm", "crime", "oil", "fin", "def", "stress", "tcn", "kia"};
+
+        static void checkFx(String fx) {
+            for (String tok : fx.split(" ")) {
+                if (tok.isEmpty()) continue;
+                String[] kv = tok.split("=");
+                if (kv.length != 2) { System.out.println("BAD FX " + tok); continue; }
+                Double.parseDouble(kv[1]);
+                boolean ok = kv[0].startsWith("rel:") && ctIdx(kv[0].substring(4)) >= 0;
+                for (String k : FX_KEYS) if (k.equals(kv[0])) ok = true;
+                if (!ok) System.out.println("UNKNOWN FX KEY " + kv[0]);
+            }
+        }
+
         /** Every parallel data table must line up. */
         static void check() {
             int n = AD_ID.length;
@@ -9849,7 +11203,19 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             if (DG_NAME.length != NDG || DG_DESC.length != NDG || DG_ROLE.length != NDG) System.out.println("DELEGATION TABLES DON'T MATCH");
             if (ADV_LABEL.length != ADV_WHO.length) System.out.println("ADVISER TABLES DON'T MATCH");
             for (String fx : AD_FX) for (String t : fx.split(" ")) if (!t.isEmpty() && t.split("=").length != 2) System.out.println("BAD EFFECT " + t);
-            System.out.println("check done: " + n + " actions");
+            double[][] ct = {CT_REL, CT_POWER, CT_TRADE, CT_BAL, CT_LX, CT_LY};
+            for (int i = 0; i < ct.length; i++) if (ct[i].length != NC) System.out.println("COUNTRY TABLE " + i + " has " + ct[i].length);
+            if (CT_NAME.length != NC || CT_REGION.length != NC || LEADER25.length != NC || LEADER29.length != NC || CT_ALIGN.length != NC || CT_NUKE.length != NC || CT_FLAG.length != NC) System.out.println("COUNTRY TABLES DON'T MATCH");
+            int nc = CR_ID.length;
+            if (CR_COND.length != nc || CR_COOL.length != nc || CR_TITLE.length != nc || CR_BODY.length != nc || CR_OPTS.length != nc) System.out.println("CRISIS TABLES DON'T MATCH");
+            for (int i = 0; i < nc; i++) for (String o : CR_OPTS[i].split(";;")) { String[] t = o.split("\\|"); if (t.length != 8) System.out.println("CRISIS " + CR_ID[i] + " option has " + t.length + " parts: " + o.substring(0, Math.min(40, o.length()))); else { checkFx(t[4]); checkFx(t[5]); Double.parseDouble(t[3]); } }
+            if (OP_DESC.length != OP_NAME.length || OP_COND.length != OP_NAME.length || OP_FX.length != OP_NAME.length) System.out.println("OP TABLES DON'T MATCH");
+            for (String o : OP_FX) { String[] t = o.split("\\|"); if (t.length != 3) System.out.println("BAD OP " + o); else { checkFx(t[1]); checkFx(t[2]); } }
+            if (CV_DESC.length != CV_NAME.length || CV_ODDS.length != CV_NAME.length || CV_EXPOSE.length != CV_NAME.length || CV_FX.length != CV_NAME.length || CV_EXPFX.length != CV_NAME.length) System.out.println("COVERT TABLES DON'T MATCH");
+            for (String f : CV_FX) checkFx(f); for (String f : CV_EXPFX) checkFx(f);
+            for (String ch : CHANGES25) if (ctIdx(ch.split("\\|")[0]) < 0) System.out.println("BAD CHANGE " + ch);
+            for (String f : CT_FLAG) for (String part : f.split("\\|")) for (String hx : part.substring(2).split(",")) if (hx.length() == 6) Integer.parseInt(hx, 16);
+            System.out.println("check done: " + n + " actions, " + nc + " crises");
         }
 
         static void whip(int year, String pres, int scen) {
@@ -9922,6 +11288,16 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             // every kind of calendar slot draws
             for (int i = 0; i < NSLOT; i++) { g.act[i] = i % NAC; g.arg[i] = AC_ISSUE[i % NAC] ? 0 : AC_STATE[i % NAC] ? 5 : -1; }
             Rooms.open(u, R_DESK); shot(u, dir, "desk_all_kinds");
+            // the Situation Room
+            Week.routine(g);
+            g.world.twStage = 2; g.world.redsea = 70;
+            Rooms.open(u, R_SITROOM);
+            for (int t = 0; t < SitRoom.TABS.length; t++) { SitRoom.tab = t; SitRoom.sel = t == 0 ? CC_CN : SitRoom.sel; shot(u, dir, "sit_" + t); }
+            SitRoom.tab = 0; SitRoom.sel = CC_DK; shot(u, dir, "sit_denmark");
+            g.world.cool[0] = 0; g.world.twt = 70; Diplo.crises(g); Decisions.show(u, g); shot(u, dir, "decision_crisis");
+            u.modal = null; g.inbox.clear();
+            g.world.summitCountry = CC_CN; g.world.summitWeek = g.week; Summit.start(g); Decisions.show(u, g); shot(u, dir, "decision_summit");
+            u.modal = null; g.inbox.clear();
         }
     }
 }

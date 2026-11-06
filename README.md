@@ -16,7 +16,7 @@ The game autosaves every week. Use **Continue** on the title screen to pick up w
 
 ## What's in it so far
 
-This is the third of six planned updates. The first covered the core of the job: your time, your health, the economy and public opinion. The second added Congress and the budget. The third adds the executive branch.
+This is the fourth of six planned updates. The first covered the core of the job: your time, your health, the economy and public opinion. The second added Congress and the budget, the third the executive branch, and the fourth the world.
 
 - **When you take office:**
   - **2025**, the real present. Donald Trump, or anyone else as a what-if.
@@ -142,19 +142,44 @@ Open the West Wing from the Oval Office, or press 5.
   - Clemency requests arrive every few months.
   - Enough impeachable trouble with the other party running the House brings an inquiry, an impeachment vote and a Senate trial. It takes two-thirds of the Senate to remove you.
 
+### The world (update 4)
+
+Open the Situation Room from the Oval Office, or press 7.
+
+- **Forty countries** on a world map, each colored by its relationship with Washington.
+  - In 2025 they're led by the real leaders of January 20, 2025, and the real handovers that followed happen on schedule: Carney, Merz, Lee Jae-myung, Takaichi, Magyar, al-Zaidi and Burnham.
+  - The 2029 era projects today's leaders forward. Where a leader will be term-limited by then, the successor is fictional.
+  - Each country has an alignment (treaty ally, partner, neutral or adversary), its weight in the world, real 2024 trade figures, and whether it has nuclear weapons.
+- **Diplomacy:**
+  - Make up to three calls a week, invite leaders for state visits, and travel abroad on Air Force One. Trips go on your calendar, with real flight times and jet lag.
+  - Hold summits played in three rounds: the opening, the ask (a trade deal, a ceasefire, an arms treaty, limits on Iran and more) and what you give in return.
+  - The G7, NATO, the UN General Assembly and the G20 come around every year.
+- **Trade, sanctions and aid by country:** tariffs from 0 to 50%, sanctions and aid at four levels.
+  - Tariffs feed the economy's tariff rate and invite retaliation against farmers.
+  - Sanctions on oil producers move the price of oil.
+- **Six hot spots that evolve every week:**
+  - Taiwan, from calm to drills, a quarantine, a blockade and war.
+  - Russia and Ukraine: the front, Ukraine's strength and the progress of talks toward a ceasefire and a peace.
+  - The Middle East: Gaza, Iran's nuclear program, Red Sea shipping and attacks on US troops.
+  - The Korean peninsula.
+  - Terrorism and cyberattacks.
+  - The border and the cartels.
+- **Twenty crises** grow out of the hot spots. Each comes with options from your national security team, their odds, and success or failure that plays out.
+  - The odds depend on your president's foreign-policy experience, the Pentagon's readiness, and the skill of your secretary of state, defense secretary and intelligence chiefs.
+- **The Situation Room:**
+  - Ten military operations and seven covert programs. A covert program needs a presidential finding, and a leaked one becomes a scandal.
+  - Force posture in the Pacific, Europe and the Middle East.
+  - NATO and Asia-Pacific alliance cohesion, deterrence in the Taiwan Strait, and DEFCON.
+- **The world feeds back:** oil prices, supply chains and markets, your standing on foreign policy, national security and immigration, and American casualties.
+
 ## Coming next
 
-1. **The world:**
-   - About 40 countries and their leaders.
-   - Calls, summits, treaties, aid and sanctions.
-   - The Situation Room and covert action.
-   - Alliances, plus China and Taiwan, Russia and Europe, and the Middle East.
-2. **Crises, the press and public life:**
+1. **Crises, the press and public life:**
    - The President's Daily Brief.
    - Disasters and pandemics, plus AI, immigration, protests and the hot-button issues.
    - Speeches, the State of the Union, press conferences, interviews and social media.
    - Party factions and an opposition with plans of its own.
-3. **History and the verdict:**
+2. **History and the verdict:**
    - Every inauguration from 1933 on.
    - A playable re-election campaign and a second term.
    - The epilogue, historians' ranking and your presidential library.
@@ -175,11 +200,15 @@ Open the West Wing from the Oval Office, or press 5.
 | ![The staff](screenshots/the-staff.png) | ![The cabinet](screenshots/the-cabinet.png) |
 | ![Orders and rules](screenshots/orders-and-rules.png) | ![The courts](screenshots/the-courts.png) |
 | ![The vice president](screenshots/the-vice-president.png) | ![A scandal](screenshots/a-scandal.png) |
+| ![The world](screenshots/the-world.png) | ![Hot spots](screenshots/hot-spots.png) |
+| ![Operations](screenshots/operations.png) | ![Trade and sanctions](screenshots/trade-and-sanctions.png) |
+| ![A crisis](screenshots/a-crisis.png) | ![A summit](screenshots/a-summit.png) |
 
 ## Notes
 
 - Real people appear as stylised characters. Their ratings are the game's estimates from public records, not facts, and the game never quotes them.
 - Only fictional officials are ever caught up in personal misconduct. Real justices only ever retire.
 - Everything that happens in a game is fiction.
-- The 2029 era is a projection from the world of Battleground 2028, not a forecast.
+- The 2029 era is a projection from the world of Battleground 2028, not a forecast. Its foreign leaders are today's, carried forward; the three marked as fictional successors (in France, Cuba and the Philippines) are invented.
+- Country outlines are from Natural Earth via the world-atlas package. Flags are stylised.
 - The browser version is generated from the Java source, so the two play the same game.
