@@ -1676,9 +1676,9 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     static final int NSLOT = 21;
     static final String[] SLOT = {"Morning", "Afternoon", "Evening"};
     static final int AC_FREE = 0, AC_REST = 1, AC_EXERCISE = 2, AC_FAMILY = 3, AC_POLICY = 4, AC_REMARKS = 5, AC_TRIP = 6, AC_FUNDRAISER = 7,
-            AC_CEREMONY = 8, AC_CONGRESS = 9, AC_CAMPDAVID = 10, AC_WORKLATE = 11, AC_TRAVEL = 12, AC_CAMPAIGN = 13, NAC = 14;
+            AC_CEREMONY = 8, AC_CONGRESS = 9, AC_CAMPDAVID = 10, AC_WORKLATE = 11, AC_TRAVEL = 12, AC_CAMPAIGN = 13, AC_CABINET = 14, NAC = 15;
     static final String[] AC_NAME = {"Open time", "Rest", "Exercise", "Family time", "Policy time", "White House remarks", "Trip", "Fundraiser",
-            "Ceremony", "Hill meetings", "Camp David", "Work late", "Travel", "Campaign stop"};
+            "Ceremony", "Hill meetings", "Camp David", "Work late", "Travel", "Campaign stop", "Cabinet meeting"};
     static final String[] AC_DESC = {
             "Nothing scheduled. Staff fill it with calls and paperwork.",
             "Sleep in or nap. Restores stamina and lowers stress.",
@@ -1693,17 +1693,18 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             "A weekend at Camp David. Big stamina boost, but bad optics in a crisis.",
             "Stay at your desk into the night. Gets work done but costs sleep.",
             "In the air.",
-            "Rally for your party's candidates in a state. Only in the weeks before the midterms."};
-    static final double[] AC_STAMINA = {0, 6, 2.5, 3, -2.5, -3, -5, -3.5, -1.5, -3, 8, -4.5, -2, -5};
-    static final double[] AC_STRESS = {0, -1.2, -1.2, -1.8, 0.6, 0.6, 0.8, 0.6, -0.3, 0.8, -2.5, 1.5, 0.5, 0.8};
+            "Rally for your party's candidates in a state. Only in the weeks before the midterms.",
+            "Meet the whole cabinet. Lifts their morale and their departments' readiness."};
+    static final double[] AC_STAMINA = {0, 6, 2.5, 3, -2.5, -3, -5, -3.5, -1.5, -3, 8, -4.5, -2, -5, -2};
+    static final double[] AC_STRESS = {0, -1.2, -1.2, -1.8, 0.6, 0.6, 0.8, 0.6, -0.3, 0.8, -2.5, 1.5, 0.5, 0.8, 0.3};
     static boolean TRACE;                   // the test harness prints every headline
 
     static final String[] PARTIES = {"Democrats", "Republicans", "Greens", "Libertarians", "Forward", "America Party", "Independents", "Your party"};
 
     static boolean isTrip(int a) { return a == AC_TRIP || a == AC_CAMPAIGN; }
 
-    static final boolean[] AC_ISSUE = {false, false, false, false, true, true, false, false, false, false, false, false, false, false};
-    static final boolean[] AC_STATE = {false, false, false, false, false, false, true, false, false, false, false, false, false, true};
+    static final boolean[] AC_ISSUE = {false, false, false, false, true, true, false, false, false, false, false, false, false, false, false};
+    static final boolean[] AC_STATE = {false, false, false, false, false, false, true, false, false, false, false, false, false, true, false};
 
     // ---- the issues voters judge a president on -----------------------------------------------------------
     static final int PI_ECON = 0, PI_PRICES = 1, PI_JOBS = 2, PI_HEALTH = 3, PI_IMMIG = 4, PI_CRIME = 5, PI_FOREIGN = 6, PI_SECURITY = 7,
@@ -1786,6 +1787,8 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         int houseD, senateD;                // seats held by Democrats (and the independents who caucus with them)
         Econ econ = new Econ();
         Congress cong;
+        Exec ex;
+        boolean removed;                    // convicted by the Senate
         double capital = 30;                // political capital: spent on deals, earned by approval and wins
         List<Decision> inbox = new ArrayList<Decision>();
         boolean filibusterGone;
@@ -2616,12 +2619,12 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 g.stress = clamp(g.stress + AC_STRESS[a], 0, 100);
                 switch (a) {
                     case AC_POLICY:
-                        if (arg >= 0) { g.command[arg] = Math.min(100, g.command[arg] + 5 * (1 - g.command[arg] / 110)); g.issueAdj[arg] = Math.min(1.5, g.issueAdj[arg] + 0.02 * (1 - g.issueAdj[arg] / 1.5)); }
+                        if (arg >= 0) { double dq = 0.85 + 0.3 * Cabinet.sq(g, S_DPC); g.command[arg] = Math.min(100, g.command[arg] + 5 * dq * (1 - g.command[arg] / 110)); g.issueAdj[arg] = Math.min(1.5, g.issueAdj[arg] + 0.02 * dq * (1 - g.issueAdj[arg] / 1.5)); }
                         break;
                     case AC_REMARKS:
                         if (arg >= 0) {
                             g.issueSal[arg] = Math.min(2, g.issueSal[arg] + 0.08);
-                            g.issueAdj[arg] = clamp(g.issueAdj[arg] + (0.04 * speech / 70) * (1 - Math.abs(g.issueAdj[arg]) / 1.5) + r.nextGaussian() * 0.02, -1.5, 1.5);
+                            g.issueAdj[arg] = clamp(g.issueAdj[arg] + (0.04 * speech / 70) * (0.85 + 0.3 * Cabinet.sq(g, S_COMMS)) * (1 - Math.abs(g.issueAdj[arg]) / 1.5) + r.nextGaussian() * 0.02, -1.5, 1.5);
                             g.perf += 0.012;
                         }
                         break;
@@ -2636,7 +2639,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                         break;
                     case AC_FUNDRAISER:
                         funds++;
-                        double raised = (1.5 + r.nextDouble() * 2) * (p != null ? p.a[A_BIG] : 60) / 70;
+                        double raised = (1.5 + r.nextDouble() * 2) * (p != null ? p.a[A_BIG] : 60) / 70 * (0.85 + 0.3 * Cabinet.sq(g, S_POL));
                         g.funds += raised;
                         break;
                     case AC_CEREMONY: g.perf += 0.012; break;
@@ -2644,6 +2647,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                     case AC_FAMILY: g.perf += 0.004; break;
                     case AC_EXERCISE: g.fitness = Math.min(100, g.fitness + 1.2); break;
                     case AC_CAMPDAVID: campDavid++; break;
+                    case AC_CABINET: Cabinet.meeting(g); break;
                     case AC_CAMPAIGN: if (arg >= 0 && g.cong != null) { g.cong.campaign[arg] += cha / 70; g.stateBump[arg] += 0.8; g.location = arg; trips++; } break;
                     case AC_WORKLATE: { int t = topIssue(g); g.command[t] = Math.min(100, g.command[t] + 1.5); break; }
                     default: break;
@@ -2669,9 +2673,17 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 Midterms.week(g);
                 g.capital = clamp(g.capital + 0.6 + (g.approval - 45) * 0.05 + (g.honeymoon > 1 ? 0.5 : 0), 0, 100);
             }
+            if (g.ex != null) {
+                Cabinet.week(g);
+                Actions.week(g);
+                Courts.week(g);
+                Trouble.week(g);
+                g.issueAdj[PI_ECON] = clamp(g.issueAdj[PI_ECON] + 0.003 * (Cabinet.sq(g, S_NEC) - 0.6), -1.5, 1.5);
+            }
             record(g);
             g.week++;
             if (g.week >= g.termWeeks) g.over = true;
+            Delegate.plan(g);
             g.dirty = true;
         }
 
@@ -2833,12 +2845,15 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             g.fitness = 40 + (g.pres.a[A_STA] - 60) * 0.5;
             Economy.init(g);
             Hill.setup(g);
+            Cabinet.setup(g);
             Approval.init(g);
             Week.routine(g);
             Week.record(g);
             String vp = g.vp != null ? " " + g.vp.name() + " is sworn in as vice president." : "";
             g.log(NK_BIG, g.pres.name().toUpperCase() + " IS SWORN IN AS PRESIDENT",
                     g.pres.name() + " took the oath of office at noon on " + dateLong(0) + "." + vp + " " + PARTIES[g.party] + " hold " + g.myHouse() + " House seats and " + g.mySenate() + " Senate seats.", 5);
+            Decisions.info(g, "Your cabinet", "Your transition team has sent the Senate a full slate of nominees, and your White House staff starts today. "
+                    + "Until each nominee is confirmed, a career official runs the department. Review or change any of them in the West Wing (press 5).");
             g.log(NK_ECON, "The new president inherits unemployment of " + fmt1(g.econ.unemp) + "% and inflation of " + fmt1(g.econ.infl) + "%", null, 1.5);
             return g;
         }
@@ -3002,12 +3017,34 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             {"Mike Johnson", "M 1 2 2 0.1 0 1 0.95 0.5 0 1 0.45 0.6"}, {"Hakeem Jeffries", "M 6 0 0 0 0 1 1.0 0.55 0 0 0.45 0.5"},
             {"John Thune", "M 1 6 2 0.8 0 0 0.95 0.6 0 2 0.65 0.55"}, {"Chuck Schumer", "M 1 6 1 0.9 0 1 1.05 0.5 0 0 0.8 0.4"}};
 
+    /** Deliberate stylised looks for the real people in the 2025 government and on the Supreme Court. */
+    static final String[] REAL_LOOKS = {
+            "John Roberts|M 1 6 2 0.7 0 0 1.0 0.5 2 9 0.7 0.5", "Clarence Thomas|M 6 6 0 0.9 0 0 1.05 0.6 2 9 0.8 0.45", "Samuel Alito|M 1 6 1 0.8 0 1 1.0 0.5 2 9 0.75 0.4",
+            "Sonia Sotomayor|F 2 2 6 0.1 0 0 1.02 0.5 2 9 0.72 0.65 E", "Elena Kagan|F 1 6 6 0.5 0 0 1.05 0.5 2 9 0.65 0.6", "Neil Gorsuch|M 0 6 2 0.85 0 0 1.0 0.5 2 9 0.6 0.55",
+            "Brett Kavanaugh|M 1 2 2 0.3 0 0 1.0 0.5 2 9 0.6 0.55", "Amy Coney Barrett|F 0 1 7 0 0 0 0.98 0.45 2 9 0.5 0.6 E", "Ketanji Brown Jackson|F 6 0 7 0 0 0 1.0 0.5 2 9 0.55 0.7 E",
+            "Scott Bessent|M 0 7 2 0.95 0 0 1.0 0.5 0 2 0.6 0.5", "Pete Hegseth|M 1 3 2 0 0 0 1.0 0.55 0 1 0.4 0.6", "Pam Bondi|F 0 5 7 0 0 0 1.0 0.45 0 0 0.5 0.65 E L",
+            "Doug Burgum|M 1 6 4 0.8 0 0 1.0 0.5 0 0 0.65 0.5", "Brooke Rollins|F 0 3 7 0 0 0 0.98 0.45 0 0 0.45 0.7 E", "Howard Lutnick|M 1 6 1 0.7 0 1 1.0 0.5 2 2 0.6 0.55",
+            "Lori Chavez-DeRemer|F 1 1 7 0 0 0 1.0 0.45 0 1 0.5 0.7 E", "Scott Turner|M 6 0 0 0.1 0 0 1.0 0.55 0 1 0.5 0.65", "Sean Duffy|M 1 2 1 0 0 0 1.0 0.55 0 1 0.45 0.6",
+            "Chris Wright|M 1 6 2 0.6 0 0 1.0 0.5 0 0 0.6 0.55", "Linda McMahon|F 0 5 6 0.2 0 0 1.0 0.45 0 0 0.75 0.6 E", "Doug Collins|M 1 6 2 0.7 0 0 1.0 0.55 0 1 0.55 0.55",
+            "Kristi Noem|F 0 1 8 0 0 0 0.98 0.45 0 0 0.5 0.6 E L", "Lee Zeldin|M 1 1 2 0 0 0 1.0 0.5 0 0 0.45 0.6", "Russ Vought|M 1 2 2 0.2 0 1 1.0 0.5 0 2 0.5 0.5",
+            "Jamieson Greer|M 0 2 1 0 0 0 1.0 0.5 0 2 0.4 0.55", "Elise Stefanik|F 0 3 7 0 0 0 1.0 0.45 0 1 0.35 0.65 E", "Tulsi Gabbard|F 3 6 8 0.9 0 0 1.0 0.45 0 0 0.4 0.6 E",
+            "John Ratcliffe|M 1 1 2 0.3 0 0 1.0 0.5 0 2 0.55 0.55", "Susie Wiles|F 0 7 6 0.95 0 0 1.0 0.45 0 0 0.75 0.55 E", "Mike Waltz|M 1 6 2 0.5 0 0 1.0 0.5 0 1 0.5 0.55",
+            "Karoline Leavitt|F 0 5 7 0 0 0 0.96 0.42 0 1 0.25 0.7 E L", "David Warrington|M 1 2 2 0.2 0 1 1.0 0.5 0 2 0.5 0.5", "Kevin Hassett|M 1 6 4 0.6 0 1 1.05 0.5 0 0 0.6 0.55",
+            "Vince Haley|M 1 2 2 0.3 0 0 1.0 0.5 0 2 0.5 0.5", "James Braid|M 1 2 1 0.2 0 0 1.0 0.5 0 0 0.45 0.55", "James Blair|M 1 1 1 0 0 0 1.0 0.5 0 1 0.35 0.55",
+            "Steven Cheung|M 2 0 1 0 0 0 1.0 0.5 0 1 0.4 0.55"};
+
+    static String realLook(String name) {
+        for (String s : REAL_LOOKS) { int i = s.indexOf('|'); if (s.substring(0, i).equals(name)) return s.substring(i + 1); }
+        return null;
+    }
+
     static Cand face(String name, Random r, int party) {
         Cand c = new Cand();
         String[] p = name.split(" ", 2);
         c.first = p[0]; c.last = p.length > 1 ? p[1] : ""; c.party = party; c.id = "m_" + name.replace(' ', '_');
         Look l = null;
         for (String[] lk : LEADER_LOOKS) if (lk[0].equals(name)) l = Look.parse(lk[1]);
+        if (l == null && realLook(name) != null) l = Look.parse(realLook(name));
         if (l == null) l = Creator.randomLook(r);
         c.look = l;
         return c;
@@ -3113,7 +3150,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
 
         /** Relationships drift back toward where party and approval put them. */
         static void drift(Game g) {
-            double pull = (g.approval - 45) * 0.3;
+            double pull = (g.approval - 45) * 0.3 + (Cabinet.sq(g, S_LEG) - 0.55) * 12;
             for (Bloc b : g.cong.blocs) { double base = (b.party == g.party ? 55 : 35) + pull * (b.party == g.party ? 1 : 0.5); b.rel += (base - b.rel) * 0.02; }
             for (Member m : g.cong.members) { double base = (m.party == g.party ? 55 : 35) + pull * 0.5; m.rel += (base - m.rel) * 0.015; }
         }
@@ -3466,6 +3503,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             b.stage = ST_LAW;
             b.lawWeek = g.week;
             b.strength = b.size * (0.7 + 0.6 * b.scope) * (b.recon && b.scope > 0.6 ? 0.85 : 1);
+            if (Implement.roll(g, b.name, d.area, 1)) b.strength *= 0.75;
             g.cong.laws++;
             Econ e = g.econ;
             double pctGdp = b.netCost() / (e.nominalGdp * 10);
@@ -3549,6 +3587,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                     msg = "You call " + m.name + ".";
                     break;
             }
+            boost *= 0.8 + 0.4 * Cabinet.sq(g, S_LEG);
             if (m.role == RO_SWING || m.role == RO_CHAIR) {
                 // a named member moves their bloc a little and votes with you
                 b.sweet[m.bloc] += boost * (m.role == RO_CHAIR ? 0.35 : 0.22);
@@ -3886,7 +3925,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             Econ e = g.econ;
             double camp = 0;
             for (double v : g.cong.campaign) camp += v;
-            double mP = 0.5 * (g.approval - 50) - 2.5 + 0.4 * (e.gdp - 2) - 0.3 * (e.unemp - 4.5) + Math.min(1.5, g.funds / 40) + Math.min(1.0, camp * 0.05) + noise;
+            double mP = 0.5 * (g.approval - 50) - 2.5 + 0.4 * (e.gdp - 2) - 0.3 * (e.unemp - 4.5) + Math.min(1.5, g.funds / 40) + Math.min(1.0, camp * 0.05) + (Cabinet.sq(g, S_POL) - 0.55) * 1.5 + noise;
             return mP;
         }
 
@@ -3983,7 +4022,9 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     //  16.  DECISIONS
     //  Things only the president can decide land in the inbox. Each choice comes with what your advisers say.
     // =====================================================================
-    static final int D_SIGN = 1, D_CR = 2, D_SHUTDOWN = 3, D_DEBT = 4, D_BUDGET = 5, D_INFO = 6, D_MUSTPASS = 7;
+    static final int D_SIGN = 1, D_CR = 2, D_SHUTDOWN = 3, D_DEBT = 4, D_BUDGET = 5, D_INFO = 6, D_MUSTPASS = 7,
+            D_CRA = 8, D_EMERG_END = 9, D_COURT = 10, D_SCANDAL = 11, D_LEAK = 12, D_PARDON = 13, D_SUBPOENA = 14, D_IMPEACH = 15;
+
 
     static final class Decision implements Serializable {
         private static final long serialVersionUID = 1L;
@@ -3991,14 +4032,51 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         String title, body;
         String[] opts, advice;
         Bill bill;
+        Action action;
+        Case caseRef;
+        Scandal scandalRef;
+        Probe probeRef;
+        Person person;
+        int[] codes;
+        Person[] advisers;
     }
 
     static final class Decisions {
         static Decision add(Game g, int kind, String title, String body, String[] opts, String[] advice) {
             Decision d = new Decision();
             d.kind = kind; d.title = title; d.body = body; d.opts = opts; d.advice = advice;
+            name(g, d);
             g.inbox.add(d);
             return d;
+        }
+
+        /** Puts a name to each fictional adviser ("Chief of staff Dana Reyes:"). Real people keep the plain title: the game never quotes them. */
+        static void name(Game g, Decision d) {
+            if (d.advice == null || g.ex == null) return;
+            d.advisers = new Person[d.advice.length];
+            for (int i = 0; i < d.advice.length; i++) {
+                String s = d.advice[i];
+                int c = s.indexOf(": ");
+                if (c < 0) continue;
+                String lab = s.substring(0, c);
+                for (int j = 0; j < ADV_LABEL.length; j++) {
+                    if (!lab.equals(ADV_LABEL[j])) continue;
+                    Person p = ADV_WHO[j] >= 100 ? g.ex.post[ADV_WHO[j] - 100] : g.ex.staff[ADV_WHO[j]];
+                    if (p == null) continue;
+                    d.advisers[i] = p;
+                    if (!p.real) d.advice[i] = (j == 3 ? "White House counsel" : lab) + " " + p.name + s.substring(c);
+                }
+            }
+        }
+
+        /** The adviser whose option you took is pleased; the ones you overruled less so. */
+        static void heard(Game g, Decision d, int k) {
+            if (d.advisers == null) return;
+            for (int i = 0; i < d.advisers.length; i++) {
+                Person p = d.advisers[i];
+                if (p == null) continue;
+                p.morale = clamp(p.morale + (i == k ? 2.5 : -1.5), 0, 100);
+            }
         }
 
         static void info(Game g, String title, String body) { add(g, D_INFO, title, body, new String[]{"OK"}, null); }
@@ -4007,6 +4085,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         static void show(ResoluteDesk u, Game g) {
             if (g.inbox.isEmpty() || u.modal != null || u.popup != null) return;
             Decision d = g.inbox.remove(0);
+            if (d.kind == D_BUDGET && g.ex != null && g.ex.deleg[DG_BUDGET]) { apply(g, d, 0); u.toast("Your budget director sent your budget to Congress.", C_ACCENT); return; }
             Runnable[] acts = new Runnable[d.opts.length];
             for (int i = 0; i < d.opts.length; i++) { final int k = i; acts[i] = () -> { apply(g, d, k); g.dirty = true; }; }
             Modal m = new Modal();
@@ -4031,6 +4110,13 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 case D_CR: return g.rng.nextDouble() < 0.6 ? 0 : 1;
                 case D_SHUTDOWN: return g.cong.shutdownWeeks >= 2 || g.cong.blame > 0.5 ? 1 : 0;
                 case D_DEBT: return 0;
+                case D_COURT: return Courts.act(g, d.caseRef) != null && Courts.act(g, d.caseRef).legal > 0.6 ? 1 : 0;
+                case D_PARDON: return d.a == 0 || d.a == 6 ? 0 : d.a == 3 ? 2 : 1;
+                case D_SUBPOENA: return 1;
+                case D_SCANDAL: { for (int i = 0; i < d.codes.length; i++) if (d.codes[i] == 2 && d.scandalRef.severity >= 4) return i; return 0; }
+                case D_LEAK: return 1;
+                case D_CRA: case D_EMERG_END: return 0;
+                case D_IMPEACH: return 0;
                 default: return 0;
             }
         }
@@ -4058,6 +4144,26 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             }
         }
 
+        /** The executive side of a hands-off president: fill jobs, pick justices, and now and then sign an order. */
+        static void autoExec(Game g) {
+            Exec x = g.ex;
+            x.deleg[DG_PEOPLE] = true;
+            Cabinet.fill(g);
+            if (x.court.size() < 9 && x.nomineeJ == null) Courts.nominateJustice(g, Courts.shortlist(g).get(1));
+            if (g.week % 9 == 4) {
+                int best = -1;
+                for (int i = 0; i < AD_ID.length; i++) {
+                    if (AD_KIND[i] == K_EMERG || !Actions.available(g, i) || AD_LEAN[i] >= 0 && AD_LEAN[i] != g.party) continue;
+                    if (best < 0 || AD_SUP[i] - AD_LEGAL[i] * 20 > AD_SUP[best] - AD_LEGAL[best] * 20) best = i;
+                }
+                if (best >= 0) Actions.issue(g, best);
+            }
+            if (g.week == 30 && g.party == REP && !x.emergency[EM_BORDER]) Actions.issue(g, EM_BORDER);
+            if (g.week == 31 && x.emergency[EM_BORDER] && Actions.available(g, actionIdx("eo_troops"))) Actions.issue(g, actionIdx("eo_troops"));
+            if (g.week == 12 && Actions.available(g, actionIdx(g.party == REP ? "eo_freeze" : "eo_ai_safety"))) Actions.issue(g, actionIdx(g.party == REP ? "eo_freeze" : "eo_ai_safety"));
+            if (g.week % 26 == 10 && g.vp != null) VicePres.start(g, g.week % 52 == 10 ? VM_TOUR : VM_TASK, Week.topIssue(g));
+        }
+
         /** Sends the president's next agenda bill to Congress when fewer than two are moving. */
         static void autoAgenda(Game g) {
             int active = 0;
@@ -4079,7 +4185,22 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         }
 
         static void apply(Game g, Decision d, int k) {
+            heard(g, d, k);
             switch (d.kind) {
+                case D_COURT: Courts.courtDecision(g, d.caseRef, k); break;
+                case D_PARDON: Trouble.pardonDecision(g, d, k); break;
+                case D_SUBPOENA: Trouble.subpoenaDecision(g, d.probeRef, k); break;
+                case D_SCANDAL: Trouble.scandalDecision(g, d.scandalRef, d.codes[k]); break;
+                case D_LEAK: Trouble.leakDecision(g, d.person, k); break;
+                case D_IMPEACH: Trouble.impeachDecision(g, k); break;
+                case D_CRA:
+                    if (k == 1 || g.rng.nextDouble() < 0.05) { Actions.apply(g, d.action, false); d.action.status = A_UNDONE; d.action.statusWeek = g.week; g.log(NK_BAD, "Congress overturns " + d.action.name.toLowerCase(), null, 1.6); }
+                    else { g.cong.vetoes++; g.log(NK_INFO, "You veto Congress's attempt to overturn " + d.action.name.toLowerCase() + "; the veto stands", null, 1.2); }
+                    break;
+                case D_EMERG_END:
+                    if (k == 1) Actions.revoke(g, d.action);
+                    else { g.cong.vetoes++; g.perf -= 0.2; g.log(NK_INFO, "You veto the resolution ending the emergency over " + EMERG_NAME[d.action.def] + "; it stays in force", null, 1.3); }
+                    break;
                 case D_SIGN: Legis.decide(g, d.bill, k); break;
                 case D_MUSTPASS: Legis.decide(g, d.bill, k == 0 ? 0 : 1); break;
                 case D_CR: Budget.crDecision(g, k); break;
@@ -4088,6 +4209,1386 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 case D_BUDGET: if (k == 0) Budget.autoRequest(g); break;
                 default: break;
             }
+        }
+    }
+    // =====================================================================
+    //  17.  THE EXECUTIVE BRANCH: people, posts, departments, orders, rules, courts and scandals
+    //  In 2025 the real cabinet and senior staff are the default picks. Everyone else is fictional,
+    //  and only fictional people are ever caught up in personal misconduct.
+    // =====================================================================
+    // the White House staff (no Senate confirmation)
+    static final int S_COS = 0, S_NSA = 1, S_PRESS = 2, S_COUNSEL = 3, S_NEC = 4, S_DPC = 5, S_LEG = 6, S_POL = 7, S_COMMS = 8, NSTAFF = 9;
+    static final String[] STAFF_TITLE = {"Chief of staff", "National security adviser", "Press secretary", "White House counsel", "Economic adviser",
+            "Domestic policy adviser", "Legislative director", "Political director", "Communications director"};
+    static final String[] STAFF_DOES = {
+            "Runs the building and your schedule. A good one lowers your stress and keeps the staff from leaking.",
+            "Coordinates foreign policy and the Situation Room.",
+            "Briefs the press every day. A good one takes the sting out of bad stories.",
+            "Your lawyer for the office. Keeps orders on solid legal ground and handles investigations.",
+            "Runs the National Economic Council. Sharpens your economic message.",
+            "Runs the Domestic Policy Council. Makes your policy time count for more.",
+            "Your link to Congress. Makes deals stick and keeps relationships warm.",
+            "Watches the map and the money. Helps your fundraising and the midterms.",
+            "Plans your message. Makes your remarks and speeches land harder."};
+
+    // the cabinet: 15 departments and 6 cabinet-level posts, all confirmed by the Senate
+    static final int P_STATE = 0, P_TREAS = 1, P_DEF = 2, P_DOJ = 3, P_INT = 4, P_AG = 5, P_COM = 6, P_LAB = 7, P_HHS = 8, P_HUD = 9,
+            P_DOT = 10, P_DOE = 11, P_ED = 12, P_VA = 13, P_DHS = 14, P_EPA = 15, P_OMB = 16, P_USTR = 17, P_UN = 18, P_DNI = 19, P_CIA = 20, NPOST = 21;
+    static final String[] POST_NAME = {"State", "Treasury", "Defense", "Justice", "Interior", "Agriculture", "Commerce", "Labor", "Health and Human Services",
+            "Housing and Urban Development", "Transportation", "Energy", "Education", "Veterans Affairs", "Homeland Security",
+            "Environmental Protection Agency", "Office of Management and Budget", "Trade Representative", "Ambassador to the UN", "Director of National Intelligence", "CIA"};
+    static final String[] POST_SHORT = {"State", "Treasury", "Defense", "Justice", "Interior", "Agriculture", "Commerce", "Labor", "HHS", "HUD",
+            "Transportation", "Energy", "Education", "VA", "Homeland Security", "EPA", "OMB", "USTR", "UN", "DNI", "CIA"};
+    static final String[] POST_TITLE = {"Secretary of State", "Treasury secretary", "Defense secretary", "Attorney general", "Interior secretary", "Agriculture secretary",
+            "Commerce secretary", "Labor secretary", "Health secretary", "Housing secretary", "Transportation secretary", "Energy secretary", "Education secretary",
+            "Veterans Affairs secretary", "Homeland Security secretary", "EPA administrator", "Budget director", "Trade representative", "UN ambassador",
+            "Director of national intelligence", "CIA director"};
+    /** Civilian employees, thousands. */
+    static final double[] POST_WF = {77, 100, 770, 115, 70, 100, 47, 15, 90, 8, 55, 15, 4, 470, 260, 16, 0.5, 0.2, 0.2, 2, 21};
+    static final int[] POST_AREA = {PI_FOREIGN, PI_ECON, PI_SECURITY, PI_CRIME, PI_ENERGY, PI_ECON, PI_TECH, PI_JOBS, PI_HEALTH, PI_PRICES,
+            PI_JOBS, PI_ENERGY, PI_EDU, PI_SECURITY, PI_IMMIG, PI_ENERGY, PI_ECON, PI_TRADE, PI_FOREIGN, PI_SECURITY, PI_SECURITY};
+    /** The department that carries out policy on each issue. */
+    static final int[] AREA_POST = {P_TREAS, P_COM, P_LAB, P_HHS, P_DHS, P_DOJ, P_STATE, P_DEF, P_USTR, P_DOE, P_DOJ, P_COM, P_ED, P_DOJ};
+
+    // traits. Real people only ever get the first six.
+    static final int T_STEADY = 0, T_EXPERT = 1, T_LOYAL = 2, T_WORKHORSE = 3, T_DEALMAKER = 4, T_MEDIA = 5, T_LEAKER = 6, T_ABRASIVE = 7, T_AMBITIOUS = 8, T_RISK = 9, NTRAIT = 10;
+    static final String[] TRAIT = {"Steady", "Expert", "Loyalist", "Workhorse", "Dealmaker", "Media-savvy", "Talks to reporters", "Abrasive", "Ambitious", "Cuts corners"};
+    static final String[] TRAIT_DESC = {"Calm under pressure; rarely makes news.", "Deep knowledge of the job: better results, easier confirmation.", "Loyal to you above all. Rarely leaks, rarely resigns.",
+            "Long hours: the agency runs better.", "Good at cutting deals with Congress.", "Good on television.", "Leaks to the press when unhappy.",
+            "Clashes with colleagues: other staff are less happy.", "Has plans of their own; may leave to run for office.", "Loose with the rules. Ethics stories are more likely."};
+
+    static final String[] BACKGROUNDS = {"Former governor", "Senator", "House member", "Business executive", "Retired general", "Law professor", "Career civil servant",
+            "Former ambassador", "Mayor", "Campaign veteran", "Think-tank scholar", "State attorney general", "Federal judge", "Economist", "Lobbyist"};
+
+    static final class Person implements Serializable {
+        private static final long serialVersionUID = 1L;
+        String name, background, rosterId;
+        int party, role = -1, post = -1, trait, since, nominated = -1;
+        boolean real, acting, confirmed;
+        double skill = 60, loyalty = 60, morale = 70, ideo;       // ideo: -1 (left) to 1 (right)
+        Cand face;
+        int lastVote = -1, voteYes, voteNo;
+
+        String title() { return role >= 0 ? STAFF_TITLE[role] : post >= 0 ? (acting ? "Acting " + lcTitle(POST_TITLE[post]) : POST_TITLE[post]) : ""; }
+
+        /** How much good this person does: skill, tempered by morale. */
+        double q() { return skill / 100 * (0.7 + 0.3 * morale / 100); }
+    }
+
+    /** The real 2025 slate: post (or staff role as 100+role), name, background, female, skill, loyalty, ideology, trait, roster id. */
+    static final String[] SLATE25 = {
+            "0|Marco Rubio|Senator|M|78|72|0.55|0|rubio", "1|Scott Bessent|Investor|M|80|70|0.45|1|", "2|Pete Hegseth|Television host and veteran|M|55|85|0.75|2|",
+            "3|Pam Bondi|State attorney general|F|68|88|0.6|2|", "4|Doug Burgum|Former governor|M|74|72|0.45|0|", "5|Brooke Rollins|Think-tank leader|F|70|80|0.6|3|",
+            "6|Howard Lutnick|Business executive|M|66|80|0.5|5|", "7|Lori Chavez-DeRemer|House member|F|64|65|0.2|4|", "8|Robert F. Kennedy Jr.|Activist and lawyer|M|58|70|0.3|5|rfk",
+            "9|Scott Turner|House member and NFL player|M|60|80|0.6|0|", "10|Sean Duffy|House member|M|62|82|0.55|5|", "11|Chris Wright|Energy executive|M|76|72|0.55|1|",
+            "12|Linda McMahon|Business executive|F|62|85|0.5|0|", "13|Doug Collins|House member|M|66|80|0.6|3|", "14|Kristi Noem|Former governor|F|62|82|0.7|5|",
+            "15|Lee Zeldin|House member|M|64|84|0.6|5|", "16|Russ Vought|Budget veteran|M|74|90|0.85|1|", "17|Jamieson Greer|Trade lawyer|M|74|78|0.55|1|",
+            "18|Elise Stefanik|House member|F|66|82|0.6|5|", "19|Tulsi Gabbard|House member|F|60|70|0.4|5|", "20|John Ratcliffe|House member|M|70|78|0.6|0|",
+            "100|Susie Wiles|Campaign veteran|F|84|90|0.45|0|", "101|Mike Waltz|House member|M|64|75|0.6|5|", "102|Karoline Leavitt|Campaign veteran|F|66|90|0.6|5|",
+            "103|David Warrington|Campaign lawyer|M|66|85|0.55|2|", "104|Kevin Hassett|Economist|M|74|80|0.5|1|", "105|Vince Haley|Policy adviser|M|66|85|0.7|3|",
+            "106|James Braid|Hill veteran|M|70|78|0.5|4|", "107|James Blair|Campaign veteran|M|72|82|0.55|3|", "108|Steven Cheung|Campaign veteran|M|64|90|0.55|5|"};
+
+    /** Who from the roster might take each job, by party: "post:id,id". */
+    static final String[] BIGNAMES_D = {"0:emanuel,murphy", "1:raimondo", "2:kelly", "3:klobuchar", "5:walz", "6:raimondo,cuban", "7:brown", "8:cooper,beshear",
+            "10:buttigieg", "12:talarico,beshear", "14:gallego,kelly", "18:booker,khanna", "11:whitmer", "16:emanuel"};
+    static final String[] BIGNAMES_R = {"0:rubio,haley", "1:youngkin", "2:desantis", "3:cruz", "5:kemp", "6:youngkin,ramaswamy", "7:hawley", "8:rfk", "12:sanders",
+            "14:desantis,kemp", "16:ramaswamy", "18:haley"};
+
+    // ---- executive actions: orders, rules and emergency declarations ----
+    static final int K_ORDER = 0, K_RULE = 1, K_EMERG = 2;
+    static final String[] ACT_KIND = {"Executive order", "Regulation", "National emergency"};
+    static final int EM_BORDER = 0, EM_TRADE = 1, EM_ENERGY = 2, EM_CLIMATE = 3, EM_CRIME = 4, NEMERG = 5;
+    static final String[] EMERG_NAME = {"the southern border", "trade and the economy", "energy supplies", "the climate", "crime in American cities"};
+
+    static final String[] AD_ID = {
+            // emergencies
+            "em_border", "em_trade", "em_energy", "em_climate", "em_crime",
+            // executive orders: Republican-leaning
+            "eo_troops", "eo_birthright", "eo_ieepa", "eo_freeze", "eo_schedf", "eo_rto", "eo_drill", "eo_dei", "eo_dereg", "eo_paris_out", "eo_aea", "eo_surge", "eo_rif", "eo_cartels",
+            // executive orders: Democratic-leaning
+            "eo_studentdebt", "eo_paris_in", "eo_leases", "eo_dreamers", "eo_wage20", "eo_abortion", "eo_police", "eo_ai_safety", "eo_unions",
+            // executive orders: either side
+            "eo_drugprice", "eo_stocks", "eo_gouging", "eo_spr", "eo_datacenters", "eo_grocery_tariffs",
+            // regulations
+            "rule_carbon", "rule_overtime", "rule_latefees", "rule_noncompete", "rule_nursing", "rule_junkfees", "rule_netneutral",
+            "rule_cars_repeal", "rule_power_repeal", "rule_snapwork", "rule_banks", "rule_asylum", "rule_mining", "rule_hospital", "rule_chips"};
+    static final int[] AD_KIND = {2, 2, 2, 2, 2,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0,
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
+    static final String[] AD_NAME = {
+            "Declare an emergency at the border", "Declare an economic emergency over trade", "Declare an energy emergency", "Declare a climate emergency", "Declare a crime emergency",
+            "Send troops to the border", "End birthright citizenship", "Emergency tariffs on imports", "Freeze federal hiring", "Schedule F", "Federal workers back to the office",
+            "Open federal waters to drilling", "End DEI programs", "Ten old rules out for every new one", "Leave the Paris climate agreement", "Deport gang members as alien enemies",
+            "Surge federal agents into high-crime cities", "Cut the federal workforce by a tenth", "Designate the cartels as terrorist groups",
+            "Cancel student debt", "Rejoin the Paris climate agreement", "Pause new oil and gas leases", "Protect Dreamers from deportation", "A $20 wage for federal contractors",
+            "Protect access to abortion medication", "Accountability rules for federal agents", "Safety reporting for frontier AI", "No contracts for union-busting firms",
+            "Most-favored-nation drug prices", "Ban stock trading by your appointees", "Crack down on price gouging", "Release oil from the strategic reserve", "Fast-track data centers on federal land",
+            "Lift tariffs on groceries",
+            "Carbon limits for power plants", "Overtime pay for four million more workers", "Cap credit-card late fees at $8", "Ban non-compete agreements", "Minimum staffing in nursing homes",
+            "All-in pricing: ban junk fees", "Restore net neutrality", "Repeal the car emissions rules", "Repeal the power-plant rules", "Work requirements for food aid",
+            "Loosen bank capital rules", "Restrict asylum at the border", "Speed up mining permits", "Hospital price transparency", "Tighter export controls on AI chips"};
+    static final String[] AD_DESC = {
+            "Unlocks military construction money and troop deployments at the border.", "Unlocks tariffs under the International Emergency Economic Powers Act.",
+            "Unlocks waivers to speed up drilling, refining and power plants.", "Unlocks a pause on fossil-fuel leasing and money for clean power.", "Unlocks federal deployments to cities.",
+            "National Guard and active-duty troops help patrol the border.", "Children born to parents here illegally or temporarily no longer get citizenship.",
+            "Tariffs on most imports, set by the White House, using emergency powers.", "No new federal hires except for security and safety.",
+            "Reclassify tens of thousands of policy jobs as at-will.", "All federal employees back at their desks five days a week.",
+            "Lease offshore and federal land for oil and gas.", "Shut down diversity, equity and inclusion offices and training.",
+            "Agencies must repeal ten rules for every new one.", "Formally leave the global climate agreement.", "Use a 1798 wartime law to deport suspected gang members.",
+            "Send FBI, DEA and ATF agents and federal prosecutors to the cities with the most violent crime.", "Lay off about a tenth of the civilian federal workforce.",
+            "Treat drug cartels as foreign terrorist organizations.",
+            "Cancel up to $20,000 of federal student debt per borrower.", "Rejoin the global climate agreement.", "No new oil and gas leases on federal land and water.",
+            "Deferred action and work permits for undocumented immigrants brought here as children.", "Federal contractors must pay at least $20 an hour.",
+            "Protect access to mifepristone by mail and at pharmacies.", "Body cameras and use-of-force limits for federal law enforcement.",
+            "Labs training the most powerful AI models must report safety tests.", "Firms that break labor law lose federal contracts.",
+            "Medicare pays no more for drugs than other rich countries do.", "Your political appointees can't trade individual stocks.",
+            "The FTC and Justice Department go after price gouging in food and housing.", "Sell oil from the reserve to bring down gas prices.",
+            "Lease federal land for AI data centers and the power plants to run them.", "Cut tariffs on imported food.",
+            "Power plants must capture most of their carbon by 2035.", "Raise the salary threshold for overtime pay.", "Cap the late fees big card issuers charge.",
+            "Make most non-compete clauses unenforceable.", "Minimum staffing for nursing homes paid by Medicare and Medicaid.", "Prices must include all mandatory fees up front.",
+            "Treat broadband as a utility: no blocking or throttling.", "Roll back tailpipe rules that push electric cars.", "Roll back limits on power-plant emissions.",
+            "Adults without children must work or train to get food aid.", "Lower capital requirements for big banks.", "Bar most asylum claims from people who cross between ports.",
+            "Cut the wait for permits to mine critical minerals.", "Hospitals must post their real prices.", "Stop the most advanced AI chips from reaching China."};
+    static final int[] AD_AREA = {PI_IMMIG, PI_TRADE, PI_ENERGY, PI_ENERGY, PI_CRIME,
+            PI_IMMIG, PI_IMMIG, PI_TRADE, PI_ETHICS, PI_ETHICS, PI_ETHICS, PI_ENERGY, PI_RIGHTS, PI_ECON, PI_ENERGY, PI_IMMIG, PI_CRIME, PI_ETHICS, PI_CRIME,
+            PI_EDU, PI_ENERGY, PI_ENERGY, PI_IMMIG, PI_JOBS, PI_HEALTH, PI_CRIME, PI_TECH, PI_JOBS,
+            PI_HEALTH, PI_ETHICS, PI_PRICES, PI_PRICES, PI_TECH, PI_PRICES,
+            PI_ENERGY, PI_JOBS, PI_PRICES, PI_JOBS, PI_HEALTH, PI_PRICES, PI_TECH, PI_ENERGY, PI_ENERGY, PI_ECON, PI_ECON, PI_IMMIG, PI_ENERGY, PI_HEALTH, PI_TECH};
+    static final int[] AD_LEAN = {REP, REP, REP, DEM, REP,
+            REP, REP, REP, REP, REP, REP, REP, REP, REP, REP, REP, REP, REP, REP,
+            DEM, DEM, DEM, DEM, DEM, DEM, DEM, DEM, DEM,
+            -1, -1, -1, -1, -1, -1,
+            DEM, DEM, DEM, DEM, DEM, DEM, DEM, REP, REP, REP, REP, REP, REP, -1, -1};
+    static final double[] AD_SUP = {50, 40, 50, 44, 48,
+            52, 35, 38, 55, 38, 60, 52, 46, 50, 42, 45, 52, 48, 64,
+            50, 55, 43, 62, 58, 55, 60, 63, 47,
+            74, 82, 70, 64, 52, 66,
+            54, 60, 72, 63, 66, 75, 58, 45, 44, 60, 38, 54, 52, 82, 62};
+    /** How likely the courts are to block it, before the judges and your lawyer are counted. */
+    static final double[] AD_LEGAL = {0.25, 0.35, 0.2, 0.45, 0.4,
+            0.25, 0.92, 0.55, 0.08, 0.45, 0.05, 0.3, 0.3, 0.2, 0.02, 0.65, 0.3, 0.5, 0.1,
+            0.8, 0.02, 0.5, 0.55, 0.2, 0.5, 0.1, 0.3, 0.35,
+            0.55, 0.02, 0.3, 0.05, 0.25, 0.1,
+            0.55, 0.5, 0.45, 0.65, 0.4, 0.2, 0.55, 0.3, 0.3, 0.35, 0.15, 0.55, 0.25, 0.2, 0.1};
+    /** The emergency an order needs first, or -1. */
+    static final int[] AD_NEEDS = {-1, -1, -1, -1, -1,
+            EM_BORDER, -1, EM_TRADE, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+            -1, -1, EM_CLIMATE, -1, -1, -1, -1, -1, -1,
+            -1, -1, -1, -1, -1, -1,
+            -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
+    /** Effects while it stands: gdp unemp infl tariff oil def(% GDP) wf(% workforce) ready gN (group) st:AB (state). */
+    static final String[] AD_FX = {
+            "", "", "oil=-1", "", "",
+            "g12=-1.5", "g12=-3 g10=-1", "tariff=12 gdp=-0.12 infl=0.25 def=-0.4", "wf=-3 ready=-2 def=-0.02", "ready=-4", "wf=-4 ready=-2 st:VA=-1 st:MD=-1.5",
+            "oil=-2 gdp=0.03", "g10=-1 g27=-1", "gdp=0.03", "g0=-1", "g12=-2", "", "wf=-10 ready=-9 def=-0.05 st:VA=-2 st:MD=-3", "",
+            "def=0.15 g0=3 g28=4", "g0=1", "oil=2 gdp=-0.02", "g12=3", "def=0.01 g24=2", "g4=1 g3=2", "g10=1.5", "gdp=-0.01", "g24=2",
+            "def=-0.03 g1=2", "", "infl=-0.03", "oil=-5", "gdp=0.04 infl=0.02", "tariff=-3 infl=-0.05",
+            "gdp=-0.03 infl=0.03", "g24=1.5", "g0=1", "gdp=0.01 g24=1", "g1=1.5 def=0.01", "infl=-0.02", "g0=1", "gdp=0.02 g22=1", "gdp=0.02", "def=-0.02",
+            "gdp=0.04", "g12=-1.5", "gdp=0.02", "g1=1", "gdp=-0.01"};
+
+    /** Lower-cases a job title for use mid-sentence, keeping acronyms: "CIA director", "UN ambassador". */
+    static String lcTitle(String t) {
+        StringBuilder b = new StringBuilder();
+        for (String w : t.split(" ")) { if (b.length() > 0) b.append(' '); b.append(w.length() > 1 && w.equals(w.toUpperCase()) ? w : w.toLowerCase()); }
+        return b.toString();
+    }
+
+    static int actionIdx(String id) { for (int i = 0; i < AD_ID.length; i++) if (AD_ID[i].equals(id)) return i; return -1; }
+
+    static final int A_LIVE = 0, A_PENDING = 1, A_BLOCKED = 2, A_STRUCK = 3, A_REVOKED = 4, A_COMMENT = 5, A_UNDONE = 6;
+    static final String[] A_STATUS = {"In effect", "Proposed", "Blocked by a court", "Struck down", "Revoked", "Open for comment", "Overturned by Congress"};
+
+    /** An order, rule or emergency you have issued. */
+    static final class Action implements Serializable {
+        private static final long serialVersionUID = 1L;
+        int def = -1, kind, area, lean, status, issued, finalWeek = -1, statusWeek;
+        String name;
+        double support, legal, scope = 1;
+        boolean custom, failed, sued, applied;
+        double aGdp, aUnemp, aInfl, aTariff, aOil, aDef;           // what it applied, so it can be undone
+    }
+
+    // ---- the courts ----
+    static final class Justice implements Serializable {
+        private static final long serialVersionUID = 1L;
+        String name;
+        int born, party;
+        double ideo;
+        boolean real = true;
+        Cand face;
+    }
+
+    static final String[] SCOTUS25 = {"John Roberts|1955|R|0.3", "Clarence Thomas|1948|R|0.9", "Samuel Alito|1950|R|0.85", "Sonia Sotomayor|1954|D|-0.8",
+            "Elena Kagan|1960|D|-0.6", "Neil Gorsuch|1967|R|0.6", "Brett Kavanaugh|1965|R|0.45", "Amy Coney Barrett|1972|R|0.5", "Ketanji Brown Jackson|1970|D|-0.85"};
+
+    static final int CS_DISTRICT = 0, CS_CIRCUIT = 1, CS_SCOTUS = 2, CS_DONE = 3;
+    static final String[] CS_STAGE = {"District court", "Court of appeals", "Supreme Court", "Decided"};
+
+    static final class Case implements Serializable {
+        private static final long serialVersionUID = 1L;
+        int action, stage, decideWeek, votesFor, votesAgainst;
+        boolean blocked, done, won;
+        String plaintiff, note = "";
+    }
+
+    static final String[] PLAINTIFFS = {"A coalition of states", "The ACLU", "A business group", "Twenty state attorneys general", "A labor union", "An advocacy group", "A trade association", "Three cities"};
+
+    // ---- scandals and investigations ----
+    static final class Scandal implements Serializable {
+        private static final long serialVersionUID = 1L;
+        String title, body, who;
+        double severity;
+        int started, stage, kind;                 // stage 0 a story, 1 under investigation, 2 special counsel; kind see SK_*
+        boolean impeachable, answered, over;
+        Person person;
+    }
+
+    static final int SK_LEAK = 0, SK_ETHICS = 1, SK_PARDON = 2, SK_DEFY = 3, SK_POWER = 4, SK_PAST = 5, SK_FAILURE = 6;
+
+    static final class Probe implements Serializable {
+        private static final long serialVersionUID = 1L;
+        String topic, chair;
+        int chamber, started, until, response = -1;
+        Scandal scandal;
+        boolean over, privilegeCase;
+    }
+
+    /** Pardon requests: title|body|kind  (kind 0 mercy, 1 ally, 2 donor, 3 soldier, 4 whistleblower, 5 protesters, 6 celebrity). */
+    static final String[] PARDONS = {
+            "A grandmother serving life for a drug offense|She has served 28 years for a nonviolent cocaine conspiracy. Her case has bipartisan support from reform groups.|0",
+            "A former campaign aide|He was convicted of lying to federal investigators about contacts during your campaign. Your allies call the case political.|1",
+            "A major donor convicted of fraud|A businessman who gave millions to your party was convicted of defrauding investors. His lawyers say he has repaid them.|2",
+            "A soldier convicted of a war crime|A decorated special-forces soldier was convicted of killing a detainee. Veterans' groups are split.|3",
+            "A whistleblower|A former contractor who leaked documents about domestic surveillance has lived abroad for years. Civil libertarians want him home.|4",
+            "Protesters convicted after a riot|Dozens of people convicted after a protest turned violent. Your base sees them as political prisoners; others see rioters.|5",
+            "A rapper serving time on gun charges|A famous musician's sentence for a gun charge. Celebrities are lobbying the White House.|6",
+            "A former governor convicted of corruption|A former governor from your party was convicted of selling state contracts. He says it was a witch hunt.|1",
+            "Nonviolent drug offenders, all at once|Commute the sentences of about 1,500 people serving long terms for nonviolent drug crimes.|0"};
+
+    // ---- the vice president ----
+    static final int VM_NONE = 0, VM_TOUR = 1, VM_TASK = 2, VM_SENATE = 3, VM_MONEY = 4, VM_ABROAD = 5, NVM = 6;
+    static final String[] VM_NAME = {"Stay in Washington", "Tour the swing states", "Lead a task force", "Work the Senate", "Raise money for the party", "Represent you abroad"};
+    static final String[] VM_DESC = {"Sits in on meetings and stands by to break ties in the Senate.", "Six weeks of rallies and town halls in the battleground states.",
+            "Eight weeks leading the administration's work on one issue.", "Lobbies senators personally. Improves your relationships in the Senate.",
+            "Six weeks of fundraisers for the party's candidates.", "Four weeks of foreign trips to reassure allies."};
+    static final int[] VM_WEEKS = {0, 6, 8, 0, 6, 4};
+
+    // ---- delegation ----
+    static final int DG_SCHEDULE = 0, DG_WHIP = 1, DG_BUDGET = 2, DG_PARDONS = 3, DG_PEOPLE = 4, NDG = 5;
+    static final String[] DG_NAME = {"Your chief of staff plans your week", "Your legislative director works the votes", "Your budget director writes the budget",
+            "Your counsel handles pardon requests", "Your chief of staff fills vacancies"};
+    static final String[] DG_DESC = {"Each new week starts with a balanced schedule, built around your top issue and your stamina.",
+            "Spends political capital on calls and deals when one of your bills is short of votes.", "Sends a budget that follows your party's agenda when it's due.",
+            "Grants the safe requests and turns down the risky ones.", "Picks replacements for anyone who leaves, and sends the Senate a nominee for any empty cabinet post."};
+    static final int[] DG_ROLE = {S_COS, S_LEG, -1, S_COUNSEL, S_COS};
+
+    /** Everything the executive branch keeps between weeks. */
+    static final class Exec implements Serializable {
+        private static final long serialVersionUID = 1L;
+        Person[] staff = new Person[NSTAFF];
+        Person[] post = new Person[NPOST];
+        Person[] nominee = new Person[NPOST];
+        int[] voteAt = new int[NPOST];
+        double[] ready = new double[NPOST];
+        double[] wf = new double[NPOST];
+        List<Action> actions = new ArrayList<Action>();
+        boolean[] emergency = new boolean[NEMERG];
+        // courts
+        List<Justice> court = new ArrayList<Justice>();
+        List<Case> cases = new ArrayList<Case>();
+        double dDistrict = 0.52, dCircuit = 0.47;      // share of active judges appointed by Democrats
+        double vacDistrict = 40, vacCircuit = 6;
+        int judges, judgeStrategy = 1, justices;
+        double judgeFrac;
+        Justice nomineeJ;
+        int scotusVoteAt = -1, scotusVacancies;
+        // trouble
+        List<Scandal> scandals = new ArrayList<Scandal>();
+        List<Probe> probes = new ArrayList<Probe>();
+        int contempt, defiance, pardons, nextPardon = 8, nextProbe = 14;
+        int impStage, impWeek = -1, impeachments;
+        double impPressure;
+        String impResult;
+        // the vice president
+        int vpMission, vpArg = -1, vpUntil = -1, vpMissions;
+        double vpLoyalty = 75;
+        boolean[] deleg = new boolean[NDG];
+        int lastCabinet = -10, departures, failures, leaks;
+        boolean transitionDone;
+    }
+
+    /** Who speaks for each adviser label in decisions: staff roles, or 100 + a cabinet post. */
+    static final String[] ADV_LABEL = {"Chief of staff", "National security adviser", "Press secretary", "Counsel", "Economic adviser", "Domestic policy adviser", "Legislative director",
+            "Political director", "Communications director", "Budget director", "Treasury secretary", "Attorney general"};
+    static final int[] ADV_WHO = {S_COS, S_NSA, S_PRESS, S_COUNSEL, S_NEC, S_DPC, S_LEG, S_POL, S_COMMS, 100 + P_OMB, 100 + P_TREAS, 100 + P_DOJ};
+    // =====================================================================
+    //  18.  THE CABINET AND THE STAFF
+    //  Nominees go to the Senate for a vote; staff serve at your pleasure. Everyone has skill, loyalty and morale.
+    //  Morale falls when you're unpopular, when the place is tense and when you overrule them; low morale means leaks and resignations.
+    // =====================================================================
+    static final class Cabinet {
+        /** A staff member's effectiveness (0-1), or a stand-in's if the job is empty. */
+        static double sq(Game g, int role) { if (g.ex == null) return 0.5; Person p = g.ex.staff[role]; return p == null ? 0.4 : p.q(); }
+
+        /** A cabinet officer's effectiveness (0-1); acting officials are career people of middling skill. */
+        static double pq(Game g, int post) { if (g.ex == null) return 0.5; Person p = g.ex.post[post]; return p == null ? 0.45 : p.q(); }
+
+        static void setup(Game g) {
+            Exec x = new Exec();
+            g.ex = x;
+            Random r = new Random(g.set.seed ^ 0xCAB1L);
+            for (int i = 0; i < NPOST; i++) { x.voteAt[i] = -1; x.wf[i] = POST_WF[i]; x.ready[i] = 62 + r.nextGaussian() * 5; }
+            boolean real = g.era.year == 2025 && g.pres != null && "trump".equals(g.pres.id);
+            if (real) {
+                for (String row : SLATE25) {
+                    String[] t = row.split("\\|");
+                    int k = Integer.parseInt(t[0]);
+                    Person p = new Person();
+                    p.name = t[1]; p.background = t[2]; p.party = REP; p.real = true;
+                    p.skill = Double.parseDouble(t[4]); p.loyalty = Double.parseDouble(t[5]); p.ideo = Double.parseDouble(t[6]); p.trait = Integer.parseInt(t[7]);
+                    p.rosterId = t.length > 8 && t[8].length() > 0 ? t[8] : null;
+                    Cand c = p.rosterId != null ? candById(p.rosterId) : null;
+                    p.face = c != null ? c : face(p.name, r, REP);
+                    if (c == null && p.face.look != null && realLook(p.name) == null) femaleLook(p.face.look, t[3].equals("F"), r);
+                    if (k >= 100) { p.role = k - 100; p.since = 0; x.staff[p.role] = p; }
+                    else { p.post = k; x.nominee[k] = p; }
+                }
+            } else {
+                for (int s = 0; s < NSTAFF; s++) { Person p = staffOptions(g, s, 0).get(0); p.since = 0; x.staff[s] = p; }
+                for (int k = 0; k < NPOST; k++) x.nominee[k] = options(g, k, 0).get(0);
+            }
+            // the Senate takes the nominees a few at a time, the top jobs first
+            int[] order = {P_STATE, P_TREAS, P_DEF, P_DHS, P_DOJ, P_CIA, P_DNI, P_OMB, P_HHS, P_COM, P_INT, P_DOE, P_AG, P_VA, P_DOT, P_HUD, P_LAB, P_ED, P_EPA, P_USTR, P_UN};
+            for (int i = 0; i < order.length; i++) { x.voteAt[order[i]] = i == 0 ? 0 : 1 + i / 3; x.nominee[order[i]].nominated = 0; }
+            // the Supreme Court
+            for (String row : SCOTUS25) {
+                String[] t = row.split("\\|");
+                Justice j = new Justice();
+                j.name = t[0]; j.born = Integer.parseInt(t[1]); j.party = t[2].equals("D") ? DEM : REP; j.ideo = Double.parseDouble(t[3]);
+                j.face = face(j.name, r, j.party);
+                if (j.face.look != null && realLook(j.name) == null) femaleLook(j.face.look, false, r);
+                x.court.add(j);
+            }
+            if (g.era.year >= 2029) { x.dDistrict = 0.46; x.dCircuit = 0.42; }
+            for (int d = 0; d < NDG; d++) x.deleg[d] = false;
+        }
+
+        static void femaleLook(Look l, boolean f, Random r) {
+            l.female = f;
+            if (f && l.style < 6) l.style = 6 + r.nextInt(4);
+            if (!f && l.style >= 6) l.style = r.nextInt(5);
+            if (f) l.facial = 0;
+        }
+
+        /** A generated person for a job. kind: 0 loyalist, 1 expert, 2 bipartisan or outsider. */
+        static Person make(Game g, Random r, int party, int kind) {
+            Person p = new Person();
+            boolean f = r.nextDouble() < 0.42;
+            p.name = (f ? FIRST_F[r.nextInt(FIRST_F.length)] : FIRST_M[r.nextInt(FIRST_M.length)]) + " " + LASTS[r.nextInt(LASTS.length)];
+            p.party = party;
+            double side = party == REP ? 1 : -1;
+            if (kind == 0) { p.skill = 52 + r.nextInt(20); p.loyalty = 80 + r.nextInt(16); p.ideo = side * (0.55 + r.nextDouble() * 0.35); p.trait = r.nextDouble() < 0.5 ? T_LOYAL : pickTrait(r); }
+            else if (kind == 1) { p.skill = 70 + r.nextInt(22); p.loyalty = 52 + r.nextInt(25); p.ideo = side * (0.2 + r.nextDouble() * 0.3); p.trait = r.nextDouble() < 0.45 ? T_EXPERT : pickTrait(r); }
+            else { p.skill = 60 + r.nextInt(22); p.loyalty = 40 + r.nextInt(25); p.ideo = side * (r.nextDouble() * 0.25); p.trait = pickTrait(r); }
+            p.background = BACKGROUNDS[r.nextInt(BACKGROUNDS.length)];
+            p.face = face(p.name, r, party);
+            if (p.face.look != null) femaleLook(p.face.look, f, r);
+            return p;
+        }
+
+        static int pickTrait(Random r) { double x = r.nextDouble(); return x < 0.12 ? T_LEAKER : x < 0.22 ? T_ABRASIVE : x < 0.34 ? T_AMBITIOUS : x < 0.42 ? T_RISK : r.nextInt(6); }
+
+        /** Three choices for a cabinet post: a loyalist, an expert, and a big name or a bipartisan pick. Same choices all month. */
+        static List<Person> options(Game g, int post, int salt) {
+            Random r = new Random(g.set.seed * 31 + post * 977 + (g.week / 4) * 7 + salt);
+            List<Person> l = new ArrayList<Person>();
+            l.add(make(g, r, g.party, 1));
+            l.add(make(g, r, g.party, 0));
+            Cand big = bigName(g, post);
+            if (big != null) {
+                Person p = new Person();
+                p.name = big.name(); p.party = big.party; p.real = true; p.rosterId = big.id; p.face = big;
+                p.background = big.role != null ? big.role : "Politician";
+                p.skill = clamp(45 + big.a[A_EXE] * 0.25 + big.a[A_INT] * 0.2, 50, 90);
+                p.loyalty = 60 + r.nextInt(15); p.ideo = clamp((big.econ + big.cult) / 2, -1, 1); p.trait = r.nextDouble() < 0.5 ? T_MEDIA : T_STEADY;
+                l.add(p);
+            } else {
+                Person p = make(g, r, r.nextDouble() < 0.5 ? Hill.other(g.party) : g.party, 2);
+                if (p.party != g.party) p.background = "A " + PARTY[p.party] + " " + p.background.toLowerCase();
+                l.add(p);
+            }
+            for (Person p : l) p.post = post;
+            for (Person p : l) if (p.real && p.trait >= T_LEAKER) p.trait = T_STEADY;
+            return l;
+        }
+
+        static Cand bigName(Game g, int post) {
+            String[] map = g.party == DEM ? BIGNAMES_D : BIGNAMES_R;
+            for (String m : map) {
+                String[] kv = m.split(":");
+                if (Integer.parseInt(kv[0]) != post) continue;
+                for (String id : kv[1].split(",")) {
+                    Cand c = candById(id);
+                    if (c == null || c == g.pres || c == g.vp) continue;
+                    if (inGovernment(g, c.name())) continue;
+                    return c;
+                }
+            }
+            return null;
+        }
+
+        static boolean inGovernment(Game g, String name) {
+            if (g.ex == null) return false;
+            for (Person p : g.ex.post) if (p != null && p.name.equals(name)) return true;
+            for (Person p : g.ex.nominee) if (p != null && p.name.equals(name)) return true;
+            for (Person p : g.ex.staff) if (p != null && p.name.equals(name)) return true;
+            return false;
+        }
+
+        static List<Person> staffOptions(Game g, int role, int salt) {
+            Random r = new Random(g.set.seed * 17 + role * 131 + (g.week / 4) * 5 + salt);
+            List<Person> l = new ArrayList<Person>();
+            l.add(make(g, r, g.party, 1));
+            l.add(make(g, r, g.party, 0));
+            l.add(make(g, r, g.party, 2));
+            for (Person p : l) { p.role = role; p.party = g.party; }
+            l.get(0).background = role == S_COUNSEL ? "Former federal prosecutor" : role == S_NEC ? "Economist" : role == S_LEG ? "Hill veteran" : role == S_PRESS || role == S_COMMS ? "Former network correspondent" : "Veteran of two administrations";
+            l.get(1).background = "Campaign veteran";
+            return l;
+        }
+
+        // ---- the Senate's vote ----
+        static double blocP(Game g, int bi, Person p) {
+            Bloc b = g.cong.blocs.get(bi);
+            double bIdeo = (b.econ + b.cult) / 2;
+            double dist = Math.abs(p.ideo - bIdeo);
+            double l = 0.6 + (p.skill - 62) / 22 + (b.rel - 50) / 40 + (p.trait == T_EXPERT ? 0.4 : 0);
+            if (b.party == g.party) l += 3.0 * b.loyalty - 1.0 * dist;                   // senators defer to their own president's picks
+            else l += 0.5 - 2.2 * dist - 1.2 * g.era.polarization;
+            if (p.party != g.party) l += b.party == p.party ? 1.6 : -0.4;
+            if (p.real && p.rosterId != null && b.party != g.party) l += 0.3;      // a senator or governor colleagues know
+            return logistic(1.5 * l);
+        }
+
+        static double[] count(Game g, Person p) {
+            double yes = 0, var = 0;
+            for (int i = 0; i < g.cong.blocs.size(); i++) {
+                Bloc b = g.cong.blocs.get(i);
+                if (b.chamber != SENATE) continue;
+                double q = blocP(g, i, p);
+                yes += b.seats * q; var += b.seats * q * (1 - q);
+            }
+            return new double[]{yes, Math.sqrt(var) + 0.8};
+        }
+
+        static double chance(Game g, Person p) {
+            double[] c = count(g, p);
+            return logistic(1.702 * (c[0] - 50 + 0.5) / c[1]);
+        }
+
+        static void nominate(Game g, int post, Person p) {
+            Exec x = g.ex;
+            x.nominee[post] = p;
+            p.post = post; p.nominated = g.week;
+            int busy = 0;
+            for (int k = 0; k < NPOST; k++) if (x.voteAt[k] >= g.week) busy++;
+            x.voteAt[post] = g.week + 3 + busy / 3;
+            g.log(NK_INFO, g.pres.last + " nominates " + p.name + " as " + lcTitle(POST_TITLE[post]), null, 0.9);
+        }
+
+        static void withdraw(Game g, int post) {
+            Exec x = g.ex;
+            Person p = x.nominee[post];
+            if (p == null) return;
+            x.nominee[post] = null; x.voteAt[post] = -1;
+            g.log(NK_BAD, "The White House withdraws the nomination of " + p.name, null, 1.0);
+            g.perf -= 0.2;
+        }
+
+        static void vote(Game g, int post) {
+            Exec x = g.ex;
+            Person p = x.nominee[post];
+            if (p == null) return;
+            double[] c = count(g, p);
+            int yes = (int) Math.round(clamp(c[0] + g.rng.nextGaussian() * c[1], 0, 100)), no = 100 - yes;
+            boolean tie = yes == 50 && Hill.majority(g, SENATE, g.party);
+            p.voteYes = yes; p.voteNo = no; p.lastVote = g.week;
+            x.nominee[post] = null; x.voteAt[post] = -1;
+            if (yes > 50 || tie) {
+                p.confirmed = true; p.acting = false; p.since = g.week; p.morale = 75;
+                x.post[post] = p;
+                g.log(post <= P_DHS || post == P_OMB ? NK_GOOD : NK_INFO, "Senate confirms " + p.name + " as " + lcTitle(POST_TITLE[post]) + ", " + yes + "-" + no + (tie ? ", with the vice president breaking the tie" : ""), null, post <= P_DEF || tie ? 1.4 : 0.8);
+                g.capital = Math.min(100, g.capital + 0.5);
+            } else {
+                g.log(NK_BIG, "SENATE REJECTS " + p.name.toUpperCase() + " FOR " + POST_TITLE[post].toUpperCase(), "The vote was " + yes + "-" + no + ". A career official stays in charge until you name someone else.", 2.6);
+                g.perf -= 1.0; g.capital = Math.max(0, g.capital - 6);
+                Decisions.info(g, "The Senate rejects your nominee", p.name + " lost the vote to be " + lcTitle(POST_TITLE[post]) + ", " + yes + "-" + no + ". Choose someone else in the West Wing (the Cabinet tab).");
+            }
+        }
+
+        static void appoint(Game g, int role, Person p) {
+            Exec x = g.ex;
+            p.role = role; p.since = g.week; p.morale = 75;
+            x.staff[role] = p;
+            g.log(NK_INFO, g.pres.last + " names " + p.name + " " + STAFF_TITLE[role].toLowerCase(), null, role == S_COS ? 1.4 : 0.7);
+        }
+
+        /** You fire someone. */
+        static void fire(Game g, Person p) {
+            Exec x = g.ex;
+            boolean big = p.role == S_COS || p.post >= 0 && p.post <= P_DEF || p.post == P_DOJ;
+            remove(g, p);
+            g.log(big ? NK_BIG : NK_BAD, (big ? (g.pres.last + " fires " + p.name).toUpperCase() : g.pres.last + " fires " + p.name), "The " + lcTitle(p.title()) + " is out after " + Math.max(1, g.week - p.since) + " weeks.", big ? 2.4 : 1.2);
+            g.perf -= big ? 0.8 : 0.3;
+            for (Person o : everyone(g)) o.morale = Math.max(0, o.morale - 2);
+            x.departures++;
+            if (p.post == P_DOJ) for (Scandal s : x.scandals) if (!s.over && s.stage == 2) { s.severity += 3; s.impeachable = true; g.log(NK_BIG, "FIRING OF THE ATTORNEY GENERAL RAISES QUESTIONS ABOUT THE SPECIAL COUNSEL", null, 3); }
+        }
+
+        static void remove(Game g, Person p) {
+            Exec x = g.ex;
+            if (p.role >= 0 && x.staff[p.role] == p) x.staff[p.role] = null;
+            if (p.post >= 0 && x.post[p.post] == p) x.post[p.post] = null;
+        }
+
+        static List<Person> everyone(Game g) {
+            List<Person> l = new ArrayList<Person>();
+            for (Person p : g.ex.staff) if (p != null) l.add(p);
+            for (Person p : g.ex.post) if (p != null) l.add(p);
+            return l;
+        }
+
+        /** A cabinet meeting on the calendar. */
+        static void meeting(Game g) {
+            if (g.ex == null) return;
+            for (Person p : g.ex.post) if (p != null) p.morale = Math.min(100, p.morale + 3);
+            for (int k = 0; k < NPOST; k++) g.ex.ready[k] = Math.min(100, g.ex.ready[k] + 0.6);
+            if (g.week - g.ex.lastCabinet > 6) g.log(NK_INFO, "The president holds a cabinet meeting", null, 0.4);
+            g.ex.lastCabinet = g.week;
+        }
+
+        static void week(Game g) {
+            Exec x = g.ex;
+            Random r = g.rng;
+            // confirmation votes
+            for (int k = 0; k < NPOST; k++) if (x.nominee[k] != null && x.voteAt[k] >= 0 && g.week >= x.voteAt[k]) {
+                if (!Hill.majority(g, SENATE, g.party) && chance(g, x.nominee[k]) < 0.2 && g.week - x.nominee[k].nominated < 20) { x.voteAt[k] = g.week + 2; continue; }   // the majority sits on it
+                vote(g, k);
+            }
+            // morale
+            int abrasive = 0;
+            for (Person p : everyone(g)) if (p.trait == T_ABRASIVE) abrasive++;
+            for (Person p : everyone(g)) {
+                double target = 58 + (g.approval - 45) * 0.7 + (p.loyalty - 60) * 0.35 - Math.max(0, g.stress - 45) * 0.25 - (abrasive - (p.trait == T_ABRASIVE ? 1 : 0)) * 2.5
+                        + (g.cong.shutdown ? -6 : 0) + (p.trait == T_STEADY ? 4 : 0);
+                p.morale = clamp(p.morale + (target - p.morale) * 0.05 + r.nextGaussian() * 0.8, 0, 100);
+            }
+            // the chief of staff keeps the temperature down
+            g.stress = clamp(g.stress - 2.5 * (sq(g, S_COS) - 0.4), 0, 100);
+            // departures
+            for (Person p : everyone(g)) {
+                if (g.week - p.since < 12) continue;
+                double hz = 0.0006 + Math.max(0, 38 - p.morale) / 700 + (p.trait == T_AMBITIOUS && g.week > 70 ? 0.003 : 0) - (p.trait == T_LOYAL ? 0.0004 : 0);
+                if (r.nextDouble() < hz) { resign(g, p); break; }
+            }
+            // readiness of each department
+            double fed = 0;
+            for (int k = 0; k < NPOST; k++) {
+                double q = pq(g, k);
+                double cut = Math.max(0, (POST_WF[k] - x.wf[k]) / POST_WF[k]);
+                double target = 40 + 42 * q - cut * 70 + (g.week - x.lastCabinet < 8 ? 3 : 0) - (g.cong.shutdown ? 12 : 0)
+                        + (x.post[k] != null && x.post[k].trait == T_WORKHORSE ? 5 : 0) + (x.post[k] != null && x.post[k].trait == T_EXPERT ? 3 : 0);
+                x.ready[k] = clamp(x.ready[k] + (target - x.ready[k]) * 0.04, 5, 100);
+                fed += x.wf[k];
+            }
+            // leaks
+            double discipline = 1.3 - 0.7 * sq(g, S_COS);
+            for (Person p : everyone(g)) {
+                double pl = (0.0007 + (p.trait == T_LEAKER ? 0.006 : 0) + Math.max(0, 50 - p.morale) / 9000 + (p.loyalty < 50 ? 0.0015 : 0)) * discipline;
+                if (r.nextDouble() < pl) { Trouble.leak(g, p); break; }
+            }
+            // ethics
+            for (Person p : everyone(g)) {
+                if (p.real) continue;
+                double pe = p.trait == T_RISK ? 0.0035 : 0.00025;
+                if (r.nextDouble() < pe) { Trouble.ethics(g, p); break; }
+            }
+            // the delegate fills empty jobs
+            if (x.deleg[DG_PEOPLE]) fill(g);
+        }
+
+        static void resign(Game g, Person p) {
+            Exec x = g.ex;
+            String why = p.trait == T_AMBITIOUS && g.week > 70 ? "to run for office" : p.morale < 30 ? "after months of friction" : "to return to private life";
+            remove(g, p);
+            x.departures++;
+            boolean big = p.role == S_COS || p.role == S_NSA || p.post >= 0 && p.post <= P_DEF || p.post == P_DOJ;
+            g.log(big ? NK_BIG : NK_BAD, (p.name + " resigns as " + lcTitle(p.title()) + " " + why), null, big ? 2.2 : 1.0);
+            if (big) g.perf -= 0.4;
+            if (!x.deleg[DG_PEOPLE]) Decisions.info(g, p.name + " resigns", "Your " + lcTitle(p.title()) + " is leaving " + why + ". " + (p.role >= 0 ? "Pick a replacement in the West Wing (the Staff tab)." : "A career official takes over until you nominate someone (the Cabinet tab)."));
+        }
+
+        /** Fill every empty job with the first choice. */
+        static void fill(Game g) {
+            Exec x = g.ex;
+            for (int s = 0; s < NSTAFF; s++) if (x.staff[s] == null) appoint(g, s, staffOptions(g, s, g.week).get(0));
+            for (int k = 0; k < NPOST; k++) if (x.post[k] == null && x.nominee[k] == null) {
+                List<Person> o = options(g, k, g.week);
+                Person best = o.get(0);
+                for (Person p : o) if (chance(g, p) > chance(g, best) + 0.15) best = p;
+                nominate(g, k, best);
+            }
+        }
+
+        /** The pick of the three with the best chance in the Senate. */
+        static Person safest(Game g, List<Person> o) {
+            Person best = o.get(0);
+            for (Person p : o) if (chance(g, p) > chance(g, best) + 0.1) best = p;
+            return best;
+        }
+    }
+
+    // =====================================================================
+    //  19.  EXECUTIVE ACTION AND THE COURTS
+    //  Orders take effect at once and can be undone as easily. Rules take months of comment but last.
+    //  Emergencies unlock powers Congress can try to take back. Anything aggressive ends up in court.
+    // =====================================================================
+    static final class Actions {
+        static boolean live(Game g, int def) { for (Action a : g.ex.actions) if (a.def == def && (a.status == A_LIVE || a.status == A_COMMENT || a.status == A_BLOCKED)) return true; return false; }
+
+        static boolean available(Game g, int def) {
+            if (live(g, def)) return false;
+            int need = AD_NEEDS[def];
+            if (need >= 0 && !g.ex.emergency[need]) return false;
+            if (AD_KIND[def] == K_EMERG && g.ex.emergency[def]) return false;
+            // the opposite of something in force
+            if (AD_ID[def].equals("eo_paris_in") && live(g, actionIdx("eo_paris_out")) || AD_ID[def].equals("eo_paris_out") && live(g, actionIdx("eo_paris_in"))) return false;
+            return true;
+        }
+
+        /** Legal risk after your counsel's work. */
+        static double legal(Game g, double base) { return clamp(base * (1.15 - 0.3 * Cabinet.sq(g, S_COUNSEL)), 0, 0.98); }
+
+        static Action issue(Game g, int def) {
+            Action a = new Action();
+            a.def = def; a.kind = AD_KIND[def]; a.name = AD_NAME[def]; a.area = AD_AREA[def]; a.lean = AD_LEAN[def];
+            a.support = AD_SUP[def]; a.legal = AD_LEGAL[def]; a.issued = g.week; a.statusWeek = g.week;
+            g.ex.actions.add(a);
+            if (a.kind == K_RULE) {
+                a.status = A_COMMENT;
+                a.finalWeek = g.week + (int) Math.round(14 - 6 * Cabinet.pq(g, P_OMB));
+                g.log(NK_INFO, "The administration proposes a rule: " + a.name.toLowerCase(), "Public comments are open until " + dateStr(a.finalWeek * 7) + ".", 1.0);
+                react(g, a, 0.4);
+                return a;
+            }
+            if (a.kind == K_EMERG) {
+                g.ex.emergency[def] = true;
+                g.log(NK_BIG, ("President " + g.pres.last + " declares a national emergency over " + EMERG_NAME[def]).toUpperCase(), AD_DESC[def], 2.8);
+                react(g, a, 1);
+                a.status = A_LIVE;
+                Congressional.emergencyVote(g, a);
+                return a;
+            }
+            a.status = A_LIVE;
+            g.log(NK_INFO, "President " + g.pres.last + " signs an executive order: " + a.name.toLowerCase(), AD_DESC[def], 1.4);
+            react(g, a, 1);
+            takeEffect(g, a);
+            return a;
+        }
+
+        /** A custom order: issue, direction, how far it reaches and on what legal footing. */
+        static Action custom(Game g, int area, int dir, double scope, int basis) {
+            Action a = new Action();
+            a.def = -1; a.kind = K_ORDER; a.custom = true; a.area = area; a.lean = dir; a.scope = scope;
+            a.name = (scope > 1.1 ? "A sweeping order on " : scope < 0.7 ? "A narrow order on " : "An order on ") + PISSUE[area].toLowerCase();
+            double fit = dir == g.party ? 1 : -1;
+            a.support = clamp(50 + (g.issueApp[area] - 45) * 0.2 - 7 * (scope - 0.6) + g.rng.nextGaussian() * 3 - (fit < 0 ? 2 : 0), 25, 75);
+            a.legal = clamp(0.08 + 0.3 * scope + (basis == 1 ? 0.3 : basis == 2 ? 0.12 : 0), 0, 0.95);
+            a.issued = g.week; a.statusWeek = g.week; a.status = A_LIVE;
+            g.ex.actions.add(a);
+            g.log(NK_INFO, "President " + g.pres.last + " signs " + a.name.toLowerCase(), basis == 2 ? "The order relies on emergency powers." : basis == 1 ? "Lawyers call its legal basis a stretch." : null, 1.2);
+            react(g, a, 1);
+            takeEffect(g, a);
+            return a;
+        }
+
+        /** How the country and the Hill react. */
+        static void react(Game g, Action a, double k) {
+            boolean mine = a.lean == g.party || a.lean < 0;
+            double sup = a.support - 50;
+            g.perf += k * sup * 0.012 * (mine ? 1 : 0.6) * Math.min(1.3, a.scope);
+            g.issueAdj[a.area] = clamp(g.issueAdj[a.area] + k * sup * 0.006 * a.scope, -1.5, 1.5);
+            g.issueSal[a.area] = Math.min(2, g.issueSal[a.area] + 0.08 * k);
+            for (Bloc b : g.cong.blocs) {
+                if (b.party == g.party) b.rel = clamp(b.rel + (mine ? 0.6 : -2) * k, 0, 100);
+                else if (a.lean == g.party) b.rel = clamp(b.rel - 1.0 * k, 0, 100);
+            }
+        }
+
+        /** Turns on its effects, and the lawsuits start. */
+        static void takeEffect(Game g, Action a) {
+            apply(g, a, true);
+            Implement.roll(g, a.name, a.area, 0.7);
+            double sue = a.legal * 1.3 + (a.support < 50 ? 0.1 : 0);
+            if (a.legal > 0.04 && g.rng.nextDouble() < sue) Courts.sue(g, a);
+        }
+
+        static void apply(Game g, Action a, boolean on) {
+            if (on == a.applied) return;
+            a.applied = on;
+            Econ e = g.econ;
+            double s = on ? a.scope : -a.scope;
+            if (on) {
+                a.aGdp = a.aUnemp = a.aInfl = a.aTariff = a.aOil = a.aDef = 0;
+                String fx = a.def >= 0 ? AD_FX[a.def] : "";
+                if (a.custom) fx = (a.lean == REP ? "gdp=0.01" : "def=0.01") + " g" + (a.area == PI_IMMIG ? 12 : a.area == PI_JOBS ? 24 : a.area == PI_EDU ? 28 : 4) + "=" + (a.lean == DEM ? 1 : -1);
+                for (String t : fx.split(" ")) {
+                    if (t.isEmpty()) continue;
+                    String[] kv = t.split("=");
+                    String k = kv[0];
+                    double v = Double.parseDouble(kv[1]);
+                    if (k.equals("gdp")) a.aGdp = v; else if (k.equals("unemp")) a.aUnemp = v; else if (k.equals("infl")) a.aInfl = v;
+                    else if (k.equals("tariff")) a.aTariff = v; else if (k.equals("oil")) a.aOil = v; else if (k.equals("def")) a.aDef = v;
+                    else if (k.equals("wf")) { for (int i = 0; i < NPOST; i++) g.ex.wf[i] *= 1 + v * a.scope / 100; }
+                    else if (k.equals("ready")) { for (int i = 0; i < NPOST; i++) g.ex.ready[i] = clamp(g.ex.ready[i] + v * a.scope, 5, 100); }
+                    else if (k.startsWith("st:")) { int st = stateIdx(k.substring(3)); if (st >= 0) g.stateBump[st] += v * a.scope; }
+                    else if (k.startsWith("g") && k.length() > 1 && Character.isDigit(k.charAt(1))) { int gi = Integer.parseInt(k.substring(1)); if (gi >= 0 && gi < NG) g.groupAdj[gi] += v * a.scope; }
+                }
+            }
+            e.polGdp += a.aGdp * s; e.polUnemp += a.aUnemp * s; e.polInfl += a.aInfl * s;
+            e.tariff += a.aTariff * s; e.oilBase += a.aOil * s; e.fiscal += a.aDef * s;
+            if (!on && a.def >= 0) { String fx = AD_FX[a.def]; for (String t : fx.split(" ")) if (t.startsWith("g") && !t.startsWith("gdp")) { String[] kv = t.split("="); int gi = Integer.parseInt(kv[0].substring(1)); if (gi >= 0 && gi < NG) g.groupAdj[gi] -= Double.parseDouble(kv[1]) * a.scope * 0.7; } }
+        }
+
+        static void revoke(Game g, Action a) {
+            apply(g, a, false);
+            a.status = A_REVOKED; a.statusWeek = g.week;
+            if (a.kind == K_EMERG && a.def >= 0) {
+                g.ex.emergency[a.def] = false;
+                for (Action o : g.ex.actions) if (o.def >= 0 && AD_NEEDS[o.def] == a.def && o.status == A_LIVE) { apply(g, o, false); o.status = A_REVOKED; o.statusWeek = g.week; }
+            }
+            g.log(NK_INFO, "The White House rescinds " + a.name.toLowerCase(), null, 0.9);
+            g.perf -= 0.15;
+        }
+
+        static void week(Game g) {
+            for (Action a : new ArrayList<Action>(g.ex.actions)) {
+                if (a.status == A_COMMENT && g.week >= a.finalWeek) {
+                    a.status = A_LIVE; a.statusWeek = g.week;
+                    g.log(NK_GOOD, "A new rule takes effect: " + a.name.toLowerCase(), null, 1.2);
+                    react(g, a, 0.6);
+                    takeEffect(g, a);
+                    Congressional.cra(g, a);
+                }
+            }
+        }
+    }
+
+    /** When the government does something, does it work? Depends on the department's readiness. */
+    static final class Implement {
+        static boolean roll(Game g, String what, int area, double weight) {
+            if (g.ex == null) return false;
+            int post = AREA_POST[area];
+            double rd = g.ex.ready[post];
+            double p = clamp((66 - rd) / 110, 0.02, 0.45);
+            if (g.rng.nextDouble() >= p) return false;
+            g.ex.failures++;
+            String[] how = {"a botched rollout", "computer systems that crash on day one", "confusing guidance and long lines", "missed deadlines and lost paperwork"};
+            g.log(NK_BAD, POST_SHORT[post] + " stumbles: " + how[g.rng.nextInt(how.length)] + " for " + what.toLowerCase(), "Officials blame staffing and old systems. The department's readiness is " + Math.round(rd) + " of 100.", 1.4 * weight + 0.4);
+            g.issueAdj[area] = clamp(g.issueAdj[area] - 0.15 * weight, -1.5, 1.5);
+            g.perf -= 0.4 * weight;
+            if (g.rng.nextDouble() < 0.4) Trouble.add(g, SK_FAILURE, "The " + what.toLowerCase() + " rollout", "Inspectors general and reporters dig into what went wrong at " + POST_NAME[post] + ".", 1.5, null, false);
+            return true;
+        }
+    }
+
+    /** Congress pushing back on executive action. */
+    static final class Congressional {
+        static boolean oppBoth(Game g) { return !Hill.majority(g, HOUSE, g.party) && !Hill.majority(g, SENATE, g.party); }
+
+        /** The Congressional Review Act: a new rule can be overturned by a simple majority, but you can veto. */
+        static void cra(Game g, Action a) {
+            if (!oppBoth(g) || a.lean != g.party || g.rng.nextDouble() > 0.6) return;
+            Decision d = Decisions.add(g, D_CRA, "Congress votes to overturn your rule", "Under the Congressional Review Act, both chambers have passed a resolution to strike down " + a.name.toLowerCase() + ". It needs your signature, or two-thirds to override a veto.",
+                    new String[]{"Veto the resolution", "Sign it and let the rule go"},
+                    new String[]{"Legislative director: \"They don't have two-thirds. Veto it.\"", "Chief of staff: \"It's not worth a fight we'll have to explain.\""});
+            d.action = a;
+        }
+
+        static void emergencyVote(Game g, Action a) {
+            if (!oppBoth(g) && (Hill.majority(g, SENATE, g.party) || g.rng.nextDouble() > 0.4)) return;
+            if (g.rng.nextDouble() > 0.65) return;
+            Decision d = Decisions.add(g, D_EMERG_END, "Congress votes to end your emergency", "Both chambers have passed a joint resolution ending the national emergency over " + EMERG_NAME[a.def] + ".",
+                    new String[]{"Veto it", "Accept it and end the emergency"},
+                    new String[]{"Counsel: \"The law lets you veto. They can't override.\"", "Chief of staff: \"A veto keeps the story going another month.\""});
+            d.action = a;
+        }
+    }
+
+    static final class Courts {
+        static double oppShare(Game g, int level) {
+            double d = level == CS_DISTRICT ? g.ex.dDistrict : g.ex.dCircuit;
+            return g.party == DEM ? 1 - d : d;
+        }
+
+        static void sue(Game g, Action a) {
+            Case c = new Case();
+            c.action = g.ex.actions.indexOf(a);
+            c.stage = CS_DISTRICT;
+            c.decideWeek = g.week + 3 + g.rng.nextInt(5);
+            c.plaintiff = PLAINTIFFS[g.rng.nextInt(PLAINTIFFS.length)];
+            a.sued = true;
+            g.ex.cases.add(c);
+            g.log(NK_INFO, c.plaintiff + " sues to stop " + a.name.toLowerCase(), null, 0.9);
+        }
+
+        static Action act(Game g, Case c) { return c.action >= 0 && c.action < g.ex.actions.size() ? g.ex.actions.get(c.action) : null; }
+
+        /** The chance a court at this level rules against you. */
+        static double pBlock(Game g, Case c) {
+            Action a = act(g, c);
+            double opp = oppShare(g, c.stage);
+            if (c.stage == CS_DISTRICT) opp = 0.5 + 0.5 * opp;                    // plaintiffs pick a friendly courthouse
+            return clamp(Actions.legal(g, a.legal) * (0.5 + 0.9 * opp), 0.02, 0.97);
+        }
+
+        static double justiceP(Game g, Justice j, Action a) {
+            double side = a.lean == REP ? 1 : a.lean == DEM ? -1 : 0;
+            return logistic(2.0 * j.ideo * side + 3.0 * (0.5 - Actions.legal(g, a.legal)) + 0.2);
+        }
+
+        static void week(Game g) {
+            Exec x = g.ex;
+            Random r = g.rng;
+            // the lower courts: vacancies open, the Senate fills them
+            x.vacDistrict += 1.15; x.vacCircuit += 0.22;
+            boolean senate = Hill.majority(g, SENATE, g.party);
+            double rate = (senate ? 1.15 : 0.2) * (x.judgeStrategy == 0 ? 0.8 : x.judgeStrategy == 2 ? 1.1 : 1);
+            double dc = Math.min(x.vacDistrict, rate * 0.82), cc = Math.min(x.vacCircuit, rate * 0.18);
+            double tilt = x.judgeStrategy == 2 ? 0.5 : 1;
+            double mineD = g.party == DEM ? 1 : 0;
+            x.dDistrict = clamp(x.dDistrict + dc * (mineD - x.dDistrict) * tilt / 677, 0, 1);
+            x.dCircuit = clamp(x.dCircuit + cc * (mineD - x.dCircuit) * tilt / 179, 0, 1);
+            x.vacDistrict -= dc; x.vacCircuit -= cc;
+            x.judgeFrac += dc + cc;
+            while (x.judgeFrac >= 1) { x.judgeFrac -= 1; x.judges++; }
+            // the Supreme Court: a retirement or a death
+            int yr = dateOf(g.day())[0];
+            for (Justice j : new ArrayList<Justice>(x.court)) {
+                int age = yr - j.born;
+                double hz = 0.00012 * Math.exp((age - 60) / 7.5);
+                if (j.party == g.party && senate && age >= 70 && g.week < 150) hz += 0.0016;
+                if (j.party != g.party) hz *= 0.6;
+                if (r.nextDouble() < hz) { vacancy(g, j, age); break; }
+            }
+            if (x.nomineeJ != null && x.scotusVoteAt >= 0 && g.week >= x.scotusVoteAt) scotusVote(g);
+            // cases
+            for (Case c : new ArrayList<Case>(x.cases)) if (!c.done && g.week >= c.decideWeek) decide(g, c);
+        }
+
+        static void vacancy(Game g, Justice j, int age) {
+            Exec x = g.ex;
+            x.court.remove(j);
+            x.scotusVacancies++;
+            boolean died = !j.real && age > 80 && g.rng.nextDouble() < 0.5;      // real justices only ever retire
+            g.log(NK_BIG, (died ? "JUSTICE " + j.name.toUpperCase() + " DIES AT " + age : "JUSTICE " + j.name.toUpperCase() + " RETIRES FROM THE SUPREME COURT"), "The Court is down to eight. The choice of a successor is yours.", 4);
+            Decisions.info(g, "A Supreme Court vacancy", "Justice " + j.name + (died ? " has died at " + age + "." : " is retiring at " + age + ".")
+                    + " The Court now has " + count(g, REP) + " justices appointed by Republicans and " + count(g, DEM) + " by Democrats. Choose a nominee in the West Wing (the Courts tab).");
+        }
+
+        static int yr(Game g) { return dateOf(g.day())[0]; }
+
+        static int count(Game g, int party) { int n = 0; for (Justice j : g.ex.court) if (j.party == party) n++; return n; }
+
+        static List<Justice> shortlist(Game g) {
+            Random r = new Random(g.set.seed * 7 + g.ex.scotusVacancies * 1013);
+            List<Justice> l = new ArrayList<Justice>();
+            double side = g.party == REP ? 1 : -1;
+            double[] ideo = {0.85, 0.5, 0.2};
+            int[] age = {46, 53, 60};
+            for (int i = 0; i < 3; i++) {
+                Justice j = new Justice();
+                boolean f = r.nextDouble() < 0.45;
+                j.name = "Judge " + (f ? FIRST_F[r.nextInt(FIRST_F.length)] : FIRST_M[r.nextInt(FIRST_M.length)]) + " " + LASTS[r.nextInt(LASTS.length)];
+                j.ideo = side * (ideo[i] + r.nextGaussian() * 0.05);
+                j.born = yr(g) - age[i] - r.nextInt(4);
+                j.party = g.party; j.real = false;
+                j.face = face(j.name.substring(6), r, g.party);
+                if (j.face.look != null) Cabinet.femaleLook(j.face.look, f, r);
+                l.add(j);
+            }
+            return l;
+        }
+
+        static final String[] SHORTLIST_WHAT = {"A young appeals judge with a strong record for your side", "A respected appeals judge in the mainstream of your party", "A moderate with friends in both parties"};
+
+        static double scotusBloc(Game g, int bi, Justice j) {
+            Bloc b = g.cong.blocs.get(bi);
+            double bIdeo = (b.econ + b.cult) / 2;
+            double l = 0.6 - 2.4 * Math.abs(j.ideo - bIdeo);
+            if (b.party == g.party) l += 2.4 * b.loyalty; else l -= 1.5 * g.era.polarization;
+            return logistic(1.5 * l);
+        }
+
+        static double[] scotusCount(Game g, Justice j) {
+            double yes = 0, var = 0;
+            for (int i = 0; i < g.cong.blocs.size(); i++) { Bloc b = g.cong.blocs.get(i); if (b.chamber != SENATE) continue; double q = scotusBloc(g, i, j); yes += b.seats * q; var += b.seats * q * (1 - q); }
+            return new double[]{yes, Math.sqrt(var) + 0.8};
+        }
+
+        static double scotusChance(Game g, Justice j) { double[] c = scotusCount(g, j); return logistic(1.702 * (c[0] - 50 + 0.5) / c[1]); }
+
+        static void nominateJustice(Game g, Justice j) {
+            Exec x = g.ex;
+            x.nomineeJ = j;
+            boolean opp = !Hill.majority(g, SENATE, g.party);
+            x.scotusVoteAt = g.week + 7 + g.rng.nextInt(4);
+            g.log(NK_BIG, ("President " + g.pres.last + " nominates " + j.name + " to the Supreme Court").toUpperCase(), null, 3.2);
+            if (opp && (Midterms.season(g) || g.week > 150)) {
+                x.scotusVoteAt = g.week + 40;
+                g.log(NK_BAD, "The Senate majority says it won't consider a Supreme Court nominee in an election year", null, 2.4);
+            }
+        }
+
+        static void scotusVote(Game g) {
+            Exec x = g.ex;
+            Justice j = x.nomineeJ;
+            double[] c = scotusCount(g, j);
+            int yes = (int) Math.round(clamp(c[0] + g.rng.nextGaussian() * c[1], 0, 100)), no = 100 - yes;
+            boolean tie = yes == 50 && Hill.majority(g, SENATE, g.party);
+            x.nomineeJ = null; x.scotusVoteAt = -1;
+            if (yes > 50 || tie) {
+                x.court.add(j); x.justices++;
+                g.log(NK_BIG, "SENATE CONFIRMS " + j.name.toUpperCase() + " TO THE SUPREME COURT, " + yes + "-" + no, null, 4);
+                g.perf += 0.8; g.capital = Math.min(100, g.capital + 5);
+                for (Bloc b : g.cong.blocs) if (b.party == g.party) b.rel = Math.min(100, b.rel + 3);
+            } else {
+                g.log(NK_BIG, "SENATE REJECTS " + j.name.toUpperCase() + " FOR THE SUPREME COURT, " + yes + "-" + no, null, 4);
+                g.perf -= 1.5; g.capital = Math.max(0, g.capital - 8);
+                Decisions.info(g, "Your Supreme Court nominee is rejected", j.name + " lost, " + yes + "-" + no + ". The seat is still open. Choose another nominee in the West Wing (the Courts tab).");
+            }
+        }
+
+        static void decide(Game g, Case c) {
+            Action a = act(g, c);
+            if (a == null || a.status == A_REVOKED) { c.done = true; return; }
+            Random r = g.rng;
+            if (c.stage == CS_SCOTUS) {
+                int yes = 0;
+                for (Justice j : g.ex.court) if (r.nextDouble() < justiceP(g, j, a)) yes++;
+                int n = g.ex.court.size();
+                c.votesFor = yes; c.votesAgainst = n - yes;
+                c.done = true; c.stage = CS_DONE;
+                boolean win = yes * 2 > n;
+                c.won = win;
+                if (win) {
+                    if (a.status == A_BLOCKED) { a.status = A_LIVE; a.statusWeek = g.week; Actions.apply(g, a, true); }
+                    g.log(NK_BIG, "SUPREME COURT UPHOLDS " + a.name.toUpperCase() + ", " + yes + "-" + (n - yes), null, 3.2);
+                    g.perf += 0.6; g.capital = Math.min(100, g.capital + 4);
+                } else {
+                    Actions.apply(g, a, false); a.status = A_STRUCK; a.statusWeek = g.week;
+                    g.log(NK_BIG, "SUPREME COURT STRIKES DOWN " + a.name.toUpperCase() + ", " + (n - yes) + "-" + yes, null, 3.2);
+                    g.perf -= 0.8; g.capital = Math.max(0, g.capital - 4);
+                }
+                return;
+            }
+            boolean against = r.nextDouble() < pBlock(g, c);
+            String court = c.stage == CS_DISTRICT ? "A federal judge" : "An appeals court";
+            if (against) {
+                if (a.status == A_LIVE) { Actions.apply(g, a, false); a.status = A_BLOCKED; a.statusWeek = g.week; }
+                c.blocked = true;
+                g.log(NK_BAD, court + " blocks " + a.name.toLowerCase(), null, 1.8);
+                g.perf -= 0.3;
+                Decision d = Decisions.add(g, D_COURT, (c.stage == CS_DISTRICT ? "A judge blocks " : "An appeals court rules against ") + a.name.toLowerCase(),
+                        c.plaintiff + " won " + (c.stage == CS_DISTRICT ? "an injunction in federal district court" : "in the court of appeals") + ". The order is on hold. Your lawyers put the odds of winning on appeal at about "
+                                + Math.round(100 * (1 - (c.stage == CS_DISTRICT ? pBlockAt(g, c, CS_CIRCUIT) : 0.5))) + "%.",
+                        new String[]{"Appeal", "Rewrite it to fix the legal problems", "Let it go", "Slow-walk compliance while you appeal"},
+                        new String[]{"Counsel: \"We have good arguments. Take it up.\"", "Attorney general: \"Narrow it and we win next time.\"", "Chief of staff: \"It's not worth the oxygen.\"",
+                                "Domestic policy adviser: \"Comply on paper and keep going. They'll have to come after us.\""});
+                d.caseRef = c;
+            } else {
+                g.log(NK_GOOD, court + " lets " + a.name.toLowerCase() + " stand", null, 1.2);
+                if (r.nextDouble() < (c.stage == CS_DISTRICT ? 0.6 : 0.5)) advance(g, c);
+                else { c.done = true; c.won = true; }
+            }
+        }
+
+        static double pBlockAt(Game g, Case c, int stage) { int s = c.stage; c.stage = stage; double p = pBlock(g, c); c.stage = s; return p; }
+
+        static void advance(Game g, Case c) {
+            c.stage++;
+            c.blocked = false;
+            if (c.stage == CS_SCOTUS) {
+                // most cases end in the courts of appeals; big ones are decided by the end of June
+                if (g.rng.nextDouble() > 0.5) { c.done = true; c.won = !c.blocked; c.stage = CS_DONE; return; }
+                int[] d = dateOf(g.day());
+                int june = dayOfDate(d[1] >= 9 ? d[0] + 1 : d[0], 5, 28);
+                c.decideWeek = Math.max(g.week + 10, june / 7);
+                g.log(NK_INFO, "The Supreme Court agrees to hear the case over " + act(g, c).name.toLowerCase(), null, 1.4);
+            } else c.decideWeek = g.week + 8 + g.rng.nextInt(8);
+        }
+
+        static void courtDecision(Game g, Case c, int k) {
+            Action a = act(g, c);
+            if (a == null) return;
+            if (k == 0) advance(g, c);
+            else if (k == 1) {
+                c.done = true;
+                a.status = A_REVOKED; a.statusWeek = g.week;
+                Action b = new Action();
+                b.def = a.def; b.kind = a.kind; b.custom = a.custom; b.area = a.area; b.lean = a.lean; b.scope = a.scope * 0.7;
+                b.name = a.name + " (revised)"; b.support = a.support + 2; b.legal = a.legal * 0.55; b.issued = g.week; b.statusWeek = g.week; b.status = A_LIVE;
+                g.ex.actions.add(b);
+                g.log(NK_INFO, "The White House issues a narrower version of " + a.name.toLowerCase(), null, 1.0);
+                Actions.takeEffect(g, b);
+            } else if (k == 2) {
+                c.done = true; a.status = A_STRUCK; a.statusWeek = g.week;
+            } else {
+                advance(g, c);
+                g.ex.defiance++;
+                Trouble.add(g, SK_DEFY, "Defying the courts", "Agencies are carrying on with " + a.name.toLowerCase() + " despite a court order. Judges threaten contempt.", 4.5, null, true);
+                if (a.status == A_BLOCKED) { a.status = A_LIVE; Actions.apply(g, a, true); }
+            }
+        }
+    }
+    // =====================================================================
+    //  19b. TROUBLE: leaks, scandals, oversight, pardons and impeachment; the vice president; delegation
+    // =====================================================================
+    static final class Trouble {
+        static Scandal add(Game g, int kind, String title, String body, double sev, Person who, boolean impeachable) {
+            Scandal s = new Scandal();
+            s.kind = kind; s.title = title; s.body = body; s.severity = sev; s.person = who; s.who = who != null ? who.name : null;
+            s.started = g.week; s.impeachable = impeachable;
+            g.ex.scandals.add(s);
+            g.scandal += sev * 0.35;
+            if (sev >= 3) {
+                g.log(NK_BIG, title.toUpperCase(), body, 1.5 + sev * 0.4);
+                respond(g, s);
+            } else g.log(NK_BAD, title, body, 0.8 + sev * 0.3);
+            return s;
+        }
+
+        /** Asks how to handle a serious story. */
+        static void respond(Game g, Scandal s) {
+            List<String> o = new ArrayList<String>(), adv = new ArrayList<String>();
+            List<Integer> codes = new ArrayList<Integer>();
+            o.add("Release everything and get ahead of it"); adv.add("Communications director: \"Take the hit now and it's a one-week story.\""); codes.add(0);
+            o.add("Deny it and attack the coverage"); adv.add("Political director: \"Our voters don't trust these outlets anyway.\""); codes.add(1);
+            if (s.person != null && (Cabinet.everyone(g).contains(s.person))) { o.add("Ask " + s.person.name + " to resign"); adv.add("Chief of staff: \"Cut it off before it reaches you.\""); codes.add(2); }
+            o.add("Order an independent review"); adv.add("Counsel: \"Let someone credible look at it. It buys time and it looks serious.\""); codes.add(3);
+            String[] oa = o.toArray(new String[0]), aa = adv.toArray(new String[0]);
+            Decision d = Decisions.add(g, D_SCANDAL, s.title, s.body + " About " + Math.round(20 + s.severity * 6) + "% of Americans say they've heard a lot about it.", oa, aa);
+            d.scandalRef = s;
+            d.codes = new int[codes.size()];
+            for (int i = 0; i < d.codes.length; i++) d.codes[i] = codes.get(i);
+        }
+
+        static void scandalDecision(Game g, Scandal s, int code) {
+            Random r = g.rng;
+            s.answered = true;
+            if (code == 0) { s.severity = Math.max(0.5, s.severity - 1.2); g.perf -= 0.3; g.log(NK_INFO, "The White House releases documents on " + s.title.toLowerCase(), null, 0.9); }
+            else if (code == 1) {
+                for (Bloc b : g.cong.blocs) if (b.party == g.party) b.rel = Math.min(100, b.rel + 1);
+                if (r.nextDouble() < 0.35 + s.severity * 0.04) { s.severity += 2; g.log(NK_BAD, "New reporting contradicts the White House on " + s.title.toLowerCase(), null, 1.8); }
+            } else if (code == 2 && s.person != null) {
+                Cabinet.remove(g, s.person);
+                g.ex.departures++;
+                s.severity = Math.max(0.5, s.severity - 2.2);
+                for (Person p : Cabinet.everyone(g)) p.morale = Math.max(0, p.morale - 2);
+                g.log(NK_BAD, s.person.name + " resigns as " + lcTitle(s.person.title()), null, 1.6);
+            } else if (code == 3) { s.stage = Math.max(s.stage, 1); s.severity *= 0.9; g.log(NK_INFO, "An independent review of " + s.title.toLowerCase() + " begins", null, 0.9); }
+        }
+
+        static void leak(Game g, Person p) {
+            Exec x = g.ex;
+            x.leaks++;
+            String[] about = {"shouting matches over " + PISSUE[Week.topIssue(g)].toLowerCase(), "the president's temper and long days", "infighting between the chief of staff and the cabinet",
+                    "second thoughts about the administration's agenda", "who's up and who's down in the West Wing"};
+            String what = about[g.rng.nextInt(about.length)];
+            if (g.stamina < 30) what = "how tired the president looks after long days";
+            String src = p.real ? "unnamed aides" : p.trait == T_LEAKER || p.morale < 35 ? "aides close to " + p.name : "unnamed aides";
+            Scandal s = add(g, SK_LEAK, "Leak: West Wing aides describe " + what, "The story quotes " + src + ".", 1 + g.rng.nextDouble() * 1.2, p.real ? null : p, false);
+            if (s.severity < 3 && g.rng.nextDouble() < 0.5) {
+                Decision d = Decisions.add(g, D_LEAK, "Another leak", "The Capital Ledger is running a story built on " + src + ". It describes " + what + ".",
+                        new String[]{"Hunt for the leaker", "Ignore it", "Tell the staff: one more leak and people go"},
+                        new String[]{"Counsel: \"A leak investigation sends a message.\"", "Chief of staff: \"Every White House leaks. Don't feed it.\"", "Press secretary: \"Say it once, in the staff meeting, and mean it.\""});
+                d.person = p.real ? null : p;
+            }
+        }
+
+        static void leakDecision(Game g, Person p, int k) {
+            Exec x = g.ex;
+            if (k == 0) {
+                for (Person o : Cabinet.everyone(g)) o.morale = Math.max(0, o.morale - 4);
+                if (p != null && g.rng.nextDouble() < 0.45) { Cabinet.remove(g, p); x.departures++; g.log(NK_BAD, p.name + " is pushed out after a leak investigation", null, 1.4); }
+                else g.log(NK_INFO, "A White House leak investigation turns up nothing", null, 0.7);
+            } else if (k == 2) {
+                for (Person o : Cabinet.everyone(g)) { o.morale = Math.max(0, o.morale - 2); o.loyalty = Math.min(100, o.loyalty + 2); }
+            }
+        }
+
+        static void ethics(Game g, Person p) {
+            String[] what = {"billed taxpayers for first-class travel and a $40,000 office renovation", "met with lobbyists for a former client while writing rules that affect it",
+                    "used government staff to run personal errands", "kept trading stocks in industries the department regulates", "steered a contract to a friend's company"};
+            add(g, SK_ETHICS, p.title() + " " + p.name + " under fire", "Reporters say " + p.name + " " + what[g.rng.nextInt(what.length)] + ".", 2.5 + g.rng.nextDouble() * 2.5, p, false);
+        }
+
+        static void week(Game g) {
+            Exec x = g.ex;
+            Random r = g.rng;
+            double press = Cabinet.sq(g, S_PRESS);
+            // scandals fade, or grow
+            for (Scandal s : x.scandals) {
+                if (s.over) continue;
+                boolean probed = false;
+                for (Probe p : x.probes) if (!p.over && p.scandal == s) probed = true;
+                double decay = probed ? 0.995 : s.stage == 1 ? 0.965 : 0.975 - 0.02 * press;
+                s.severity *= decay;
+                if (r.nextDouble() < 0.012 * s.severity * (1.2 - Cabinet.sq(g, S_COUNSEL) * 0.5) && s.kind != SK_LEAK) {
+                    s.severity += 1 + r.nextDouble();
+                    g.log(NK_BAD, "New revelations in " + s.title.toLowerCase(), null, 1.2 + s.severity * 0.2);
+                }
+                g.scandal += 0.009 * s.severity;
+                if (s.severity >= 7 && s.stage < 2 && s.impeachable && x.post[P_DOJ] != null && x.post[P_DOJ].loyalty < 85 && r.nextDouble() < 0.06) {
+                    s.stage = 2;
+                    g.log(NK_BIG, "ATTORNEY GENERAL APPOINTS A SPECIAL COUNSEL TO INVESTIGATE " + s.title.toUpperCase(), null, 4);
+                }
+                if (s.severity < 0.6) s.over = true;
+            }
+            // something from the president's own past
+            Cand p = g.pres;
+            if (p != null && r.nextDouble() < 0.0006 + p.a[A_SCA] / 60000.0) {
+                String[] past = {"Old business deals with a foreign investor resurface", "A former employee sues over the president's past business", "Questions about the president's taxes return", "A book by a former aide paints an unflattering picture"};
+                add(g, SK_PAST, past[r.nextInt(past.length)], "The White House calls it old news.", 2 + r.nextDouble() * 2.5, null, false);
+            }
+            // pardon requests
+            if (g.week >= x.nextPardon) { pardon(g); x.nextPardon = g.week + 8 + r.nextInt(8); }
+            // oversight
+            boolean oppH = !Hill.majority(g, HOUSE, g.party), oppS = !Hill.majority(g, SENATE, g.party);
+            if ((oppH || oppS) && g.week >= x.nextProbe) { probe(g, oppH ? HOUSE : SENATE); x.nextProbe = g.week + 10 + r.nextInt(9); }
+            for (Probe pr : x.probes) if (!pr.over && g.week >= pr.until) endProbe(g, pr);
+            impeachment(g);
+            // the vice president and the delegates
+            VicePres.week(g);
+            if (x.deleg[DG_WHIP]) Decisions.autoWhip(g);
+        }
+
+        // ---- pardons ----
+        static void pardon(Game g) {
+            Random r = g.rng;
+            int i = r.nextInt(PARDONS.length);
+            if (g.week < 30 && i == 1) i = 0;
+            String[] t = PARDONS[i].split("\\|");
+            int kind = Integer.parseInt(t[2]);
+            Decision d = Decisions.add(g, D_PARDON, "A request for clemency: " + t[0].toLowerCase(), t[1] + " The pardon attorney's file is on your desk.",
+                    new String[]{"Grant a full pardon", "Deny it", "Commute the sentence instead"},
+                    new String[]{kind == 1 || kind == 5 ? "Political director: \"Our people have been asking for this.\"" : "Counsel: \"The case for mercy is strong.\"",
+                            "Counsel: \"There's no reason to take the risk.\"", "Chief of staff: \"Split the difference: let them out, don't wipe the slate.\""});
+            d.a = kind; d.b = i;
+            if (g.ex.deleg[DG_PARDONS]) { g.inbox.remove(d); pardonDecision(g, d, kind == 0 || kind == 6 ? 0 : kind == 3 ? 2 : 1); g.log(NK_INFO, "Your counsel handles a clemency request", null, 0.3); }
+        }
+
+        static void pardonDecision(Game g, Decision d, int k) {
+            if (k == 1) return;
+            int kind = d.a;
+            double m = k == 2 ? 0.5 : 1;
+            Exec x = g.ex;
+            x.pardons++;
+            String who = PARDONS[d.b].split("\\|")[0].toLowerCase();
+            g.log(kind == 1 || kind == 2 ? NK_BIG : NK_INFO, (k == 2 ? "President " + g.pres.last + " commutes the sentence of " : "President " + g.pres.last + " pardons ") + who, null, kind == 1 || kind == 2 ? 2.4 : 1.0);
+            switch (kind) {
+                case 0: g.groupAdj[10] += 1.2 * m; g.perf += 0.1; break;
+                case 1: for (Bloc b : g.cong.blocs) if (b.party == g.party) b.rel = Math.min(100, b.rel + 2); add(g, SK_PARDON, "The pardon of " + who, "Critics call it a reward for loyalty and a warning to investigators.", 4.5 * m, null, true); break;
+                case 2: add(g, SK_PARDON, "The pardon of " + who, "Records show the donor's family gave to the president's allies after the request was filed.", 5.5 * m, null, true); g.issueAdj[PI_ETHICS] -= 0.3 * m; break;
+                case 3: g.groupAdj[25] += 1 * m; g.perf -= 0.2 * m; g.issueAdj[PI_SECURITY] += g.party == REP ? 0.05 : -0.1; break;
+                case 4: g.groupAdj[0] += 1 * m; g.issueAdj[PI_SECURITY] -= 0.2 * m; if (x.post[P_CIA] != null) x.post[P_CIA].morale -= 10; if (x.post[P_DNI] != null) x.post[P_DNI].morale -= 8; break;
+                case 5: for (Bloc b : g.cong.blocs) if (b.party == g.party) b.rel = Math.min(100, b.rel + 1.5); add(g, SK_PARDON, "Pardons for the rioters", "Police unions and the other party condemn them.", 3 * m, null, false); g.issueAdj[PI_CRIME] -= 0.3 * m; break;
+                default: g.groupAdj[10] += 0.4 * m; g.perf += 0.05; break;
+            }
+        }
+
+        // ---- oversight ----
+        static void probe(Game g, int chamber) {
+            Exec x = g.ex;
+            Probe p = new Probe();
+            p.chamber = chamber; p.started = g.week; p.until = g.week + 10;
+            Scandal target = null;
+            for (Scandal s : x.scandals) if (!s.over && s.kind != SK_LEAK && (target == null || s.severity > target.severity)) target = s;
+            boolean taken = false;
+            for (Probe o : x.probes) if (!o.over && o.scandal == target) taken = true;
+            if (target != null && !taken) { p.scandal = target; p.topic = target.title.toLowerCase(); target.stage = Math.max(target.stage, 1); }
+            else {
+                Action hot = null;
+                for (Action a : x.actions) if (a.status == A_LIVE && a.lean == g.party && (hot == null || a.support < hot.support)) hot = a;
+                p.topic = hot != null ? hot.name.toLowerCase() : x.failures > 0 ? "problems at " + POST_NAME[worstPost(g)] : "the administration's spending";
+                p.scandal = add(g, SK_POWER, "Congress investigates " + p.topic, "The committee wants documents and testimony from senior officials.", 1.6, null, false);
+            }
+            Member chair = null;
+            for (Member m : g.cong.members) if (m.role == RO_CHAIR && m.chamber == chamber && m.party != g.party && (m.committee.contains("Oversight") || m.committee.contains("Judiciary") || m.committee.contains("Homeland"))) { chair = m; break; }
+            p.chair = chair != null ? chair.name : "The committee chair";
+            x.probes.add(p);
+            g.log(NK_BAD, p.chair + " opens an investigation into " + p.topic, null, 1.6);
+            Decision d = Decisions.add(g, D_SUBPOENA, "A subpoena from Congress", p.chair + " has subpoenaed White House documents and testimony from senior aides about " + p.topic + ".",
+                    new String[]{"Comply and hand them over", "Negotiate a narrower request", "Claim executive privilege", "Refuse to cooperate"},
+                    new String[]{"Counsel: \"There's nothing in there we can't explain.\"", "Legislative director: \"Give them enough to say they won.\"", "Counsel: \"Privilege protects the office, not just you. The courts will take months.\"",
+                            "Political director: \"It's a fishing expedition. Our voters will back us.\""});
+            d.probeRef = p;
+        }
+
+        static int worstPost(Game g) { int w = 0; for (int k = 1; k < NPOST; k++) if (g.ex.ready[k] < g.ex.ready[w]) w = k; return w; }
+
+        static void subpoenaDecision(Game g, Probe p, int k) {
+            Exec x = g.ex;
+            Random r = g.rng;
+            p.response = k;
+            Scandal s = p.scandal;
+            double cq = Cabinet.sq(g, S_COUNSEL);
+            if (k == 0) { if (s != null) s.severity += r.nextDouble() * 2 - 0.6; p.until = g.week + 8; }
+            else if (k == 1) {
+                if (r.nextDouble() < 0.35 + 0.5 * cq) { if (s != null) s.severity += r.nextDouble() - 0.6; p.until = g.week + 7; g.log(NK_INFO, "The White House and " + p.chair + " reach a deal on documents", null, 0.8); }
+                else { if (s != null) s.severity += 1; p.until = g.week + 10; g.log(NK_BAD, p.chair + " rejects the White House's offer and threatens contempt", null, 1.2); }
+            } else if (k == 2) { p.privilegeCase = true; p.until = g.week + 14 + r.nextInt(10); g.log(NK_INFO, "The White House claims executive privilege; the fight goes to court", null, 1.4); }
+            else {
+                x.contempt++;
+                if (s != null) { s.severity += 2; s.impeachable = true; }
+                g.perf -= 0.5;
+                for (Bloc b : g.cong.blocs) if (b.party == g.party) b.rel = Math.min(100, b.rel + 1);
+                g.log(NK_BIG, (CHAMBER[p.chamber] + " votes to hold White House officials in contempt of Congress").toUpperCase(), null, 2.8);
+                p.until = g.week + 12;
+            }
+        }
+
+        static void endProbe(Game g, Probe p) {
+            p.over = true;
+            Scandal s = p.scandal;
+            if (p.privilegeCase) {
+                boolean win = g.rng.nextDouble() < 0.35 + 0.3 * Cabinet.sq(g, S_COUNSEL);
+                if (win) { if (s != null) s.severity *= 0.6; g.log(NK_GOOD, "A judge upholds the White House's claim of executive privilege", null, 1.6); }
+                else { if (s != null) s.severity += 1.5; g.log(NK_BAD, "Courts reject the White House's privilege claim; the documents go to Congress", null, 2.0); }
+                return;
+            }
+            String verdict = s == null || s.severity < 2.5 ? "finds poor judgment but no wrongdoing" : s.severity < 5 ? "accuses the administration of misleading Congress" : "says senior officials may have broken the law";
+            g.log(s != null && s.severity >= 5 ? NK_BIG : NK_BAD, "The " + CHAMBER[p.chamber] + " report on " + p.topic + " " + verdict, null, s != null && s.severity >= 5 ? 3 : 1.4);
+            if (s != null && s.severity >= 5) s.impeachable = true;
+        }
+
+        // ---- impeachment ----
+        static void impeachment(Game g) {
+            Exec x = g.ex;
+            Random r = g.rng;
+            double pr = 2 * x.contempt + 3 * x.defiance;
+            for (Scandal s : x.scandals) if (!s.over && s.impeachable) pr += s.severity;
+            x.impPressure = pr;
+            boolean oppH = !Hill.majority(g, HOUSE, g.party);
+            if (x.impStage == 0 && oppH && pr >= 9 && r.nextDouble() < 0.06 + (pr - 9) * 0.01) {
+                x.impStage = 1; x.impWeek = g.week + 8 + r.nextInt(6);
+                g.log(NK_BIG, "THE HOUSE OPENS AN IMPEACHMENT INQUIRY", "The Judiciary Committee will decide whether to draft articles of impeachment.", 4.5);
+                Decisions.add(g, D_IMPEACH, "An impeachment inquiry", "The House has opened an impeachment inquiry. Hearings start within weeks. How do you respond?",
+                        new String[]{"Cooperate and make your case", "Stonewall: no witnesses, no documents", "Take it to the country: rallies and prime-time speeches"},
+                        new String[]{"Counsel: \"If we have nothing to hide, show it.\"", "Political director: \"It's a partisan show. Don't dignify it.\"", "Communications director: \"Make it a referendum on them.\""});
+                return;
+            }
+            if (x.impStage == 1 && g.week >= x.impWeek) {
+                int yes = 0;
+                for (Bloc b : g.cong.blocs) {
+                    if (b.chamber != HOUSE) continue;
+                    double p = b.party == g.party ? logistic(-4.5 + 0.18 * pr + (40 - g.approval) * 0.05) : logistic(-1.2 + 0.28 * pr - (b.name.contains("Blue Dogs") || b.name.contains("Problem") ? 0.8 : 0));
+                    for (int i = 0; i < b.seats; i++) if (r.nextDouble() < p) yes++;
+                }
+                if (yes >= 218) {
+                    x.impStage = 2; x.impeachments++; x.impWeek = g.week + 3 + r.nextInt(3);
+                    g.log(NK_BIG, "THE HOUSE IMPEACHES PRESIDENT " + g.pres.last.toUpperCase() + ", " + yes + "-" + (435 - yes), "The articles go to the Senate for trial.", 5);
+                    if (pr < 14) { g.perf += 0.8; for (Bloc b : g.cong.blocs) if (b.party == g.party) b.rel = Math.min(100, b.rel + 6); } else g.perf -= 2;
+                } else { x.impStage = 0; x.impResult = "The House voted down impeachment, " + yes + "-" + (435 - yes) + "."; g.log(NK_BIG, "THE HOUSE REJECTS IMPEACHMENT, " + yes + "-" + (435 - yes), null, 4); g.perf += 1; clearImpeachable(g, 0.6); }
+                return;
+            }
+            if (x.impStage == 2 && g.week >= x.impWeek) {
+                int yes = 0;
+                for (Bloc b : g.cong.blocs) {
+                    if (b.chamber != SENATE) continue;
+                    double p = b.party == g.party ? logistic(-4.2 + 0.16 * pr + (40 - g.approval) * 0.06) : logistic(0.2 + 0.2 * pr - (b.name.contains("oderate") ? 0.4 : 0));
+                    for (int i = 0; i < b.seats; i++) if (r.nextDouble() < p) yes++;
+                }
+                if (yes >= 67) {
+                    x.impStage = 4;
+                    x.impResult = "The Senate voted " + yes + "-" + (100 - yes) + " to convict. " + (g.vp != null ? g.vp.name() + " is sworn in as president." : "");
+                    g.log(NK_BIG, "THE SENATE CONVICTS PRESIDENT " + g.pres.last.toUpperCase() + ", " + yes + "-" + (100 - yes), x.impResult, 6);
+                    g.over = true; g.removed = true;
+                } else {
+                    x.impStage = 3;
+                    x.impResult = "The Senate acquitted you, " + yes + " guilty to " + (100 - yes) + " not guilty; 67 votes were needed to convict.";
+                    g.log(NK_BIG, "SENATE ACQUITS PRESIDENT " + g.pres.last.toUpperCase(), x.impResult, 5);
+                    g.perf += pr < 14 ? 1.2 : 0;
+                    clearImpeachable(g, 0.5);
+                    Decisions.info(g, "Acquitted", x.impResult + " The trial is over, but the votes will be remembered.");
+                }
+            }
+        }
+
+        static void clearImpeachable(Game g, double k) { for (Scandal s : g.ex.scandals) if (!s.over && s.impeachable) s.severity *= k; g.ex.contempt = 0; g.ex.defiance = 0; }
+
+        static void impeachDecision(Game g, int k) {
+            Exec x = g.ex;
+            if (k == 0) { for (Scandal s : x.scandals) if (!s.over && s.impeachable) s.severity *= g.rng.nextDouble() < 0.5 ? 0.85 : 1.1; }
+            else if (k == 1) { x.contempt++; for (Bloc b : g.cong.blocs) if (b.party == g.party) b.rel = Math.min(100, b.rel + 3); }
+            else { g.stamina = Math.max(0, g.stamina - 10); g.perf += g.approval >= 44 ? 0.8 : -0.4; }
+        }
+    }
+
+    // =====================================================================
+    //  The vice president's missions
+    // =====================================================================
+    static final class VicePres {
+        static void start(Game g, int mission, int arg) {
+            Exec x = g.ex;
+            x.vpMission = mission; x.vpArg = arg; x.vpUntil = VM_WEEKS[mission] > 0 ? g.week + VM_WEEKS[mission] : -1;
+            if (mission != VM_NONE) { x.vpMissions++; g.log(NK_INFO, "Vice President " + g.vp.last + (mission == VM_TASK ? " will lead the administration's work on " + PISSUE[arg].toLowerCase() : mission == VM_TOUR ? " heads out on a swing-state tour" : mission == VM_MONEY ? " hits the fundraising circuit" : mission == VM_ABROAD ? " leaves on a trip to reassure allies" : " takes charge of the White House's Senate operation"), null, 0.8); }
+        }
+
+        static void week(Game g) {
+            Exec x = g.ex;
+            Cand v = g.vp;
+            if (v == null) return;
+            Random r = g.rng;
+            double k = (v.a[A_CHA] + v.a[A_EST]) / 140.0;
+            switch (x.vpMission) {
+                case VM_TOUR: { String[] sw = {"PA", "MI", "WI", "AZ", "GA", "NC", "NV"}; int s = stateIdx(sw[g.week % sw.length]); if (s >= 0) g.stateBump[s] += 1.2 * k; g.perf += 0.01; break; }
+                case VM_TASK: if (x.vpArg >= 0) { g.issueAdj[x.vpArg] = clamp(g.issueAdj[x.vpArg] + 0.015 * k, -1.5, 1.5); g.command[x.vpArg] = Math.min(100, g.command[x.vpArg] + 0.6); } break;
+                case VM_SENATE: for (Bloc b : g.cong.blocs) if (b.chamber == SENATE) b.rel = Math.min(100, b.rel + 0.25 * k); break;
+                case VM_MONEY: g.funds += 1.2 * v.a[A_BIG] / 70; break;
+                case VM_ABROAD: g.issueAdj[PI_FOREIGN] = clamp(g.issueAdj[PI_FOREIGN] + 0.012 * k, -1.5, 1.5); break;
+                default: break;
+            }
+            if (x.vpMission != VM_NONE && r.nextDouble() < (100 - v.a[A_DIS]) / 2600.0) {
+                g.log(NK_BAD, "Vice President " + v.last + "'s off-the-cuff remarks make headlines", "The White House says the vice president was making a broader point.", 1.0);
+                g.perf -= 0.25;
+            }
+            // a vice president with nothing to do grows restless
+            x.vpLoyalty = clamp(x.vpLoyalty + (x.vpMission == VM_NONE ? -0.15 : 0.1) + (g.approval - 45) * 0.01, 0, 100);
+            if (x.vpUntil >= 0 && g.week >= x.vpUntil) { g.log(NK_INFO, "Vice President " + v.last + " wraps up: " + VM_NAME[x.vpMission].toLowerCase(), null, 0.4); x.vpMission = VM_NONE; x.vpUntil = -1; }
+        }
+    }
+
+    // =====================================================================
+    //  Delegation: your chief of staff plans the week
+    // =====================================================================
+    static final class Delegate {
+        static void plan(Game g) {
+            if (g.ex == null || !g.ex.deleg[DG_SCHEDULE]) return;
+            double q = Cabinet.sq(g, S_COS);
+            Week.routine(g);
+            if (g.stamina < 35 + (1 - q) * 15) Rooms.restWeek(g);
+            else if (g.week % 5 == 2 && q > 0.5) {
+                List<Integer> sw = new ArrayList<Integer>();
+                for (int s = 0; s < NS; s++) sw.add(s);
+                final Game gg = g;
+                Collections.sort(sw, (a, b) -> Double.compare(Math.abs(gg.stateApp[a] - 48) - STATES[a].ev * 0.15, Math.abs(gg.stateApp[b] - 48) - STATES[b].ev * 0.15));
+                g.act[7] = AC_TRIP; g.arg[7] = sw.get(0);
+                if (Midterms.season(g)) { g.act[10] = AC_CAMPAIGN; g.arg[10] = sw.get(1); }
+            }
+            if (g.week - g.ex.lastCabinet > 6) g.act[4] = AC_CABINET;
         }
     }
 
@@ -6369,7 +7870,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     static final String[] ROOM_NAME = {"The Resolute Desk", "The Country", "The Economy", "The Residence", "The West Wing", "The Roosevelt Room", "The Situation Room", "The Press Briefing Room"};
     static final String[] ROOM_SUB = {"Your week, slot by slot", "Approval, by issue, group and state", "Jobs, prices, markets and the budget", "Your health, your sleep and your family",
             "Your staff and your cabinet", "Congress: the leaders, the votes, the budget", "The world: allies, rivals and crises", "The press corps and the media"};
-    static final boolean[] ROOM_OPEN = {true, true, true, true, false, true, false, false};
+    static final boolean[] ROOM_OPEN = {true, true, true, true, true, true, false, false};
     static final String[] ROOM_LATER = {"", "", "", "",
             "Your chief of staff, national security adviser, press secretary and counsel, each with skills, traits and loyalty; all 15 departments and their secretaries; cabinet meetings; leaks and resignations; and your vice president's missions.",
             "Named leaders, committee chairs and swing votes; bills you negotiate provision by provision; the filibuster, reconciliation and the Byrd rule; your budget, the 12 spending bills, shutdowns, the debt ceiling and vetoes.",
@@ -6408,6 +7909,11 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             Week.resolve(g);
             snd(Sfx.TURN);
             SaveGame.save(u, SaveGame.AUTO);
+            if (g.removed) {
+                u.modal("Removed from Office", (g.ex != null && g.ex.impResult != null ? g.ex.impResult + " " : "") + "Your presidency ends here, on " + dateLong(g.day()) + ". Historians will argue about it for decades.",
+                        new String[]{"Main menu"}, new Runnable[]{() -> u.go(SC_HOME)}, C_BAD);
+                return;
+            }
             if (g.over) {
                 u.modal("The End of the Term", "Your four years are up. Re-election, the second term and the verdict of history arrive in a later update. For now, thank you for your service, Mr. or Madam President.",
                         new String[]{"Main menu"}, new Runnable[]{() -> u.go(SC_HOME)}, C_GOLD);
@@ -6788,7 +8294,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     // =====================================================================
     //  25.  THE ROOMS
     // =====================================================================
-    static final Color[] AC_COL = {rgb(0x34415a), rgb(0x2f8f5a), rgb(0x2f8f5a), rgb(0x2f8f5a), rgb(0x2f6fe0), rgb(0x7c4dff), rgb(0xd4a52a), rgb(0x1fbf6a), rgb(0x5aa0d8), rgb(0xc8323a), rgb(0x2f8f5a), rgb(0x8a6a1a), rgb(0x55607a)};
+    static final Color[] AC_COL = {rgb(0x34415a), rgb(0x2f8f5a), rgb(0x2f8f5a), rgb(0x2f8f5a), rgb(0x2f6fe0), rgb(0x7c4dff), rgb(0xd4a52a), rgb(0x1fbf6a), rgb(0x5aa0d8), rgb(0xc8323a), rgb(0x2f8f5a), rgb(0x8a6a1a), rgb(0x55607a), rgb(0xb8452e), rgb(0x3d6b9e)};
 
     static final class Rooms {
         static int room = R_DESK, pendingSlot = -1, pendingAct = AC_TRIP, mapMode = 0, selState = -1, chartSel = 0;
@@ -6838,6 +8344,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 case R_ECON: econ(u, g, game); break;
                 case R_RESIDENCE: residence(u, g, game); break;
                 case R_CONGRESS: HillUI.draw(u, g, game); break;
+                case R_WESTWING: WestWing.draw(u, g, game); break;
                 default: later(u, g, game); break;
             }
         }
@@ -6929,6 +8436,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 if (a == AC_CONGRESS && weekend) continue;
                 if (a == AC_WORKLATE && i % 3 != 2) continue;
                 if (a == AC_CAMPAIGN && !Midterms.season(game)) continue;
+                if (a == AC_CABINET && (weekend || i % 3 == 2)) continue;
                 opts.add(a);
             }
             String[] names = new String[opts.size()];
@@ -7685,6 +9193,473 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         }
     }
     // =====================================================================
+    //  28.  THE WEST WING: your staff, the cabinet, the vice president, executive action, the courts and oversight
+    // =====================================================================
+    static final class WestWing {
+        static int tab, selStaff = -1, selPost = 0, lib = 0, selAct = -1, cArea = PI_ECON, cDir = -1, cBasis = 0;
+        static double cScope = 0.8;
+        static String msg;
+        static final String[] TABS = {"Staff", "Cabinet", "Vice president", "Orders and rules", "The courts", "Oversight"};
+
+        static void draw(ResoluteDesk u, Graphics2D g, Game game) {
+            if (game.ex == null) Cabinet.setup(game);
+            if (cDir < 0) cDir = game.party;
+            u.segmented(g, 48, 116, 780, 30, TABS, tab, i -> { tab = i; msg = null; }, null);
+            if (msg != null) textFit(g, msg, 850, 137, DW - 900, F_XS, C_GOLD);
+            switch (tab) {
+                case 1: cabinet(u, g, game); break;
+                case 2: vp(u, g, game); break;
+                case 3: actions(u, g, game); break;
+                case 4: courts(u, g, game); break;
+                case 5: oversight(u, g, game); break;
+                default: staff(u, g, game); break;
+            }
+        }
+
+        static Color good(double v) { return v >= 65 ? C_GOOD : v >= 45 ? C_GOLD : C_BAD; }
+
+        static void stats(Graphics2D g, Person p, double x, double y, double w) {
+            String[] n = {"Skill", "Loyalty", "Morale"};
+            double[] v = {p.skill, p.loyalty, p.morale};
+            for (int i = 0; i < 3; i++) {
+                text(g, n[i], x, y + i * 16, F_T, C_DIM);
+                bar(g, x + 50, y - 7 + i * 16, w - 80, 6, v[i] / 100, good(v[i]));
+                textR(g, String.valueOf(Math.round(v[i])), x + w, y + i * 16, F_TB, Color.white);
+            }
+        }
+
+        // ---- staff ----
+        static void staff(ResoluteDesk u, Graphics2D g, Game game) {
+            Exec x = game.ex;
+            u.panel(g, 48, 160, 870, 652, "The White House staff");
+            double cw = 278, ch = 200;
+            for (int s = 0; s < NSTAFF; s++) {
+                double cx = 62 + (s % 3) * (cw + 8), cy = 194 + (s / 3) * (ch + 8);
+                Person p = x.staff[s];
+                final int k = s;
+                u.card(g, cx, cy, cw, ch, selStaff == s, () -> selStaff = k, STAFF_DOES[s]);
+                label(g, STAFF_TITLE[s].toUpperCase(), cx + 12, cy + 20, C_GOLD);
+                if (p == null) { text(g, "Vacant", cx + 12, cy + 60, F_H2, C_BAD); text(g, "Click to choose someone", cx + 12, cy + 82, F_XS, C_DIM); continue; }
+                Portrait.draw(g, p.face, cx + 12, cy + 30, 64, 76, u.tsec, 0, true, true);
+                textFit(g, p.name, cx + 86, cy + 46, cw - 96, F_BB, Color.white);
+                textFit(g, p.background, cx + 86, cy + 63, cw - 96, F_T, C_DIM);
+                chip(g, TRAIT[p.trait], cx + 86, cy + 80, p.trait >= T_LEAKER ? C_AMBER : C_ACCENT, false);
+                text(g, Math.max(0, game.week - p.since) + " weeks in the job", cx + 86, cy + 112, F_T, C_FAINT);
+                stats(g, p, cx + 12, cy + 126, cw - 24);
+                final Person pp = p;
+                u.button(g, cx + cw - 82, cy + ch - 28, 70, 20, "Fire", B_GHOST, () -> { Cabinet.fire(game, pp); selStaff = k; msg = pp.name + " is out."; }, "Let them go. Everyone else notices.");
+            }
+            double px = 932, pw = DW - 48 - px;
+            if (selStaff >= 0) {
+                u.panel(g, px, 160, pw, 652, "Choose a " + STAFF_TITLE[selStaff].toLowerCase());
+                wrap(g, STAFF_DOES[selStaff], px + 18, 200, pw - 36, F_XS, C_TEXT);
+                List<Person> o = Cabinet.staffOptions(game, selStaff, x.departures);
+                double y = 240;
+                for (Person p : o) {
+                    u.card(g, px + 14, y, pw - 28, 160, false, null, TRAIT_DESC[p.trait]);
+                    Portrait.draw(g, p.face, px + 26, y + 12, 60, 72, u.tsec, 0, true, true);
+                    text(g, p.name, px + 96, y + 28, F_BB, Color.white);
+                    textFit(g, p.background, px + 96, y + 45, pw - 140, F_T, C_DIM);
+                    chip(g, TRAIT[p.trait], px + 96, y + 62, p.trait >= T_LEAKER ? C_AMBER : C_ACCENT, false);
+                    stats(g, p, px + 26, y + 104, pw - 200);
+                    final Person pp = p;
+                    final int role = selStaff;
+                    u.button(g, px + pw - 140, y + 112, 112, 30, "Hire", B_GOLD, () -> {
+                        Person old = game.ex.staff[role];
+                        if (old != null) { Cabinet.remove(game, old); game.ex.departures++; game.log(NK_INFO, old.name + " leaves the White House", null, 0.6); }
+                        Cabinet.appoint(game, role, pp); selStaff = -1; msg = pp.name + " starts Monday.";
+                    });
+                    y += 170;
+                }
+                u.button(g, px + 14, 770, 140, 30, "Cancel", B_GHOST, () -> selStaff = -1);
+                return;
+            }
+            u.panel(g, px, 160, pw, 652, "Delegate");
+            double y = 196;
+            wrap(g, "Hand routine work to your team. How well it's done depends on the person doing it.", px + 18, y, pw - 36, F_XS, C_DIM);
+            y += 34;
+            for (int d = 0; d < NDG; d++) {
+                final int k = d;
+                u.toggle(g, px + 18, y, x.deleg[d], () -> { x.deleg[k] = !x.deleg[k]; if (k == DG_SCHEDULE && x.deleg[k]) Delegate.plan(game); }, DG_DESC[d]);
+                textFit(g, DG_NAME[d], px + 66, y + 13, pw - 90, F_SB, Color.white);
+                y += 18 + wrap(g, DG_DESC[d], px + 66, y + 30, pw - 90, F_T, C_DIM);
+                Person who = DG_ROLE[d] >= 0 ? x.staff[DG_ROLE[d]] : x.post[P_OMB];
+                text(g, who != null ? who.name + ", skill " + Math.round(who.skill) : "Nobody in the job", px + 66, y + 22, F_T, who != null ? C_FAINT : C_BAD);
+                y += 40;
+            }
+            y += 6;
+            label(g, "The mood in the West Wing", px + 18, y, C_GOLD);
+            double mor = 0; int n = 0;
+            for (Person p : Cabinet.everyone(game)) { mor += p.morale; n++; }
+            mor /= Math.max(1, n);
+            bar(g, px + 18, y + 12, pw - 90, 8, mor / 100, good(mor));
+            textR(g, String.valueOf(Math.round(mor)), px + pw - 18, y + 21, F_SB, Color.white);
+            text(g, x.leaks + " leaks, " + x.departures + " departures so far", px + 18, y + 42, F_XS, C_DIM);
+        }
+
+        // ---- the cabinet ----
+        static void cabinet(ResoluteDesk u, Graphics2D g, Game game) {
+            Exec x = game.ex;
+            u.panel(g, 48, 160, 960, 652, "The cabinet");
+            double y = 196;
+            text(g, "Post", 66, y, F_TB, C_FAINT); text(g, "Who", 250, y, F_TB, C_FAINT); text(g, "Skill", 560, y, F_TB, C_FAINT); text(g, "Morale", 660, y, F_TB, C_FAINT);
+            text(g, "Readiness", 760, y, F_TB, C_FAINT); textR(g, "Staff", 990, y, F_TB, C_FAINT);
+            y += 10;
+            for (int k = 0; k < NPOST; k++) {
+                final int kk = k;
+                Person p = x.post[k], nom = x.nominee[k];
+                u.card(g, 58, y, 940, 26, selPost == k, () -> selPost = kk, POST_NAME[k]);
+                text(g, POST_SHORT[k], 66, y + 17, F_SB, Color.white);
+                if (p != null) {
+                    textFit(g, p.name, 250, y + 17, 300, F_S, Color.white);
+                    bar(g, 560, y + 10, 80, 6, p.skill / 100, good(p.skill));
+                    bar(g, 660, y + 10, 80, 6, p.morale / 100, good(p.morale));
+                } else if (nom != null) {
+                    textFit(g, nom.name + ": Senate vote " + (x.voteAt[k] <= game.week ? "this week" : "in " + (x.voteAt[k] - game.week) + " wk"), 250, y + 17, 380, F_S, C_GOLD);
+                    textR(g, Math.round(Cabinet.chance(game, nom) * 100) + "% to pass", 740, y + 17, F_XS, Cabinet.chance(game, nom) > 0.6 ? C_GOOD : C_AMBER);
+                } else text(g, "Vacant: an acting official is in charge", 250, y + 17, F_S, C_BAD);
+                bar(g, 760, y + 10, 140, 6, x.ready[k] / 100, good(x.ready[k]));
+                textR(g, x.wf[k] >= 10 ? Math.round(x.wf[k]) + "k" : fmt1(x.wf[k]) + "k", 990, y + 17, F_XS, C_DIM);
+                y += 28;
+            }
+            double tot = 0; for (double w : x.wf) tot += w;
+            text(g, "Federal civilian workforce: about " + fmt1(tot / 1000) + " million. Schedule a cabinet meeting from your calendar to lift morale and readiness.", 66, 802, F_XS, C_DIM);
+            // the selected post
+            double px = 1022, pw = DW - 48 - px;
+            int k = selPost;
+            Person p = x.post[k], nom = x.nominee[k];
+            u.panel(g, px, 160, pw, 652, POST_NAME[k]);
+            text(g, "Readiness " + Math.round(x.ready[k]) + " of 100", px + 18, 198, F_SB, good(x.ready[k]));
+            wrap(g, "Readiness decides whether the department carries out your orders, rules and laws well. It rises with a strong, happy leader and falls with staff cuts and shutdowns.", px + 18, 216, pw - 36, F_T, C_DIM);
+            double y2 = 262;
+            if (p != null) {
+                Portrait.draw(g, p.face, px + 18, y2, 80, 96, u.tsec, 0, true, true);
+                text(g, p.name, px + 110, y2 + 20, F_H3, Color.white);
+                textFit(g, p.title(), px + 110, y2 + 38, pw - 130, F_XS, C_TEXT);
+                textFit(g, p.background, px + 110, y2 + 54, pw - 130, F_T, C_DIM);
+                chip(g, TRAIT[p.trait], px + 110, y2 + 70, p.trait >= T_LEAKER ? C_AMBER : C_ACCENT, false);
+                if (p.lastVote >= 0) text(g, "Confirmed " + p.voteYes + "-" + p.voteNo, px + 110, y2 + 96, F_T, C_FAINT);
+                stats(g, p, px + 18, y2 + 124, pw - 36);
+                final Person pp = p;
+                u.button(g, px + 18, y2 + 180, 160, 30, "Fire", B_GHOST, () -> { Cabinet.fire(game, pp); msg = pp.name + " is out."; }, "A career official takes over until you nominate someone.");
+                return;
+            }
+            if (nom != null) {
+                Portrait.draw(g, nom.face, px + 18, y2, 80, 96, u.tsec, 0, true, true);
+                text(g, nom.name, px + 110, y2 + 20, F_H3, Color.white);
+                text(g, "Your nominee", px + 110, y2 + 38, F_XS, C_GOLD);
+                textFit(g, nom.background, px + 110, y2 + 54, pw - 130, F_T, C_DIM);
+                chip(g, TRAIT[nom.trait], px + 110, y2 + 70, nom.trait >= T_LEAKER ? C_AMBER : C_ACCENT, false);
+                stats(g, nom, px + 18, y2 + 124, pw - 36);
+                double[] c = Cabinet.count(game, nom);
+                text(g, "Whip count: about " + Math.round(c[0]) + " votes; 50 plus the vice president confirms.", px + 18, y2 + 190, F_XS, C_TEXT);
+                text(g, Math.round(Cabinet.chance(game, nom) * 100) + "% chance", px + 18, y2 + 208, F_SB, Cabinet.chance(game, nom) > 0.6 ? C_GOOD : C_AMBER);
+                final int kk = k;
+                u.button(g, px + 18, y2 + 226, 200, 30, "Withdraw the nomination", B_GHOST, () -> { Cabinet.withdraw(game, kk); msg = "Nomination withdrawn."; });
+                return;
+            }
+            label(g, "Nominate someone", px + 18, y2, C_GOLD);
+            List<Person> o = Cabinet.options(game, k, x.departures);
+            double yy = y2 + 14;
+            for (Person q : o) {
+                u.card(g, px + 14, yy, pw - 28, 116, false, null, TRAIT_DESC[q.trait]);
+                Portrait.draw(g, q.face, px + 24, yy + 10, 50, 60, u.tsec, 0, true, true);
+                textFit(g, q.name, px + 84, yy + 24, pw - 120, F_BB, Color.white);
+                textFit(g, q.background + (q.party != game.party ? " (" + PARTY_SHORT[q.party] + ")" : ""), px + 84, yy + 40, pw - 120, F_T, C_DIM);
+                chip(g, TRAIT[q.trait], px + 84, yy + 56, q.trait >= T_LEAKER ? C_AMBER : C_ACCENT, false);
+                text(g, "Skill " + Math.round(q.skill) + ", loyalty " + Math.round(q.loyalty), px + 24, yy + 90, F_T, C_TEXT);
+                double ch = Cabinet.chance(game, q);
+                text(g, Math.round(ch * 100) + "% to be confirmed", px + 24, yy + 106, F_TB, ch > 0.6 ? C_GOOD : C_AMBER);
+                final Person qq = q; final int kk = k;
+                u.button(g, px + pw - 128, yy + 80, 100, 26, "Nominate", B_GOLD, () -> { Cabinet.nominate(game, kk, qq); msg = qq.name + " goes to the Senate."; });
+                yy += 124;
+            }
+        }
+
+        // ---- the vice president ----
+        static void vp(ResoluteDesk u, Graphics2D g, Game game) {
+            Exec x = game.ex;
+            Cand v = game.vp;
+            u.panel(g, 48, 160, 520, 652, "The vice president");
+            if (v == null) { text(g, "The office is vacant.", 70, 210, F_H2, C_BAD); return; }
+            Portrait.draw(g, v, 70, 196, 150, 180, u.tsec, 0, false, true);
+            text(g, v.name(), 236, 220, F_H2, Color.white);
+            textFit(g, v.role, 236, 242, 310, F_XS, C_DIM);
+            text(g, "Loyalty to you", 236, 280, F_XS, C_TEXT);
+            bar(g, 236, 288, 230, 8, x.vpLoyalty / 100, good(x.vpLoyalty));
+            textR(g, String.valueOf(Math.round(x.vpLoyalty)), 546, 296, F_SB, Color.white);
+            text(g, "Now: " + VM_NAME[x.vpMission] + (x.vpMission == VM_TASK && x.vpArg >= 0 ? " (" + PISSUE[x.vpArg].toLowerCase() + ")" : "") + (x.vpUntil >= 0 ? ", until " + dateStr(x.vpUntil * 7) : ""), 236, 326, F_S, C_GOLD);
+            double y = 400;
+            String[] sk = {"Charisma", "Establishment ties", "Discipline", "Fundraising"};
+            int[] at = {A_CHA, A_EST, A_DIS, A_BIG};
+            for (int i = 0; i < 4; i++) { text(g, sk[i], 70, y, F_XS, C_TEXT); bar(g, 220, y - 8, 260, 7, v.a[at[i]] / 100.0, good(v.a[at[i]])); textR(g, String.valueOf(v.a[at[i]]), 546, y, F_XSB, Color.white); y += 22; }
+            wrap(g, "A vice president with nothing to do grows restless. Missions use their strengths; a gaffe-prone one can make news on the road. In the Senate, the vice president breaks 50-50 ties.", 70, y + 16, 470, F_XS, C_DIM);
+            double px = 584, pw = DW - 48 - px;
+            u.panel(g, px, 160, pw, 652, "Missions");
+            double yy = 196;
+            for (int m = 0; m < NVM; m++) {
+                final int mm = m;
+                boolean on = x.vpMission == m;
+                u.card(g, px + 14, yy, pw - 28, 92, on, null, VM_DESC[m]);
+                text(g, VM_NAME[m], px + 30, yy + 28, F_H3, on ? C_GOLD : Color.white);
+                wrap(g, VM_DESC[m], px + 30, yy + 48, pw - 240, F_XS, C_TEXT);
+                if (VM_WEEKS[m] > 0) text(g, VM_WEEKS[m] + " weeks", px + 30, yy + 80, F_T, C_DIM);
+                if (!on) u.button(g, px + pw - 180, yy + 30, 150, 32, m == VM_NONE ? "Bring them home" : "Send", m == VM_NONE ? B_GHOST : B_PRIMARY, () -> {
+                    if (mm == VM_TASK) {
+                        String[] iss = new String[NPI];
+                        for (int j = 0; j < NPI; j++) iss[j] = PISSUE[j];
+                        u.openPopup(Math.min(u.mx, DW - 300), 160, 280, "A task force on which issue?", iss, j -> { VicePres.start(game, VM_TASK, j); msg = "The vice president takes on " + PISSUE[j].toLowerCase() + "."; });
+                    } else { VicePres.start(game, mm, -1); msg = VM_NAME[mm] + "."; }
+                });
+                yy += 100;
+            }
+        }
+
+        // ---- orders, rules and emergencies ----
+        static void actions(ResoluteDesk u, Graphics2D g, Game game) {
+            Exec x = game.ex;
+            u.panel(g, 48, 160, 470, 652, "The library");
+            u.segmented(g, 62, 192, 442, 26, new String[]{"Orders", "Rules", "Emergencies", "Custom"}, lib, i -> { lib = i; selAct = -1; }, null);
+            List<Integer> items = new ArrayList<Integer>();
+            int kind = lib == 0 ? K_ORDER : lib == 1 ? K_RULE : K_EMERG;
+            if (lib < 3) {
+                for (int i = 0; i < AD_ID.length; i++) if (AD_KIND[i] == kind && (AD_LEAN[i] == game.party || AD_LEAN[i] < 0)) items.add(i);
+                for (int i = 0; i < AD_ID.length; i++) if (AD_KIND[i] == kind && AD_LEAN[i] >= 0 && AD_LEAN[i] != game.party) items.add(i);
+            }
+            double top = 228, h = 572;
+            if (lib < 3) {
+                double off = u.beginScroll(g, "lib", 58, top, 450, h);
+                int h0 = u.hits.size();
+                for (int n = 0; n < items.size(); n++) {
+                    int i = items.get(n);
+                    final int ii = i;
+                    double ry = top - off + n * 38;
+                    boolean av = Actions.available(game, i);
+                    u.card(g, 62, ry, 436, 34, selAct == i, () -> selAct = ii, AD_DESC[i]);
+                    g.setColor(AD_LEAN[i] == DEM ? C_DEM : AD_LEAN[i] == REP ? C_REP : C_GOLD);
+                    g.fill(new RoundRectangle2D.Double(68, ry + 9, 4, 16, 3, 3));
+                    textFit(g, AD_NAME[i], 80, ry + 22, 330, F_S, av ? Color.white : C_DIM);
+                    textR(g, Actions.live(game, i) ? "in force" : AD_NEEDS[i] >= 0 && !x.emergency[AD_NEEDS[i]] ? "needs emergency" : Math.round(AD_SUP[i]) + "%", 490, ry + 22, F_T, av ? C_TEXT : C_DIM);
+                }
+                u.clipHits(h0, top, top + h);
+                u.endScroll(g, "lib", items.size() * 38);
+            } else {
+                double y = 250;
+                text(g, "Write your own order", 66, y, F_H3, Color.white);
+                y += 26;
+                text(g, "Issue", 66, y + 16, F_S, C_TEXT);
+                u.button(g, 160, y, 330, 26, PISSUE[cArea], B_NORM, () -> { String[] iss = new String[NPI]; for (int j = 0; j < NPI; j++) iss[j] = PISSUE[j]; u.openPopup(160, 260, 300, "Which issue?", iss, j -> cArea = j); });
+                y += 40;
+                text(g, "Direction", 66, y + 16, F_S, C_TEXT);
+                u.segmented(g, 160, y, 330, 26, new String[]{"Progressive", "Conservative"}, cDir == DEM ? 0 : 1, i -> cDir = i == 0 ? DEM : REP, null);
+                y += 40;
+                text(g, "Reach", 66, y + 14, F_S, C_TEXT);
+                u.slider(g, 160, y + 10, 270, (cScope - 0.3) / 1.2, C_ACCENT, v -> cScope = 0.3 + v * 1.2, "Broader orders do more, draw more lawsuits and less support.");
+                textR(g, cScope < 0.7 ? "narrow" : cScope > 1.1 ? "sweeping" : "middle", 490, y + 14, F_XSB, Color.white);
+                y += 40;
+                boolean anyEm = false; for (boolean b : x.emergency) anyEm |= b;
+                text(g, "Legal basis", 66, y + 16, F_S, C_TEXT);
+                u.segmented(g, 160, y, 330, 26, anyEm ? new String[]{"Clear statute", "A stretch", "Emergency"} : new String[]{"Clear statute", "A stretch"}, Math.min(cBasis, anyEm ? 2 : 1), i -> cBasis = i,
+                        new String[]{"Small effects, few lawsuits.", "Bigger effects, a good chance a judge blocks it.", "Uses a national emergency you've declared."});
+                y += 50;
+                double legal = Actions.legal(game, clamp(0.08 + 0.3 * cScope + (cBasis == 1 ? 0.3 : cBasis == 2 ? 0.12 : 0), 0, 0.95));
+                text(g, "Chance a court blocks it: about " + Math.round(legal * 100) + "%", 66, y, F_XS, legal > 0.5 ? C_AMBER : C_TEXT);
+                y += 30;
+                u.button(g, 66, y, 424, 38, "Sign the order", B_GOLD, () -> { Actions.custom(game, cArea, cDir, cScope, cBasis); msg = "Signed."; });
+                wrap(g, "A custom order shifts how people see you on the issue and can move a few groups. It won't move the economy much; for that, use the library or Congress.", 66, y + 70, 424, F_XS, C_DIM);
+            }
+            // detail
+            double dx = 532, dw = 520;
+            u.panel(g, dx, 160, dw, 652, lib == 3 ? "How it works" : "Details");
+            if (lib == 3) {
+                wrap(g, "Executive orders take effect the day you sign them, and the next president can undo them with a pen. Rules take months of public comment, but last longer and carry more weight. "
+                        + "Emergencies unlock powers such as tariffs and border deployments; Congress can vote to end them, and you can veto.", dx + 18, 200, dw - 36, F_S, C_TEXT);
+                wrap(g, "Aggressive actions end up in court. A judge can block one within weeks; you can appeal, rewrite it or let it go. Your counsel's skill and the judges your party has appointed shape the odds.", dx + 18, 320, dw - 36, F_S, C_TEXT);
+            } else if (selAct >= 0) {
+                int i = selAct;
+                text(g, AD_NAME[i], dx + 18, 202, F_H2, Color.white);
+                double y = 214 + wrap(g, AD_DESC[i], dx + 18, 226, dw - 36, F_S, C_TEXT);
+                text(g, ACT_KIND[AD_KIND[i]] + " on " + PISSUE[AD_AREA[i]].toLowerCase() + (AD_LEAN[i] >= 0 ? ", a " + PARTY[AD_LEAN[i]] + " idea" : ", popular in both parties"), dx + 18, y + 16, F_XS, C_DIM);
+                y += 40;
+                text(g, "Public support", dx + 18, y, F_S, C_TEXT); textR(g, Math.round(AD_SUP[i]) + "%", dx + dw - 18, y, F_SB, AD_SUP[i] >= 55 ? C_GOOD : AD_SUP[i] < 45 ? C_BAD : C_TEXT); y += 22;
+                double lg = Actions.legal(game, AD_LEGAL[i]);
+                text(g, "Chance a court blocks it", dx + 18, y, F_S, C_TEXT); textR(g, Math.round(lg * 100) + "%", dx + dw - 18, y, F_SB, lg > 0.5 ? C_AMBER : C_TEXT); y += 22;
+                if (AD_KIND[i] == K_RULE) { text(g, "Comment period", dx + 18, y, F_S, C_TEXT); textR(g, "about " + Math.round(14 - 6 * Cabinet.pq(game, P_OMB)) + " weeks", dx + dw - 18, y, F_SB, C_TEXT); y += 22; }
+                int post = AREA_POST[AD_AREA[i]];
+                text(g, "Carried out by " + POST_NAME[post], dx + 18, y, F_S, C_TEXT); textR(g, "readiness " + Math.round(x.ready[post]), dx + dw - 18, y, F_SB, good(x.ready[post])); y += 22;
+                String fx = effects(AD_FX[i]);
+                if (fx.length() > 0) { y += 8; y += wrap(g, "Effects: " + fx, dx + 18, y, dw - 36, F_XS, C_DIM) + 8; }
+                if (AD_NEEDS[i] >= 0 && !x.emergency[AD_NEEDS[i]]) wrap(g, "Needs a national emergency over " + EMERG_NAME[AD_NEEDS[i]] + " first.", dx + 18, y + 14, dw - 36, F_XS, C_AMBER);
+                boolean av = Actions.available(game, i);
+                final int ii = i;
+                u.button(g, dx + 18, 760, dw - 36, 38, Actions.live(game, i) ? "Already in force" : !av ? "Not available yet" : AD_KIND[i] == K_RULE ? "Propose the rule" : AD_KIND[i] == K_EMERG ? "Declare the emergency" : "Sign the order",
+                        av ? B_GOLD : B_OFF, av ? () -> { Actions.issue(game, ii); msg = AD_NAME[ii] + ": done."; } : null);
+            } else wrap(g, "Pick an action from the library. Blue ideas are Democratic, red Republican, gold popular with both.", dx + 18, 200, dw - 36, F_S, C_DIM);
+            // in force
+            double fx0 = 1066, fw = DW - 48 - fx0;
+            u.panel(g, fx0, 160, fw, 652, "What you've done");
+            double y = 196;
+            int shown = 0;
+            for (int n = x.actions.size() - 1; n >= 0 && y < 790; n--) {
+                Action a = x.actions.get(n);
+                if (a.status == A_REVOKED && game.week - a.statusWeek > 8) continue;
+                textFit(g, a.name, fx0 + 16, y, fw - 120, F_XS, Color.white);
+                Color sc = a.status == A_LIVE ? C_GOOD : a.status == A_COMMENT ? C_ACCENT : a.status == A_BLOCKED ? C_AMBER : C_BAD;
+                text(g, A_STATUS[a.status] + (a.sued && a.status == A_LIVE ? ", in court" : "") + (a.failed ? ", rollout trouble" : ""), fx0 + 16, y + 15, F_T, sc);
+                final Action aa = a;
+                if (a.status == A_LIVE || a.status == A_COMMENT || a.status == A_BLOCKED) u.button(g, fx0 + fw - 96, y - 11, 80, 22, a.status == A_COMMENT ? "Withdraw" : "Rescind", B_GHOST, () -> { Actions.revoke(game, aa); msg = aa.name + ": rescinded."; });
+                y += 36; shown++;
+            }
+            if (shown == 0) text(g, "Nothing yet.", fx0 + 16, y, F_XS, C_DIM);
+        }
+
+        static String effects(String fx) {
+            StringBuilder b = new StringBuilder();
+            for (String t : fx.split(" ")) {
+                if (t.isEmpty()) continue;
+                String[] kv = t.split("=");
+                double v = Double.parseDouble(kv[1]);
+                String s = null;
+                if (kv[0].equals("gdp")) s = (v > 0 ? "faster" : "slower") + " growth";
+                else if (kv[0].equals("infl")) s = (v > 0 ? "higher" : "lower") + " prices";
+                else if (kv[0].equals("tariff")) s = (v > 0 ? "tariffs up " : "tariffs down ") + Math.round(Math.abs(v)) + " points";
+                else if (kv[0].equals("oil")) s = (v < 0 ? "cheaper" : "dearer") + " oil";
+                else if (kv[0].equals("def")) s = (v > 0 ? "a bigger" : "a smaller") + " deficit";
+                else if (kv[0].equals("wf")) s = "a smaller federal workforce";
+                else if (kv[0].equals("ready")) s = "weaker agencies";
+                else if (kv[0].startsWith("g") && Character.isDigit(kv[0].charAt(1))) { int gi = Integer.parseInt(kv[0].substring(1)); s = (v > 0 ? "popular with " : "unpopular with ") + GROUP[gi].toLowerCase(); }
+                else if (kv[0].startsWith("st:")) s = "unpopular in " + STATES[stateIdx(kv[0].substring(3))].name;
+                if (s != null) b.append(b.length() > 0 ? "; " : "").append(s);
+            }
+            return b.toString();
+        }
+
+        // ---- the courts ----
+        static void courts(ResoluteDesk u, Graphics2D g, Game game) {
+            Exec x = game.ex;
+            u.panel(g, 48, 160, 640, 652, "The Supreme Court");
+            int yr = dateOf(game.day())[0];
+            double y = 196;
+            for (int i = 0; i < 9; i++) {
+                double cx = 62 + (i % 3) * 206, cy = y + (i / 3) * 112;
+                if (i < x.court.size()) {
+                    Justice j = x.court.get(i);
+                    Portrait.draw(g, j.face, cx, cy, 52, 62, u.tsec, 0, true, true);
+                    textFit(g, j.name, cx + 60, cy + 18, 140, F_XSB, Color.white);
+                    text(g, "Age " + (yr - j.born), cx + 60, cy + 34, F_T, C_DIM);
+                    text(g, "Appointed by a " + PARTY_SHORT[j.party], cx + 60, cy + 50, F_T, partyLight(j.party));
+                } else {
+                    g.setColor(new Color(255, 255, 255, 18));
+                    g.fill(new RoundRectangle2D.Double(cx, cy, 196, 62, 8, 8));
+                    text(g, x.nomineeJ != null ? "Nominee pending" : "Vacant", cx + 14, cy + 36, F_SB, x.nomineeJ != null ? C_GOLD : C_BAD);
+                }
+            }
+            y += 340;
+            if (x.nomineeJ != null) {
+                Justice j = x.nomineeJ;
+                text(g, "Your nominee: " + j.name + ", " + (yr - j.born), 66, y, F_H3, Color.white);
+                double ch = Courts.scotusChance(game, j);
+                text(g, "Senate vote " + (x.scotusVoteAt - game.week <= 0 ? "this week" : "in about " + (x.scotusVoteAt - game.week) + " weeks") + ". About " + Math.round(ch * 100) + "% to be confirmed.", 66, y + 22, F_S, ch > 0.6 ? C_GOOD : C_AMBER);
+            } else if (x.court.size() < 9) {
+                label(g, "Your shortlist", 66, y, C_GOLD);
+                List<Justice> sl = Courts.shortlist(game);
+                for (int i = 0; i < sl.size(); i++) {
+                    Justice j = sl.get(i);
+                    double cx = 62 + i * 206, cy = y + 14;
+                    u.card(g, cx, cy, 198, 196, false, null, Courts.SHORTLIST_WHAT[i]);
+                    Portrait.draw(g, j.face, cx + 10, cy + 10, 48, 58, u.tsec, 0, true, true);
+                    textFit(g, j.name, cx + 64, cy + 26, 128, F_XSB, Color.white);
+                    text(g, "Age " + (yr - j.born), cx + 64, cy + 44, F_T, C_DIM);
+                    wrap(g, Courts.SHORTLIST_WHAT[i], cx + 10, cy + 88, 180, F_T, C_TEXT);
+                    double ch = Courts.scotusChance(game, j);
+                    text(g, Math.round(ch * 100) + "% to be confirmed", cx + 10, cy + 150, F_TB, ch > 0.6 ? C_GOOD : C_AMBER);
+                    final Justice jj = j;
+                    u.button(g, cx + 10, cy + 160, 178, 26, "Nominate", B_GOLD, () -> { Courts.nominateJustice(game, jj); msg = jj.name + " goes to the Senate."; });
+                }
+            } else wrap(g, "No vacancy. Justices retire or die on their own schedule; the older ones are likelier to leave, and a justice tends to retire when a president of the same party can pick the successor.", 66, y, 600, F_XS, C_DIM);
+            // the lower courts
+            double px = 702, pw = 420;
+            u.panel(g, px, 160, pw, 652, "The lower courts");
+            double yy = 200;
+            String[] lv = {"District courts (677 judges)", "Courts of appeals (179 judges)"};
+            double[] sh = {x.dDistrict, x.dCircuit};
+            for (int i = 0; i < 2; i++) {
+                text(g, lv[i], px + 18, yy, F_SB, Color.white);
+                g.setColor(C_DEM); g.fill(new Rectangle2D.Double(px + 18, yy + 10, (pw - 36) * sh[i], 14));
+                g.setColor(C_REP); g.fill(new Rectangle2D.Double(px + 18 + (pw - 36) * sh[i], yy + 10, (pw - 36) * (1 - sh[i]), 14));
+                text(g, Math.round(sh[i] * 100) + "% appointed by Democrats", px + 18, yy + 42, F_XS, C_TEXT);
+                yy += 64;
+            }
+            text(g, "Vacancies: about " + Math.round(x.vacDistrict + x.vacCircuit), px + 18, yy, F_S, C_TEXT);
+            text(g, "Judges you've appointed: " + x.judges, px + 18, yy + 20, F_S, C_TEXT);
+            yy += 50;
+            label(g, "Who you nominate", px + 18, yy, C_GOLD);
+            u.segmented(g, px + 18, yy + 10, pw - 36, 28, new String[]{"Ideological", "Mainstream", "Consensus"}, x.judgeStrategy, i -> x.judgeStrategy = i,
+                    new String[]{"The biggest shift on the bench, but senators from the other party use blue slips to block district nominees in their states.", "Solid picks the way most presidents make them.", "Picks the other party's senators sign off on: more confirmed, a smaller shift."});
+            yy += 52;
+            wrap(g, "Your nominees go to the Senate in a steady stream. With your party in control, the Senate confirms over a judge a week; without it, a trickle. Plaintiffs file where the judges suit them, so the mix on the bench decides how often your orders get blocked.", px + 18, yy, pw - 36, F_XS, C_DIM);
+            // cases
+            double cx0 = 1136, cw0 = DW - 48 - cx0;
+            u.panel(g, cx0, 160, cw0, 652, "In court");
+            double cy = 196;
+            int n = 0;
+            for (int i = x.cases.size() - 1; i >= 0 && cy < 780; i--) {
+                Case c = x.cases.get(i);
+                Action a = Courts.act(game, c);
+                if (a == null || c.done && game.week - c.decideWeek > 20) continue;
+                textFit(g, a.name, cx0 + 16, cy, cw0 - 32, F_XSB, Color.white);
+                textFit(g, c.plaintiff + " v. the United States", cx0 + 16, cy + 15, cw0 - 32, F_T, C_DIM);
+                String st = c.done ? (c.stage == CS_DONE && c.votesFor + c.votesAgainst > 0 ? "Supreme Court: " + (c.won ? "upheld " : "struck ") + Math.max(c.votesFor, c.votesAgainst) + "-" + Math.min(c.votesFor, c.votesAgainst) : c.won ? "You won" : "Over") : CS_STAGE[c.stage] + (c.blocked ? ", blocked" : "") + ", ruling around " + dateStr(c.decideWeek * 7);
+                text(g, st, cx0 + 16, cy + 30, F_T, c.done ? (c.won ? C_GOOD : C_BAD) : c.blocked ? C_AMBER : C_ACCENT);
+                cy += 48; n++;
+            }
+            if (n == 0) text(g, "No lawsuits against you yet.", cx0 + 16, cy, F_XS, C_DIM);
+        }
+
+        // ---- oversight ----
+        static void oversight(ResoluteDesk u, Graphics2D g, Game game) {
+            Exec x = game.ex;
+            u.panel(g, 48, 160, 640, 652, "Scandals and stories");
+            double y = 196;
+            int n = 0;
+            for (int i = x.scandals.size() - 1; i >= 0 && y < 780; i--) {
+                Scandal s = x.scandals.get(i);
+                if (s.over && game.week - s.started > 30) continue;
+                textFit(g, s.title, 66, y, 420, F_XSB, s.over ? C_DIM : Color.white);
+                bar(g, 500, y - 8, 120, 7, Math.min(1, s.severity / 10), s.severity >= 5 ? C_BAD : s.severity >= 2.5 ? C_AMBER : C_GOLD);
+                textR(g, s.over ? "faded" : fmt1(s.severity), 668, y, F_XSB, s.over ? C_DIM : Color.white);
+                text(g, (s.stage == 2 ? "Special counsel" : s.stage == 1 ? "Under investigation" : "In the news") + (s.impeachable ? ", could feed impeachment" : "") + ", since " + dateStr(s.started * 7), 66, y + 15, F_T, s.impeachable ? C_AMBER : C_DIM);
+                y += 38; n++;
+            }
+            if (n == 0) text(g, "No scandals. Enjoy it.", 66, y, F_XS, C_DIM);
+            double px = 702, pw = 440;
+            u.panel(g, px, 160, pw, 652, "Congressional investigations");
+            double yy = 196;
+            int m = 0;
+            for (int i = x.probes.size() - 1; i >= 0 && yy < 780; i--) {
+                Probe p = x.probes.get(i);
+                if (p.over && game.week - p.until > 26) continue;
+                textFit(g, CHAMBER[p.chamber] + ": " + p.topic, px + 16, yy, pw - 32, F_XSB, p.over ? C_DIM : Color.white);
+                String[] resp = {"you complied", "you negotiated", "you claimed privilege", "you refused"};
+                text(g, p.chair + (p.response >= 0 ? "; " + resp[p.response] : "") + (p.over ? "; over" : "; report due " + dateStr(p.until * 7)), px + 16, yy + 15, F_T, C_DIM);
+                yy += 38; m++;
+            }
+            if (m == 0) wrap(g, Hill.majority(game, HOUSE, game.party) && Hill.majority(game, SENATE, game.party) ? "Your party runs both committees of jurisdiction. That changes if you lose a chamber." : "None open right now.", px + 16, yy, pw - 32, F_XS, C_DIM);
+            double ix = 1156, iw = DW - 48 - ix;
+            u.panel(g, ix, 160, iw, 652, "Impeachment");
+            String[] stage = {"No inquiry", "Inquiry under way", "Impeached: Senate trial", "Acquitted", "Removed"};
+            text(g, stage[x.impStage], ix + 18, 200, F_H3, x.impStage == 0 ? C_GOOD : x.impStage == 3 ? C_GOLD : C_BAD);
+            text(g, "Pressure", ix + 18, 228, F_XS, C_TEXT);
+            bar(g, ix + 18, 236, iw - 36, 10, Math.min(1, x.impPressure / 20), x.impPressure >= 9 ? C_BAD : x.impPressure >= 5 ? C_AMBER : C_GOOD);
+            wrap(g, "Impeachable scandals, defied subpoenas and defied courts build pressure. It takes the House (a simple majority) to impeach and two-thirds of the Senate to remove you.", ix + 18, 268, iw - 36, F_T, C_DIM);
+            if (x.impResult != null) wrap(g, x.impResult, ix + 18, 340, iw - 36, F_XS, C_TEXT);
+            double ly = 420;
+            label(g, "The record", ix + 18, ly, C_GOLD);
+            String[] rec = {"Pardons and commutations: " + x.pardons, "Contempt votes: " + x.contempt, "Court orders slow-walked: " + x.defiance, "Rollout failures: " + x.failures, "Leaks: " + x.leaks, "Departures: " + x.departures, "Impeachments: " + x.impeachments};
+            for (String s : rec) { ly += 20; text(g, s, ix + 18, ly, F_XS, C_TEXT); }
+        }
+    }
+    // =====================================================================
     //  30.  SAVING
     // =====================================================================
     static final class SaveGame {
@@ -7741,6 +9716,11 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             if (g.inbox == null) g.inbox = new ArrayList<Decision>();
             if (g.era.midSeats == null) g.era.midSeats = era(g.era.year).midSeats;
             if (g.cong == null) { Hill.setup(g); g.capital = 30; }
+            if (g.ex == null) {
+                Cabinet.setup(g);
+                for (int k = 0; k < NPOST; k++) if (g.ex.nominee[k] != null) { Person p = g.ex.nominee[k]; p.confirmed = true; p.since = g.week; g.ex.post[k] = p; g.ex.nominee[k] = null; g.ex.voteAt[k] = -1; }
+                g.ex.nextPardon = g.week + 8; g.ex.nextProbe = g.week + 14;
+            }
         }
 
         static void resume(ResoluteDesk u, Game g) {
@@ -7782,6 +9762,8 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 for (int r = 0; r < runs; r++) sim(1000 + r, year, pres, scen, weeks);
             }
             if (what.equals("ui")) ui(a.length > 2 ? a[2] : "shots");
+            if (what.equals("check")) check();
+            if (what.equals("impeach")) for (int r = 0; r < (a.length > 2 ? Integer.parseInt(a[2]) : 5); r++) impeach(2000 + r, a.length > 3 ? Double.parseDouble(a[3]) : 9);
             if (what.equals("whip")) whip(a.length > 2 ? Integer.parseInt(a[2]) : 2025, a.length > 3 ? a[3] : null, a.length > 4 ? Integer.parseInt(a[4]) : 0);
         }
 
@@ -7804,6 +9786,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 if (g.stamina < 35) Rooms.restWeek(g);
                 if (w % 6 == 1) Decisions.autoAgenda(g);
                 Decisions.autoWhip(g);
+                Decisions.autoExec(g);
                 Week.resolve(g);
                 Decisions.autoAll(g);
                 if (g.week % 26 == 0) {
@@ -7820,8 +9803,53 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                     .append(" capital ").append(fmt0(g.capital)).append(" House D ").append(g.houseD).append(" Senate D ").append(g.senateD).append("\n");
             for (Bill bl : c.bills) b.append("    ").append(bl.ours ? "* " : "  ").append(bl.name).append(": ").append(STAGE[bl.stage]).append(" wk").append(bl.introduced).append("-").append(bl.stageWeek).append(bl.recon ? " recon" : "").append(" H ").append(bl.houseYes).append("-").append(bl.houseNo).append(" S ").append(bl.senYes).append("-").append(bl.senNo).append("\n");
             if (c.midSummary != null) b.append("  midterms: ").append(c.midSummary).append("\n");
+            Exec x = g.ex;
+            int conf = 0, live = 0, blocked = 0, struck = 0, scs = 0;
+            for (Person p : x.post) if (p != null) conf++;
+            for (Action a : x.actions) { if (a.status == A_LIVE) live++; if (a.status == A_BLOCKED) blocked++; if (a.status == A_STRUCK) struck++; }
+            for (Scandal s : x.scandals) if (s.severity >= 3 || s.kind != SK_LEAK) scs++;
+            double mor = 0; for (Person p : Cabinet.everyone(g)) mor += p.morale; mor /= Math.max(1, Cabinet.everyone(g).size());
+            double rd = 0; for (double v : x.ready) rd += v; rd /= NPOST;
+            b.append("  exec: posts filled ").append(conf).append("/").append(NPOST).append(" departures ").append(x.departures).append(" leaks ").append(x.leaks).append(" morale ").append(fmt0(mor))
+                    .append(" readiness ").append(fmt0(rd)).append(" failures ").append(x.failures).append(" actions ").append(x.actions.size()).append(" live ").append(live).append(" blocked ").append(blocked).append(" struck ").append(struck)
+                    .append(" cases ").append(x.cases.size()).append(" judges ").append(x.judges).append(" justices ").append(x.justices).append(" court R ").append(Courts.count(g, REP)).append("-D ").append(Courts.count(g, DEM))
+                    .append(" scandals ").append(scs).append(" pardons ").append(x.pardons).append(" probes ").append(x.probes.size()).append(" impeach ").append(x.impeachments).append(" removed ").append(g.removed).append("\n");
             b.append("  news ").append(g.news.size()).append(", last: ").append(g.news.isEmpty() ? "" : g.news.get(g.news.size() - 1).head);
             System.out.println(b);
+        }
+
+        /** A president in deep trouble with the other party running the House. */
+        static void impeach(long seed, double sev) {
+            Game g = newGame(seed, 2029, null, 3);
+            for (int w = 0; w < 12; w++) { Week.routine(g); Decisions.autoExec(g); Week.resolve(g); Decisions.autoAll(g); }
+            Trouble.add(g, SK_PARDON, "The pardon of a donor", "Test.", sev, null, true);
+            g.ex.contempt = 1;
+            g.inbox.clear();
+            StringBuilder b = new StringBuilder("impeach seed " + seed + " sev " + sev + ":");
+            int last = -1;
+            for (int w = 0; w < 60 && !g.over; w++) {
+                Week.routine(g); Decisions.autoExec(g); Week.resolve(g); Decisions.autoAll(g);
+                if (g.ex.impStage != last) { b.append(" wk").append(g.week).append("=").append(g.ex.impStage).append("(p").append(fmt1(g.ex.impPressure)).append(",a").append(fmt0(g.approval)).append(")"); last = g.ex.impStage; }
+            }
+            b.append(" -> ").append(g.ex.impResult).append(g.removed ? " REMOVED" : "");
+            System.out.println(b);
+        }
+
+        /** Every parallel data table must line up. */
+        static void check() {
+            int n = AD_ID.length;
+            int[] lens = {AD_KIND.length, AD_NAME.length, AD_DESC.length, AD_AREA.length, AD_LEAN.length, AD_SUP.length, AD_LEGAL.length, AD_NEEDS.length, AD_FX.length};
+            for (int i = 0; i < lens.length; i++) if (lens[i] != n) System.out.println("ACTION TABLE " + i + " has " + lens[i] + ", expected " + n);
+            int[] pl = {POST_SHORT.length, POST_TITLE.length, POST_WF.length, POST_AREA.length};
+            for (int i = 0; i < pl.length; i++) if (pl[i] != NPOST) System.out.println("POST TABLE " + i + " has " + pl[i]);
+            if (AC_NAME.length != NAC || AC_DESC.length != NAC || AC_STAMINA.length != NAC || AC_STRESS.length != NAC || AC_ISSUE.length != NAC || AC_STATE.length != NAC || AC_COL.length != NAC) System.out.println("ACTIVITY TABLES DON'T MATCH");
+            if (STAFF_TITLE.length != NSTAFF || STAFF_DOES.length != NSTAFF) System.out.println("STAFF TABLES DON'T MATCH");
+            if (TRAIT.length != NTRAIT || TRAIT_DESC.length != NTRAIT) System.out.println("TRAIT TABLES DON'T MATCH");
+            if (VM_NAME.length != NVM || VM_DESC.length != NVM || VM_WEEKS.length != NVM) System.out.println("VP TABLES DON'T MATCH");
+            if (DG_NAME.length != NDG || DG_DESC.length != NDG || DG_ROLE.length != NDG) System.out.println("DELEGATION TABLES DON'T MATCH");
+            if (ADV_LABEL.length != ADV_WHO.length) System.out.println("ADVISER TABLES DON'T MATCH");
+            for (String fx : AD_FX) for (String t : fx.split(" ")) if (!t.isEmpty() && t.split("=").length != 2) System.out.println("BAD EFFECT " + t);
+            System.out.println("check done: " + n + " actions");
         }
 
         static void whip(int year, String pres, int scen) {
@@ -7872,6 +9900,28 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             u.modal = null; u.game.inbox.clear();
             u.game.cong.approps[0] = 1;
             Budget.deadline(u.game, true); Decisions.show(u, u.game); shot(u, dir, "decision_cr");
+            u.modal = null; u.game.inbox.clear();
+            // the West Wing
+            Game g = u.game;
+            Actions.issue(g, EM_BORDER); Actions.issue(g, actionIdx("eo_troops")); Actions.issue(g, actionIdx("rule_hospital")); Actions.issue(g, actionIdx("eo_birthright"));
+            Courts.sue(g, g.ex.actions.get(g.ex.actions.size() - 1));
+            u.game.inbox.clear();
+            Rooms.open(u, R_WESTWING);
+            for (int t = 0; t < WestWing.TABS.length; t++) { WestWing.tab = t; shot(u, dir, "ww_" + t); }
+            WestWing.tab = 0; WestWing.selStaff = S_PRESS; shot(u, dir, "ww_staff_pick"); WestWing.selStaff = -1;
+            g.ex.post[P_LAB] = null; WestWing.tab = 1; WestWing.selPost = P_LAB; shot(u, dir, "ww_cabinet_vacant");
+            WestWing.selPost = P_DEF; shot(u, dir, "ww_cabinet_def");
+            WestWing.tab = 3; WestWing.lib = 0; WestWing.selAct = actionIdx("eo_drill"); shot(u, dir, "ww_orders_pick");
+            WestWing.lib = 3; shot(u, dir, "ww_custom");
+            Justice gone = g.ex.court.get(1); g.ex.court.remove(gone); WestWing.tab = 4; shot(u, dir, "ww_courts_vacancy");
+            Person fict = Cabinet.options(g, P_HUD, 99).get(0);
+            g.ex.post[P_HUD] = fict; fict.since = g.week;
+            Trouble.add(g, SK_ETHICS, "Housing secretary " + fict.name + " under fire", "Reporters say " + fict.name + " billed taxpayers for first-class travel and a $40,000 office renovation.", 4, fict, false);
+            Decisions.show(u, g); shot(u, dir, "decision_scandal");
+            u.modal = null; g.inbox.clear();
+            // every kind of calendar slot draws
+            for (int i = 0; i < NSLOT; i++) { g.act[i] = i % NAC; g.arg[i] = AC_ISSUE[i % NAC] ? 0 : AC_STATE[i % NAC] ? 5 : -1; }
+            Rooms.open(u, R_DESK); shot(u, dir, "desk_all_kinds");
         }
     }
 }

@@ -16,7 +16,7 @@ The game autosaves every week. Use **Continue** on the title screen to pick up w
 
 ## What's in it so far
 
-This is the second of six planned updates. The first covered the core of the job: your time, your health, the economy and public opinion. The second adds Congress and the budget.
+This is the third of six planned updates. The first covered the core of the job: your time, your health, the economy and public opinion. The second added Congress and the budget. The third adds the executive branch.
 
 - **When you take office:**
   - **2025**, the real present. Donald Trump, or anyone else as a what-if.
@@ -100,25 +100,61 @@ Open the Roosevelt Room from the Oval Office, or press 6.
   - From late summer you can schedule campaign stops in states, and the money you've raised helps.
   - New leaders and chairs take over if control changes.
 
+### The executive branch (update 3)
+
+Open the West Wing from the Oval Office, or press 5.
+
+- **Your staff:** nine senior aides, each with skill, loyalty, morale and a trait. The nine are your chief of staff, national security adviser, press secretary, counsel, economic adviser, domestic policy adviser, legislative director, political director and communications director.
+  - Each one makes something work better. A strong chief of staff lowers your stress and cuts leaks. A strong counsel keeps orders out of trouble in court. A strong legislative director makes deals stick.
+  - Morale falls when you're unpopular, when the place is tense and when you overrule them.
+  - Unhappy staff leak, and some resign. Hire and fire as you see fit.
+  - Advisers take sides in your decisions. Whoever you agree with is pleased, and whoever you overrule is less so.
+- **Delegation:** hand off planning your week, working the votes, writing the budget, pardon requests or filling vacancies. How well it's done depends on who does it.
+- **The cabinet:** 15 departments and 6 cabinet-level posts, all confirmed by a Senate vote.
+  - In 2025 the real nominees are the default. Otherwise your transition team offers a loyalist, an expert, and a big name from your party or a pick from the other side.
+  - Until a nominee is confirmed, a career official runs the department.
+  - Each department has a readiness score. Strong, happy leadership raises it; staff cuts and shutdowns lower it.
+  - Low readiness means botched rollouts of your laws, orders and rules.
+  - Cabinet meetings on your calendar lift morale and readiness.
+  - The federal workforce (about 2.2 million civilians) shrinks with hiring freezes and layoffs.
+- **The vice president:** send them on missions:
+  - tour the swing states
+  - lead a task force on an issue
+  - work the Senate
+  - raise money
+  - represent you abroad
+
+  A vice president with nothing to do grows restless.
+- **Orders, rules and emergencies:** a library of 49 actions from both parties, plus custom orders.
+  - Executive orders take effect at once.
+  - Regulations go through months of public comment and can be overturned under the Congressional Review Act, subject to your veto.
+  - National emergencies unlock powers such as emergency tariffs or troops at the border. Congress can vote to end them.
+  - Each action moves the economy, your standing on its issue, or particular groups.
+- **The courts:**
+  - Aggressive actions get sued. A district judge can block one within weeks.
+  - You can appeal, rewrite it or let it go, or slow-walk the ruling and risk a constitutional fight.
+  - Big cases reach the Supreme Court: the nine real justices, voting by judicial philosophy and the strength of the case.
+  - Justices retire on their own schedule, and you pick from a shortlist of successors.
+  - Lower-court vacancies fill steadily. You choose ideological, mainstream or consensus nominees, and blue slips slow the ideological ones.
+- **Oversight and scandal:**
+  - Leaks, ethics stories, pardons for allies and botched rollouts become scandals that weigh on your approval. You can release everything, deny, push someone out or order a review.
+  - A Congress run by the other party investigates. You can comply, negotiate, claim executive privilege or refuse and risk contempt.
+  - Clemency requests arrive every few months.
+  - Enough impeachable trouble with the other party running the House brings an inquiry, an impeachment vote and a Senate trial. It takes two-thirds of the Senate to remove you.
+
 ## Coming next
 
-1. **The executive branch:**
-   - The cabinet and its confirmation votes.
-   - A named staff with loyalty, leaks and turnover.
-   - Executive orders, regulations, the courts and judicial appointments.
-   - Pardons, emergency powers and oversight.
-   - Scandals and impeachment.
-2. **The world:**
+1. **The world:**
    - About 40 countries and their leaders.
    - Calls, summits, treaties, aid and sanctions.
    - The Situation Room and covert action.
    - Alliances, plus China and Taiwan, Russia and Europe, and the Middle East.
-3. **Crises, the press and public life:**
+2. **Crises, the press and public life:**
    - The President's Daily Brief.
    - Disasters and pandemics, plus AI, immigration, protests and the hot-button issues.
    - Speeches, the State of the Union, press conferences, interviews and social media.
    - Party factions and an opposition with plans of its own.
-4. **History and the verdict:**
+3. **History and the verdict:**
    - Every inauguration from 1933 on.
    - A playable re-election campaign and a second term.
    - The epilogue, historians' ranking and your presidential library.
@@ -136,10 +172,14 @@ Open the Roosevelt Room from the Oval Office, or press 6.
 | ![The Roosevelt Room](screenshots/the-roosevelt-room.png) | ![Drafting a bill](screenshots/drafting-a-bill.png) |
 | ![The whip count](screenshots/whip-count.png) | ![The budget](screenshots/the-budget.png) |
 | ![The midterms](screenshots/the-midterms.png) | ![A bill on your desk](screenshots/on-your-desk.png) |
+| ![The staff](screenshots/the-staff.png) | ![The cabinet](screenshots/the-cabinet.png) |
+| ![Orders and rules](screenshots/orders-and-rules.png) | ![The courts](screenshots/the-courts.png) |
+| ![The vice president](screenshots/the-vice-president.png) | ![A scandal](screenshots/a-scandal.png) |
 
 ## Notes
 
 - Real people appear as stylised characters. Their ratings are the game's estimates from public records, not facts, and the game never quotes them.
+- Only fictional officials are ever caught up in personal misconduct. Real justices only ever retire.
 - Everything that happens in a game is fiction.
 - The 2029 era is a projection from the world of Battleground 2028, not a forecast.
 - The browser version is generated from the Java source, so the two play the same game.
