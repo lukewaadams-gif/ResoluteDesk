@@ -1676,9 +1676,9 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     static final int NSLOT = 21;
     static final String[] SLOT = {"Morning", "Afternoon", "Evening"};
     static final int AC_FREE = 0, AC_REST = 1, AC_EXERCISE = 2, AC_FAMILY = 3, AC_POLICY = 4, AC_REMARKS = 5, AC_TRIP = 6, AC_FUNDRAISER = 7,
-            AC_CEREMONY = 8, AC_CONGRESS = 9, AC_CAMPDAVID = 10, AC_WORKLATE = 11, AC_TRAVEL = 12, NAC = 13;
+            AC_CEREMONY = 8, AC_CONGRESS = 9, AC_CAMPDAVID = 10, AC_WORKLATE = 11, AC_TRAVEL = 12, AC_CAMPAIGN = 13, NAC = 14;
     static final String[] AC_NAME = {"Open time", "Rest", "Exercise", "Family time", "Policy time", "White House remarks", "Trip", "Fundraiser",
-            "Ceremony", "Hill meetings", "Camp David", "Work late", "Travel"};
+            "Ceremony", "Hill meetings", "Camp David", "Work late", "Travel", "Campaign stop"};
     static final String[] AC_DESC = {
             "Nothing scheduled. Staff fill it with calls and paperwork.",
             "Sleep in or nap. Restores stamina and lowers stress.",
@@ -1692,11 +1692,18 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             "Meet members of Congress. Improves your relationships on the Hill.",
             "A weekend at Camp David. Big stamina boost, but bad optics in a crisis.",
             "Stay at your desk into the night. Gets work done but costs sleep.",
-            "In the air."};
-    static final double[] AC_STAMINA = {0, 6, 2.5, 3, -2.5, -3, -5, -3.5, -1.5, -3, 8, -4.5, -2};
-    static final double[] AC_STRESS = {0, -1.2, -1.2, -1.8, 0.6, 0.6, 0.8, 0.6, -0.3, 0.8, -2.5, 1.5, 0.5};
-    static final boolean[] AC_ISSUE = {false, false, false, false, true, true, false, false, false, false, false, false, false};
-    static final boolean[] AC_STATE = {false, false, false, false, false, false, true, false, false, false, false, false, false};
+            "In the air.",
+            "Rally for your party's candidates in a state. Only in the weeks before the midterms."};
+    static final double[] AC_STAMINA = {0, 6, 2.5, 3, -2.5, -3, -5, -3.5, -1.5, -3, 8, -4.5, -2, -5};
+    static final double[] AC_STRESS = {0, -1.2, -1.2, -1.8, 0.6, 0.6, 0.8, 0.6, -0.3, 0.8, -2.5, 1.5, 0.5, 0.8};
+    static boolean TRACE;                   // the test harness prints every headline
+
+    static final String[] PARTIES = {"Democrats", "Republicans", "Greens", "Libertarians", "Forward", "America Party", "Independents", "Your party"};
+
+    static boolean isTrip(int a) { return a == AC_TRIP || a == AC_CAMPAIGN; }
+
+    static final boolean[] AC_ISSUE = {false, false, false, false, true, true, false, false, false, false, false, false, false, false};
+    static final boolean[] AC_STATE = {false, false, false, false, false, false, true, false, false, false, false, false, false, true};
 
     // ---- the issues voters judge a president on -----------------------------------------------------------
     static final int PI_ECON = 0, PI_PRICES = 1, PI_JOBS = 2, PI_HEALTH = 3, PI_IMMIG = 4, PI_CRIME = 5, PI_FOREIGN = 6, PI_SECURITY = 7,
@@ -1747,6 +1754,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         int ogPos;
         double jobsLast, gdpReported, cpiReported;
         double[] stUnemp = new double[NS], stGas = new double[NS];
+        double polGdp, polUnemp, polInfl;                         // what the laws you sign do to trend growth, jobs and prices
     }
 
     static final class Game implements Serializable {
@@ -1777,6 +1785,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         double hill = 50;                   // relations with Congress (0-100), deepened in a later version
         int houseD, senateD;                // seats held by Democrats (and the independents who caucus with them)
         Econ econ = new Econ();
+        Congress cong;
+        double capital = 30;                // political capital: spent on deals, earned by approval and wins
+        List<Decision> inbox = new ArrayList<Decision>();
+        boolean filibusterGone;
         // history: one row a week
         List<double[]> hist = new ArrayList<double[]>();
         // the news
@@ -1800,6 +1812,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             News n = new News();
             n.day = day(); n.kind = kind; n.head = head; n.body = body; n.weight = weight;
             news.add(n);
+            if (TRACE) System.out.println("    [" + dateStr(n.day) + "] " + head);
             if (news.size() > 400) news.remove(0);
             ticker.add(head);
             if (ticker.size() > 40) ticker.remove(0);
@@ -1926,16 +1939,16 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             e.ogHist[e.ogPos] = e.og;
             e.ogPos = (e.ogPos + 1) % 53;
             double old = e.ogHist[e.ogPos];
-            e.gdp = e.potential + (e.og - old) + (g.era.ai ? 0.15 * (e.aiInvest - 100) / 100 : 0);
+            e.gdp = e.potential + e.polGdp + (e.og - old) + (g.era.ai ? 0.15 * (e.aiInvest - 100) / 100 : 0);
             // unemployment follows the gap, plus any structural damage (AI disruption, a lost decade)
             e.structural = Math.max(0, e.structural * 0.995 + e.aiShock * 0.004);
-            double uTarget = e.nairu + e.structural - 0.5 * e.og;
+            double uTarget = e.nairu + e.polUnemp + e.structural - 0.5 * e.og;
             e.unemp += (uTarget - e.unemp) * 0.035 + r.nextGaussian() * 0.012;
             e.unemp = clamp(e.unemp, 2.5, 25);
             // inflation: anchored by the Fed's credibility, pushed by the gap, oil and tariffs
             double anchor = e.fedCred * 2.0 + (1 - e.fedCred) * e.infl;
             e.expect += (anchor - e.expect) * 0.02;
-            double piT = e.expect + 0.28 * e.og + e.supplyShock + 0.012 * (e.oil - e.oilBase) + 0.05 * (e.tariff - g.era.tariff);
+            double piT = e.expect + e.polInfl + 0.28 * e.og + e.supplyShock + 0.012 * (e.oil - e.oilBase) + 0.05 * (e.tariff - g.era.tariff);
             e.infl += (piT - e.infl) * 0.03 + r.nextGaussian() * 0.025;
             e.infl = clamp(e.infl, -3, 20);
             e.core += (e.infl - 0.2 - e.core) * 0.04;
@@ -2572,7 +2585,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 int a = g.act[d * 3 + 2];
                 double v = a == AC_REST || a == AC_FAMILY || a == AC_CAMPDAVID ? 7.4 : a == AC_FREE || a == AC_EXERCISE ? 6.8 : a == AC_WORKLATE ? 4.8 : a == AC_TRIP || a == AC_FUNDRAISER ? 5.6 : 6.2;
                 int m = g.act[d * 3];
-                if (m == AC_TRIP && g.arg[d * 3] >= 0 && flight(g.arg[d * 3]) > 3.5) v -= 1;
+                if (isTrip(m) && g.arg[d * 3] >= 0 && flight(g.arg[d * 3]) > 3.5) v -= 1;
                 h += v;
             }
             return h / 7;
@@ -2583,7 +2596,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             double c = 0;
             for (int i = 0; i < NSLOT; i++) {
                 double v = AC_STAMINA[g.act[i]];
-                if (g.act[i] == AC_TRIP && g.arg[i] >= 0) v -= Math.min(6, flight(g.arg[i]) * 0.9);
+                if (isTrip(g.act[i]) && g.arg[i] >= 0) v -= Math.min(6, flight(g.arg[i]) * 0.9);
                 c += v < 0 ? v * ageFactor(g) : v;
             }
             return c;
@@ -2627,10 +2640,11 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                         g.funds += raised;
                         break;
                     case AC_CEREMONY: g.perf += 0.012; break;
-                    case AC_CONGRESS: g.hill = Math.min(100, g.hill + 1.2 * (p != null ? p.a[A_EST] : 60) / 70); break;
+                    case AC_CONGRESS: g.hill = Math.min(100, g.hill + 1.2 * (p != null ? p.a[A_EST] : 60) / 70); Hill.meeting(g); break;
                     case AC_FAMILY: g.perf += 0.004; break;
                     case AC_EXERCISE: g.fitness = Math.min(100, g.fitness + 1.2); break;
                     case AC_CAMPDAVID: campDavid++; break;
+                    case AC_CAMPAIGN: if (arg >= 0 && g.cong != null) { g.cong.campaign[arg] += cha / 70; g.stateBump[arg] += 0.8; g.location = arg; trips++; } break;
                     case AC_WORKLATE: { int t = topIssue(g); g.command[t] = Math.min(100, g.command[t] + 1.5); break; }
                     default: break;
                 }
@@ -2648,6 +2662,13 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             health(g);
             Economy.week(g);
             Approval.week(g);
+            if (g.cong != null) {
+                Hill.drift(g);
+                Legis.week(g);
+                Budget.week(g);
+                Midterms.week(g);
+                g.capital = clamp(g.capital + 0.6 + (g.approval - 45) * 0.05 + (g.honeymoon > 1 ? 0.5 : 0), 0, 100);
+            }
             record(g);
             g.week++;
             if (g.week >= g.termWeeks) g.over = true;
@@ -2699,6 +2720,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         String speakerD, speakerR, leaderD, leaderR, houseLeaderD, houseLeaderR;   // who leads each party in each chamber
         String issues;                      // salience weights: "index=weight ..."
         boolean ai = true;
+        String midSeats;                    // Senate seats up at the midterm, "AB:D" for the party holding each
     }
 
     static final List<Era> ERAS = new ArrayList<Era>();
@@ -2715,6 +2737,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         e.potential = 1.9; e.nairu = 4.2; e.tariff = 2.4;
         e.fedChair = "Jerome Powell";
         e.speakerD = "Hakeem Jeffries"; e.speakerR = "Mike Johnson"; e.leaderD = "Chuck Schumer"; e.leaderR = "John Thune"; e.houseLeaderD = "Hakeem Jeffries"; e.houseLeaderR = "Mike Johnson";
+        e.midSeats = "CO:D DE:D GA:D IL:D MA:D MI:D MN:D NH:D NJ:D NM:D OR:D RI:D VA:D AL:R AK:R AR:R ID:R IA:R KS:R KY:R LA:R ME:R MS:R MT:R NE:R NC:R OK:R SC:R SD:R TN:R TX:R WV:R WY:R OH:R FL:R";
         e.issues = "0=1.0 1=1.4 2=0.7 3=0.7 4=1.1 5=0.5 6=0.6 7=0.4 8=0.7 9=0.4 10=0.3 11=0.5 12=0.3 13=0.5";
         ERAS.add(e);
 
@@ -2726,6 +2749,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         e.potential = 1.9; e.nairu = 4.3; e.tariff = 11; e.priceLevel = 1.1;
         e.fedChair = "Kevin Warsh";
         e.speakerD = "Hakeem Jeffries"; e.speakerR = "Mike Johnson"; e.leaderD = "Chuck Schumer"; e.leaderR = "John Thune"; e.houseLeaderD = "Hakeem Jeffries"; e.houseLeaderR = "Mike Johnson";
+        e.midSeats = "AZ:D CA:D CT:D DE:D HI:D ME:D MD:D MA:D MI:D MN:D NV:D NJ:D NM:D NY:D RI:D VT:D VA:D WA:D WI:D FL:R IN:R MS:R MO:R MT:R NE:R ND:R OH:R PA:R TN:R TX:R UT:R WV:R WY:R";
         e.issues = "0=1.0 1=1.3 2=0.8 3=0.7 4=0.9 5=0.5 6=0.6 7=0.5 8=0.8 9=0.5 10=0.3 11=0.8 12=0.3 13=0.6";
         ERAS.add(e);
     }
@@ -2808,14 +2832,1262 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             g.stamina = 80 + (g.pres.a[A_STA] - 60) * 0.25;
             g.fitness = 40 + (g.pres.a[A_STA] - 60) * 0.5;
             Economy.init(g);
+            Hill.setup(g);
             Approval.init(g);
             Week.routine(g);
             Week.record(g);
             String vp = g.vp != null ? " " + g.vp.name() + " is sworn in as vice president." : "";
             g.log(NK_BIG, g.pres.name().toUpperCase() + " IS SWORN IN AS PRESIDENT",
-                    g.pres.name() + " took the oath of office at noon on " + dateLong(0) + "." + vp + " " + PARTY[g.party] + "s hold " + g.myHouse() + " House seats and " + g.mySenate() + " Senate seats.", 5);
+                    g.pres.name() + " took the oath of office at noon on " + dateLong(0) + "." + vp + " " + PARTIES[g.party] + " hold " + g.myHouse() + " House seats and " + g.mySenate() + " Senate seats.", 5);
             g.log(NK_ECON, "The new president inherits unemployment of " + fmt1(g.econ.unemp) + "% and inflation of " + fmt1(g.econ.infl) + "%", null, 1.5);
             return g;
+        }
+    }
+    // =====================================================================
+    //  12.  CONGRESS: blocs, members, committees and the bills on offer
+    //  The leaders are real; committee chairs, swing votes and the rank and file are fictional.
+    // =====================================================================
+    static final int HOUSE = 0, SENATE = 1;
+    static final String[] CHAMBER = {"House", "Senate"};
+
+    static final class Bloc implements Serializable {
+        private static final long serialVersionUID = 1L;
+        String name;
+        int party, chamber, seats;
+        double econ, cult, loyalty, hawk, rel = 50;
+    }
+
+    static final int RO_RANK = 0, RO_CHAIR = 1, RO_LEADER = 2, RO_SWING = 3;
+    static final int PRICE_PROJECT = 0, PRICE_APPOINT = 1, PRICE_ENDORSE = 2, PRICE_POLICY = 3;
+    static final String[] PRICE = {"a project back home", "a say in an appointment", "your endorsement", "a change to the bill"};
+
+    static final class Member implements Serializable {
+        private static final long serialVersionUID = 1L;
+        String name, title, committee;
+        int party, chamber, bloc, state, role, price;
+        double rel = 50, econ, cult;
+        Cand face;
+        int lastDeal = -99;
+        boolean promised;
+    }
+
+    static final class BillDef {
+        final String id, name, desc, impact;
+        final int area, lean;                       // lean: the party whose agenda it is, or -1 for bipartisan
+        final double econ, cult, cost, support, gdp, unemp, infl, base;
+        final boolean budget, origRevenue;          // reconciliation-eligible; a revenue bill must start in the House
+        final int fmt;
+
+        BillDef(String id, String name, String desc, int area, int lean, double econ, double cult, double cost, boolean budget, double support,
+                double gdp, double unemp, double infl, String impact, double base, int fmt) {
+            this.id = id; this.name = name; this.desc = desc; this.area = area; this.lean = lean; this.econ = econ; this.cult = cult; this.cost = cost; this.budget = budget;
+            this.support = support; this.gdp = gdp; this.unemp = unemp; this.infl = infl; this.impact = impact; this.base = base; this.fmt = fmt;
+            this.origRevenue = cost < 0 || id.contains("tax") || id.equals("tariffs");
+        }
+    }
+
+    /** The modern agenda. Cost is $ billions a year at full size (negative raises revenue). */
+    static final BillDef[] BILLS = {
+            new BillDef("lower_costs", "Lower Costs Act", "Caps insulin at $35 a month and child care at 7% of income, and bans junk fees.", PI_PRICES, DEM, -0.4, -0.1, 80, true, 66, 0.05, 0, -0.15, "Families with young children save about $# a year on child care.", 3100, 0),
+            new BillDef("public_option", "A public option", "A government health plan on the ACA marketplaces in every state.", PI_HEALTH, DEM, -0.6, -0.1, 60, true, 58, 0, 0, -0.05, "# million more Americans have health insurance.", 4.6, 1),
+            new BillDef("restore_roe", "Restore Roe", "The Women's Health Protection Act: abortion rights written into federal law.", PI_RIGHTS, DEM, 0, -0.8, 0, false, 60, 0, 0, 0, "Abortion is legal through viability in every state; # states had banned it.", 13, 2),
+            new BillDef("imm_reform", "Immigration reform", "Border security money plus a path to citizenship for Dreamers and long-time workers.", PI_IMMIG, DEM, -0.1, -0.3, 10, false, 61, 0.1, 0, 0, "# million Dreamers and long-time residents are on a path to citizenship.", 2.4, 1),
+            new BillDef("billionaire_tax", "Billionaire minimum tax", "A 25% minimum tax on households worth more than $100 million.", PI_ECON, DEM, -0.7, -0.1, -50, true, 63, -0.03, 0, -0.05, "The minimum tax raises about $# billion a year.", 50, 0),
+            new BillDef("housing", "Build 3 million homes", "Zoning incentives, a builders' tax credit and federal land for housing.", PI_PRICES, DEM, -0.2, 0, 40, true, 66, 0.12, -0.05, -0.08, "# million new homes are under construction.", 1.1, 1),
+            new BillDef("ai_safety", "AI safety standards", "Safety testing for the most powerful AI models, and data centers pay their own power bills.", PI_TECH, DEM, -0.3, -0.1, 2, false, 63, -0.02, 0, 0, "# frontier AI labs submit their models for federal safety testing.", 9, 0),
+            new BillDef("ss_protect", "Protect Social Security", "Lift the payroll-tax cap and raise benefits for the oldest retirees.", PI_ECON, DEM, -0.5, -0.1, -15, false, 68, 0, 0, 0, "Social Security's trust fund is solvent for # more years.", 30, 0),
+            new BillDef("gun_safety", "Gun safety", "Universal background checks, red-flag laws and a minimum age of 21 for assault weapons.", PI_CRIME, DEM, -0.1, -0.6, 1, false, 58, 0, 0, 0, "Background checks cover # million more gun sales a year.", 6, 1),
+            new BillDef("clean_energy", "Clean energy buildout", "New transmission lines, permitting reform and clean-power tax credits.", PI_ENERGY, DEM, -0.4, -0.2, 50, true, 55, 0.15, -0.05, 0.02, "# gigawatts of new clean power are on the grid.", 120, 0),
+            new BillDef("voting_rights", "Voting rights", "The Freedom to Vote Act: national standards for early voting and mail ballots.", PI_RIGHTS, DEM, 0, -0.6, 2, false, 60, 0, 0, 0, "# states have had to expand early voting.", 19, 2),
+            new BillDef("paid_leave", "Paid leave", "Twelve weeks of paid family and medical leave for every worker.", PI_JOBS, DEM, -0.6, -0.1, 70, true, 70, 0.02, 0, 0.03, "# million workers took paid leave in its first year.", 11, 1),
+            new BillDef("child_credit", "Expanded child tax credit", "A $3,600 credit per young child, paid monthly.", PI_PRICES, DEM, -0.5, -0.1, 100, true, 62, 0.08, 0, 0.05, "Child poverty is down # percent.", 40, 0),
+            new BillDef("min_wage", "A $17 minimum wage", "Raise the federal minimum wage to $17 over five years.", PI_JOBS, DEM, -0.6, 0, 0, false, 62, -0.02, 0.05, 0.05, "# million workers got a raise.", 22, 1),
+            new BillDef("tax_cuts", "Make the tax cuts bigger", "Extend the 2025 tax cuts and cut the corporate rate to 15%.", PI_ECON, REP, 0.7, 0.2, 150, true, 45, 0.18, -0.05, 0.12, "The typical family pays about $# less in federal income tax.", 1500, 0),
+            new BillDef("border_wall", "Finish the wall", "Money for the border wall, more ICE agents and faster deportations.", PI_IMMIG, REP, 0.2, 0.7, 25, true, 48, -0.05, 0, 0.05, "Border crossings are down #% from when you took office.", 40, 0),
+            new BillDef("health_freedom", "Health freedom act", "Replace ACA subsidies with health savings accounts and state block grants.", PI_HEALTH, REP, 0.7, 0.2, -40, true, 39, 0.03, 0, 0, "# million fewer Americans have health insurance.", 5.2, 1),
+            new BillDef("abortion_limit", "A 15-week abortion limit", "A national limit on abortion after 15 weeks, with exceptions.", PI_RIGHTS, REP, 0.1, 0.8, 0, false, 41, 0, 0, 0, "Abortion is limited after 15 weeks nationwide, including in # states that had allowed it.", 24, 2),
+            new BillDef("tariffs", "Reciprocal tariffs", "Match every country's tariffs, with a 60% floor on Chinese goods.", PI_TRADE, REP, 0.3, 0.3, -150, true, 42, -0.15, 0.08, 0.35, "Tariffs bring in about $# billion a year, and prices on imported goods are up.", 150, 0),
+            new BillDef("energy_dom", "Energy dominance", "Open federal lands and waters to drilling and speed up permits for pipelines.", PI_ENERGY, REP, 0.6, 0.3, -5, true, 53, 0.1, -0.03, -0.12, "US oil and gas output is up #%.", 9, 0),
+            new BillDef("balance_budget", "Balance the budget", "Cap spending and cut federal agencies by a tenth.", PI_ECON, REP, 0.8, 0.2, -250, true, 51, -0.12, 0.08, -0.15, "Federal spending is $# billion a year lower than planned.", 250, 0),
+            new BillDef("school_choice", "School choice", "A federal tax credit for private-school and home-school scholarships.", PI_EDU, REP, 0.5, 0.5, 10, true, 52, 0, 0, 0, "# million children use the new scholarships.", 1.8, 1),
+            new BillDef("police", "Back the blue", "Money for 100,000 police officers and tougher sentences for fentanyl dealers.", PI_CRIME, REP, 0.3, 0.5, 8, false, 57, 0, 0, 0, "# thousand new police officers are on the street.", 60, 0),
+            new BillDef("save_act", "The SAVE Act", "Proof of citizenship to register and photo ID to vote.", PI_RIGHTS, REP, 0.1, 0.7, 1, false, 63, 0, 0, 0, "Every state now requires photo ID to vote; # did not before.", 15, 2),
+            new BillDef("no_tax_tips", "No tax on tips and overtime", "Make the tax break on tips and overtime permanent and wider.", PI_JOBS, REP, 0.3, 0.1, 40, true, 66, 0.05, 0, 0.05, "Workers keep about $# billion a year in tips and overtime pay.", 40, 0),
+            new BillDef("infrastructure", "Infrastructure renewal", "Roads, bridges, water pipes, broadband and the power grid.", PI_JOBS, -1, -0.1, 0, 60, false, 70, 0.15, -0.08, 0.04, "# thousand bridges and roads are being rebuilt.", 22, 0),
+            new BillDef("chips2", "Chips and China Act", "Chips, shipbuilding and export controls to compete with China.", PI_TRADE, -1, 0, 0.1, 15, false, 64, 0.1, -0.03, 0.03, "# new chip and shipbuilding plants are under way.", 14, 0),
+            new BillDef("permitting", "Permitting reform", "Faster environmental reviews for power lines, pipelines and mines.", PI_ENERGY, -1, 0.2, 0, 0, false, 58, 0.06, -0.02, -0.02, "Permits for big projects now take # years less.", 2, 1),
+            new BillDef("kids_online", "Kids Online Safety Act", "Platforms must protect minors from harmful content and addictive design.", PI_TECH, -1, 0, 0.1, 0, false, 72, 0, 0, 0, "# million teenagers are on safer default settings.", 18, 0),
+            new BillDef("farm_bill", "The farm bill", "Five years of crop insurance, conservation and food assistance.", PI_ECON, -1, 0.1, 0.1, 5, false, 60, 0.02, 0, 0, "# million farms are covered by crop insurance.", 1.2, 1),
+            new BillDef("stock_ban", "Ban stock trading by Congress", "Members of Congress and their spouses can't trade individual stocks.", PI_ETHICS, -1, 0, 0, 0, false, 80, 0, 0, 0, "# members of Congress have sold their individual stocks.", 535, 0),
+            new BillDef("crypto", "Crypto market rules", "Clear rules for stablecoins and digital-asset exchanges.", PI_TECH, -1, 0.3, 0, 0, false, 50, 0.02, 0, 0, "Americans hold about $# billion in regulated stablecoins.", 400, 0),
+            new BillDef("ss_fix", "A bipartisan Social Security fix", "A commission's mix of a higher payroll-tax cap and a slower rise in benefits for the well-off.", PI_ECON, -1, 0, 0, -20, false, 55, 0, 0, 0, "Social Security's trust fund is solvent for # more years.", 40, 0)};
+
+    static BillDef billDef(String id) { for (BillDef b : BILLS) if (b.id.equals(id)) return b; return null; }
+
+    static final int ST_DRAFT = 0, ST_COMMITTEE = 1, ST_FLOOR = 2, ST_COMMITTEE2 = 3, ST_FLOOR2 = 4, ST_CONFERENCE = 5, ST_DESK = 6, ST_LAW = 7, ST_DEAD = 8, ST_OVERRIDE = 9;
+    static final String[] STAGE = {"Draft", "In committee", "Floor vote", "In committee (second chamber)", "Floor vote (second chamber)", "Conference", "On your desk", "Law", "Dead", "Veto override vote"};
+    static final String[] PAYFOR = {"Borrow it", "Tax the wealthy and corporations", "Cut spending elsewhere"};
+
+    static final class Bill implements Serializable {
+        private static final long serialVersionUID = 1L;
+        String defId, name;
+        int stage, first = HOUSE, stageWeek, introduced = -1, lawWeek = -1, payFor;
+        double size = 1, scope = 0.5, strength = 1;
+        boolean recon, ours = true, vetoed, bottled, publicPush, held;
+        int houseYes, houseNo, senYes, senNo;
+        String note = "";
+        List<String> deals = new ArrayList<String>();
+        double[] sweet = new double[12];                // extra support per bloc from deals
+
+        BillDef def() { return billDef(defId); }
+
+        int second() { return first == HOUSE ? SENATE : HOUSE; }
+
+        int chamberNow() { return stage <= ST_FLOOR ? first : second(); }
+
+        double netCost() {
+            BillDef d = def();
+            double c = d.cost * size * (0.7 + 0.6 * scope);
+            if (c > 0 && payFor != 0) c *= 0.05;
+            return c;
+        }
+
+        /** Where the bill sits on the left-right scales, after its provisions. */
+        double econ() {
+            BillDef d = def();
+            double dir = d.lean == REP ? 1 : d.lean == DEM ? -1 : (d.econ >= 0 ? 0.5 : -0.5);
+            return clamp(d.econ + dir * 0.15 * (size - 1) + dir * 0.18 * (scope - 0.5) + (payFor == 1 ? -0.15 : payFor == 2 ? 0.15 : 0), -1, 1);
+        }
+
+        double cult() {
+            BillDef d = def();
+            double dir = d.lean == REP ? 1 : d.lean == DEM ? -1 : 0;
+            return clamp(d.cult + dir * 0.18 * (scope - 0.5), -1, 1);
+        }
+
+        double support() { return def().support - 4 * (scope - 0.5) - (payFor == 0 && def().cost > 30 ? 2 : 0) + (payFor == 1 ? 2 : 0); }
+    }
+
+    static final String[] CHAIR_H = {"Ways and Means", "Appropriations", "Energy and Commerce", "Judiciary", "Armed Services", "Financial Services", "Education and Workforce",
+            "Agriculture", "Transportation and Infrastructure", "Homeland Security", "Foreign Affairs", "Budget"};
+    static final String[] CHAIR_S = {"Finance", "Appropriations", "Health, Education, Labor and Pensions", "Judiciary", "Armed Services", "Banking", "Commerce",
+            "Agriculture", "Environment and Public Works", "Homeland Security", "Foreign Relations", "Budget"};
+
+    /** Which committee (index into the chair lists) takes up a bill on an issue. */
+    static int committeeFor(BillDef d, int chamber) {
+        switch (d.area) {
+            case PI_ECON: return d.cost < 0 || d.id.contains("tax") ? 0 : d.id.equals("farm_bill") ? 7 : 11;
+            case PI_PRICES: return d.id.equals("housing") ? 5 : 0;
+            case PI_JOBS: return d.id.equals("infrastructure") ? 8 : chamber == HOUSE ? 6 : 2;
+            case PI_HEALTH: return chamber == HOUSE ? 2 : 0;
+            case PI_IMMIG: case PI_CRIME: case PI_RIGHTS: case PI_ETHICS: return 3;
+            case PI_ENERGY: return chamber == HOUSE ? 2 : 8;
+            case PI_TECH: return chamber == HOUSE ? 2 : 6;
+            case PI_TRADE: return 0;
+            case PI_EDU: return chamber == HOUSE ? 6 : 2;
+            case PI_SECURITY: return 4;
+            case PI_FOREIGN: return 10;
+            default: return 11;
+        }
+    }
+
+    static final String[] FIRST_M = {"James", "Robert", "Michael", "David", "William", "Thomas", "Daniel", "Mark", "Steven", "Brian", "Kevin", "Jason", "Eric", "Greg", "Carlos", "Andre", "Luis", "Raj", "Tom", "Ben", "Sam", "Nick", "Paul", "Doug", "Wes", "Cole", "Ray", "Tim"};
+    static final String[] FIRST_F = {"Mary", "Patricia", "Jennifer", "Linda", "Elizabeth", "Susan", "Karen", "Lisa", "Nancy", "Sandra", "Ashley", "Michelle", "Maria", "Rosa", "Diane", "Angela", "Priya", "Grace", "Hannah", "Claire", "Tasha", "Joy", "Erin", "Lauren"};
+    static final String[] LASTS = {"Whitaker", "Calloway", "Brennan", "Okafor", "Delgado", "Hargrove", "Lindqvist", "Marsh", "Pruitt", "Vasquez", "Thornton", "Kowalski", "Ashby", "Mercer", "Haldane",
+            "Ruiz", "Sutherland", "Pennington", "Castellano", "Whitfield", "Abernathy", "Fairbanks", "Nakamura", "Oyelaran", "Quinlan", "Rourke", "Stanton", "Talbot", "Underwood", "Vance-Hill",
+            "Waller", "Yates", "Ellison", "Garrity", "Holloway", "Iverson", "Jardine", "Kilgore", "Langford", "Montague", "Norwood", "Ostrander", "Pemberton", "Radcliffe", "Sandoval", "Tillman", "Voss", "Winslow"};
+
+    /** Real leaders: faces for the portraits. */
+    static final String[][] LEADER_LOOKS = {
+            {"Mike Johnson", "M 1 2 2 0.1 0 1 0.95 0.5 0 1 0.45 0.6"}, {"Hakeem Jeffries", "M 6 0 0 0 0 1 1.0 0.55 0 0 0.45 0.5"},
+            {"John Thune", "M 1 6 2 0.8 0 0 0.95 0.6 0 2 0.65 0.55"}, {"Chuck Schumer", "M 1 6 1 0.9 0 1 1.05 0.5 0 0 0.8 0.4"}};
+
+    static Cand face(String name, Random r, int party) {
+        Cand c = new Cand();
+        String[] p = name.split(" ", 2);
+        c.first = p[0]; c.last = p.length > 1 ? p[1] : ""; c.party = party; c.id = "m_" + name.replace(' ', '_');
+        Look l = null;
+        for (String[] lk : LEADER_LOOKS) if (lk[0].equals(name)) l = Look.parse(lk[1]);
+        if (l == null) l = Creator.randomLook(r);
+        c.look = l;
+        return c;
+    }
+
+    static final class Congress implements Serializable {
+        private static final long serialVersionUID = 1L;
+        List<Bloc> blocs = new ArrayList<Bloc>();
+        List<Member> members = new ArrayList<Member>();
+        List<Bill> bills = new ArrayList<Bill>();
+        int reconFy = -1, fy;                           // the fiscal year whose reconciliation bill has been used
+        boolean[] floorUsed = new boolean[2];
+        // the budget
+        boolean budgetSent;
+        double reqDefense, reqNondefense, reqTax, reqMandatory;
+        int[] approps = new int[12];                    // 0 none, 1 one chamber, 2 both, 3 enacted, 4 on a CR
+        int crUntil = -1, xWeek = -1;
+        boolean shutdown;
+        int shutdownWeeks;
+        double blame;                                   // share of the public blaming you for a shutdown (0-1)
+        double debtLimit;                               // $ trillions
+        boolean xWarned, defaulted, crMinority;
+        // midterms
+        boolean midDone;
+        double[] campaign = new double[NS];             // your campaigning per state in the midterm season
+        double midMargin;
+        String midSummary;
+        int overrides, vetoes, laws, shutdowns, shutdownTotal;
+    }
+
+    static final String[] APPROPS = {"Agriculture", "Commerce, Justice, Science", "Defense", "Energy and Water", "Financial Services", "Homeland Security", "Interior and Environment",
+            "Labor, Health and Human Services, Education", "Legislative Branch", "Military Construction and Veterans Affairs", "State and Foreign Operations", "Transportation and Housing"};
+
+    static final class Hill {
+        /** Bloc templates: chamber, party, name, share of the party's seats, econ, cult, loyalty, deficit hawkishness. */
+        static final int[] TB_CH = {HOUSE, HOUSE, HOUSE, HOUSE, HOUSE, HOUSE, SENATE, SENATE, SENATE, SENATE, SENATE, SENATE};
+        static final int[] TB_PARTY = {DEM, DEM, DEM, REP, REP, REP, DEM, DEM, DEM, REP, REP, REP};
+        static final String[] TB_NAME = {"Progressive Caucus", "Mainstream Democrats", "New Dems and Blue Dogs", "Freedom Caucus", "Mainstream Republicans", "Problem Solvers Republicans",
+                "Progressive senators", "Mainstream Democrats", "Moderate Democrats", "Hardliners", "Mainstream Republicans", "Moderate Republicans"};
+        static final double[] TB_SHARE = {0.45, 0.38, 0.17, 0.17, 0.70, 0.13, 0.25, 0.60, 0.15, 0.20, 0.68, 0.12};
+        static final double[] TB_ECON = {-0.65, -0.4, -0.1, 0.8, 0.55, 0.25, -0.7, -0.4, -0.1, 0.8, 0.55, 0.2};
+        static final double[] TB_CULT = {-0.7, -0.5, -0.25, 0.8, 0.55, 0.2, -0.7, -0.45, -0.2, 0.75, 0.5, 0.1};
+        static final double[] TB_LOY = {0.8, 0.9, 0.75, 0.55, 0.85, 0.75, 0.85, 0.9, 0.7, 0.6, 0.85, 0.7};
+        static final double[] TB_HAWK = {0.1, 0.3, 0.6, 0.9, 0.5, 0.4, 0.1, 0.3, 0.5, 0.85, 0.5, 0.4};
+
+        static void setup(Game g) {
+            Congress c = new Congress();
+            g.cong = c;
+            Random r = new Random(g.set.seed ^ 0x5eedL);
+            seats(g);
+            // the leaders
+            Era e = g.era;
+            boolean dHouse = g.houseD >= 218, dSen = g.senateD > 50 || g.senateD == 50 && g.party == DEM;
+            leader(g, r, HOUSE, dHouse ? DEM : REP, "Speaker of the House", dHouse ? e.speakerD : e.speakerR);
+            leader(g, r, HOUSE, dHouse ? REP : DEM, "House " + (dHouse ? "Republican" : "Democratic") + " leader", dHouse ? e.houseLeaderR : e.houseLeaderD);
+            leader(g, r, SENATE, dSen ? DEM : REP, "Senate Majority Leader", dSen ? e.leaderD : e.leaderR);
+            leader(g, r, SENATE, dSen ? REP : DEM, "Senate " + (dSen ? "Republican" : "Democratic") + " leader", dSen ? e.leaderR : e.leaderD);
+            // committee chairs from the majority
+            for (int ch = 0; ch < 2; ch++) {
+                int maj = ch == HOUSE ? (dHouse ? DEM : REP) : (dSen ? DEM : REP);
+                String[] names = ch == HOUSE ? CHAIR_H : CHAIR_S;
+                for (int k = 0; k < names.length; k++) {
+                    Member m = person(c, r, maj, ch);
+                    m.role = RO_CHAIR; m.committee = names[k];
+                    m.title = "Chair, " + (ch == HOUSE ? "House " : "Senate ") + names[k];
+                    m.bloc = blocOf(c, ch, maj, r.nextDouble() < 0.7 ? 1 : r.nextBoolean() ? 0 : 2);
+                    ideo(c, m, r);
+                    c.members.add(m);
+                }
+            }
+            // swing votes: moderates of both parties, and a hardliner or two
+            int[][] swing = {{HOUSE, g.party, 2}, {HOUSE, g.party, 2}, {HOUSE, other(g.party), 2}, {HOUSE, other(g.party), 2}, {HOUSE, g.party, 0},
+                    {SENATE, g.party, 2}, {SENATE, g.party, 2}, {SENATE, other(g.party), 2}, {SENATE, other(g.party), 2}, {SENATE, g.party, 0}};
+            for (int[] sw : swing) {
+                Member m = person(c, r, sw[1], sw[0]);
+                m.role = RO_SWING;
+                m.bloc = blocOf(c, sw[0], sw[1], sw[2]);
+                m.price = r.nextInt(4);
+                m.state = swingState(r);
+                for (int t = 0; t < 20 && stateTaken(c, m); t++) m.state = swingState(r);
+                m.title = (sw[0] == HOUSE ? "Rep. " : "Sen. ") + m.name.split(" ")[1] + " (" + PARTY_SHORT[sw[1]] + "-" + STATES[m.state].ab + ")";
+                ideo(c, m, r);
+                m.rel = 45 + r.nextDouble() * 15;
+                c.members.add(m);
+            }
+            for (Bloc b : c.blocs) b.rel = b.party == g.party ? 58 : 38;
+            c.fy = fiscalYear(g);
+            Budget.setup(g);
+        }
+
+        static int other(int p) { return p == REP ? DEM : REP; }
+
+        /** One slot of Hill meetings: the leaders and the blocs warm to you, your own side more. */
+        static void meeting(Game g) {
+            if (g.cong == null) return;
+            double k = (g.pres != null ? g.pres.a[A_EST] : 60) / 70.0;
+            for (Member m : g.cong.members) {
+                if (m.role == RO_LEADER) m.rel = Math.min(100, m.rel + (m.party == g.party ? 1.6 : 0.9) * k);
+                else if (m.role == RO_CHAIR || m.role == RO_SWING) m.rel = Math.min(100, m.rel + 0.4 * k);
+            }
+            for (Bloc b : g.cong.blocs) b.rel = Math.min(100, b.rel + (b.party == g.party ? 0.7 : 0.35) * k);
+        }
+
+        /** Relationships drift back toward where party and approval put them. */
+        static void drift(Game g) {
+            double pull = (g.approval - 45) * 0.3;
+            for (Bloc b : g.cong.blocs) { double base = (b.party == g.party ? 55 : 35) + pull * (b.party == g.party ? 1 : 0.5); b.rel += (base - b.rel) * 0.02; }
+            for (Member m : g.cong.members) { double base = (m.party == g.party ? 55 : 35) + pull * 0.5; m.rel += (base - m.rel) * 0.015; }
+        }
+
+        static int swingState(Random r) {
+            String[] sw = {"PA", "MI", "WI", "AZ", "NV", "GA", "NC", "NH", "ME", "VA", "MN", "OH", "IA", "TX", "FL", "CO", "NM"};
+            return stateIdx(sw[r.nextInt(sw.length)]);
+        }
+
+        static Member person(Congress c, Random r, int party, int chamber) {
+            Member m = new Member();
+            boolean f = r.nextDouble() < 0.33;
+            String last = LASTS[r.nextInt(LASTS.length)];
+            for (int t = 0; t < 30 && lastUsed(c, last); t++) last = LASTS[r.nextInt(LASTS.length)];
+            m.name = (f ? FIRST_F[r.nextInt(FIRST_F.length)] : FIRST_M[r.nextInt(FIRST_M.length)]) + " " + last;
+            m.party = party; m.chamber = chamber; m.state = r.nextInt(NS);
+            m.face = face(m.name, r, party);
+            if (m.face.look != null) { m.face.look.female = f; if (f && m.face.look.style < 6) m.face.look.style = 6 + r.nextInt(4); if (!f && m.face.look.style >= 6) m.face.look.style = r.nextInt(5); }
+            return m;
+        }
+
+        static boolean stateTaken(Congress c, Member m) {
+            for (Member o : c.members) if (o.role == RO_SWING && o.chamber == m.chamber && o.state == m.state) return true;
+            return false;
+        }
+
+        static boolean lastUsed(Congress c, String last) {
+            for (Member m : c.members) if (m.name.endsWith(" " + last)) return true;
+            return false;
+        }
+
+        static void leader(Game g, Random r, int chamber, int party, String title, String name) {
+            Member m = new Member();
+            m.name = name; m.party = party; m.chamber = chamber; m.role = RO_LEADER; m.title = title;
+            m.face = face(name, r, party);
+            m.bloc = blocOf(g.cong, chamber, party, 1);
+            ideo(g.cong, m, r);
+            m.rel = party == g.party ? 62 : 35;
+            g.cong.members.add(m);
+        }
+
+        static void ideo(Congress c, Member m, Random r) {
+            Bloc b = c.blocs.get(m.bloc);
+            m.econ = clamp(b.econ + r.nextGaussian() * 0.08, -1, 1);
+            m.cult = clamp(b.cult + r.nextGaussian() * 0.08, -1, 1);
+        }
+
+        static int blocOf(Congress c, int chamber, int party, int k) {
+            int n = 0;
+            for (int i = 0; i < c.blocs.size(); i++) { Bloc b = c.blocs.get(i); if (b.chamber == chamber && b.party == party) { if (n == k) return i; n++; } }
+            return 0;
+        }
+
+        /** Rebuild the blocs from the seat counts (after an election). */
+        static void seats(Game g) {
+            Congress c = g.cong;
+            List<Bloc> old = c.blocs;
+            c.blocs = new ArrayList<Bloc>();
+            for (int t = 0; t < TB_CH.length; t++) {
+                Bloc b = new Bloc();
+                b.chamber = TB_CH[t]; b.party = TB_PARTY[t]; b.name = TB_NAME[t];
+                int total = b.chamber == HOUSE ? (b.party == DEM ? g.houseD : 435 - g.houseD) : (b.party == DEM ? g.senateD : 100 - g.senateD);
+                b.seats = (int) Math.round(total * TB_SHARE[t]);
+                b.econ = TB_ECON[t]; b.cult = TB_CULT[t]; b.loyalty = TB_LOY[t]; b.hawk = TB_HAWK[t];
+                for (Bloc o : old) if (o.name.equals(b.name) && o.chamber == b.chamber) b.rel = o.rel;
+                c.blocs.add(b);
+            }
+            // rounding: make each party's blocs add up
+            for (int ch = 0; ch < 2; ch++) for (int p = DEM; p <= REP; p++) {
+                int total = ch == HOUSE ? (p == DEM ? g.houseD : 435 - g.houseD) : (p == DEM ? g.senateD : 100 - g.senateD), sum = 0;
+                Bloc big = null;
+                for (Bloc b : c.blocs) if (b.chamber == ch && b.party == p) { sum += b.seats; if (big == null || b.seats > big.seats) big = b; }
+                if (big != null) big.seats += total - sum;
+            }
+        }
+
+        static int fiscalYear(Game g) { int[] d = dateOf(g.day()); return d[1] >= 9 ? d[0] + 1 : d[0]; }
+
+        static boolean majority(Game g, int chamber, int party) {
+            if (chamber == HOUSE) return party == DEM ? g.houseD >= 218 : 435 - g.houseD >= 218;
+            int s = party == DEM ? g.senateD : 100 - g.senateD;
+            return s > 50 || s == 50 && g.party == party;
+        }
+
+        static Member leaderOf(Game g, int chamber, boolean majority) {
+            for (Member m : g.cong.members) if (m.role == RO_LEADER && m.chamber == chamber && majority(g, chamber, m.party) == majority) return m;
+            return null;
+        }
+
+        static Member chairFor(Game g, Bill b, int chamber) {
+            int k = committeeFor(b.def(), chamber);
+            String[] names = chamber == HOUSE ? CHAIR_H : CHAIR_S;
+            for (Member m : g.cong.members) if (m.role == RO_CHAIR && m.chamber == chamber && m.committee.equals(names[k])) return m;
+            return null;
+        }
+    }
+    // =====================================================================
+    //  13.  MAKING LAWS
+    //  A bill goes to committee, to the floor, to the other chamber and to conference, then to your desk.
+    //  Each bloc's vote turns on ideology, party, its relationship with you, your approval, the deficit and the deals made.
+    // =====================================================================
+    static final class Legis {
+        /** Votes needed to pass (or to override). */
+        static int need(Game g, Bill b, int chamber, boolean override) {
+            if (chamber == HOUSE) return override ? 290 : 218;
+            if (override) return 67;
+            if (b.recon || g.filibusterGone) {
+                int vpParty = g.party;
+                return b.ours || vpParty == partyOf(b) ? 50 : 51;
+            }
+            return g.era.year < 1975 ? 67 : 60;
+        }
+
+        /** The party whose bill it is: yours, or the majority's that wrote it. */
+        static int partyOf(Bill b) { return b.ours ? -1 : b.def().lean; }
+
+        static int sponsorParty(Game g, Bill b) {
+            if (b.ours) return g.party;
+            int l = b.def().lean;
+            return l >= 0 ? l : g.party;
+        }
+
+        /**
+         * A spatial vote: a bloc likes a bill that moves the law (at 0,0) toward it. Party pulls hard, harder still
+         * behind the president's own priorities; then the relationship, approval, the cost, public support and deals.
+         */
+        static double blocLogit(Game g, Bill b, int bi, boolean override) {
+            Bloc bl = g.cong.blocs.get(bi);
+            double pol = g.era.polarization;
+            double be = b.econ(), bc = b.cult();
+            double spatial = 2 * (bl.econ * be + 0.8 * bl.cult * bc) - (be * be + 0.8 * bc * bc);
+            double l = 0.3 + 2.2 * spatial;
+            int sp = sponsorParty(g, b);
+            boolean mine = bl.party == g.party;
+            boolean bip = b.def().lean < 0;
+            if (bip) l += 0.2;                                                 // bipartisan by design
+            if (bl.party == sp) {
+                double agree = clamp(0.5 + spatial, 0, 1);
+                l += bl.loyalty * (b.ours && mine ? 0.4 + 2.4 * agree : 0.5 + 1.3 * agree);
+            } else l -= 0.9 * pol * (bip ? 0.7 : 1);
+            if (b.ours && !mine) l -= 0.35 + (Midterms.season(g) || g.week > 170 ? 0.3 : 0);   // why hand the president a win?
+            if (b.ours || mine) l += (bl.rel - 50) / 35;
+            l += mine ? (g.approval - 45) / 18 : (g.approval - 50) / 30;
+            double cost = b.netCost();
+            if (cost > 0) l -= bl.hawk * cost / 180;
+            boolean moderate = bl.name.contains("oderate") || bl.name.contains("Blue Dogs") || bl.name.contains("Problem Solvers");
+            l += (b.support() - 55) / 40 * (moderate ? 1.2 : 0.4);
+            if (b.publicPush) l += moderate ? 0.25 : 0.1;
+            if (b.defId.equals("stock_ban")) l -= 1.2;                          // members don't love this one
+            if (override) l += mine ? -1.6 * bl.loyalty : 0.3;
+            if (!b.ours && mine && b.vetoed) l -= 0.5;
+            return 1.6 * l + 1.2 * b.sweet[bi];
+        }
+
+        /** {expected yes, standard deviation} in a chamber. */
+        static double[] count(Game g, Bill b, int chamber, boolean override) {
+            double yes = 0, var = 0;
+            for (int i = 0; i < g.cong.blocs.size(); i++) {
+                Bloc bl = g.cong.blocs.get(i);
+                if (bl.chamber != chamber || bl.seats <= 0) continue;
+                double p = logistic(blocLogit(g, b, i, override));
+                yes += bl.seats * p;
+                var += bl.seats * p * (1 - p) + Math.pow(bl.seats * 0.06 * (1 - Math.abs(2 * p - 1)), 2);
+            }
+            return new double[]{yes, Math.sqrt(var) + (chamber == HOUSE ? 2 : 0.8)};
+        }
+
+        static double chance(Game g, Bill b, int chamber, boolean override) {
+            double[] c = count(g, b, chamber, override);
+            return logistic(1.702 * (c[0] - need(g, b, chamber, override) + 0.5) / c[1]);
+        }
+
+        /** Would the committee chair let it out? Chairs from the other party bottle up bills they dislike. */
+        static double chairOk(Game g, Bill b, int chamber) {
+            Member ch = Hill.chairFor(g, b, chamber);
+            if (ch == null) return 1;
+            int bi = ch.bloc;
+            double l = blocLogit(g, b, bi, false) + (ch.rel - 50) / 30;
+            if (ch.party == sponsorParty(g, b)) l += 1.5;
+            if (b.support() > 65) l += 0.8;
+            return logistic(l);
+        }
+
+        static boolean reconOk(Game g, Bill b) {
+            return b.def().budget && g.cong.reconFy != Hill.fiscalYear(g) && Hill.majority(g, HOUSE, g.party) && Hill.majority(g, SENATE, g.party);
+        }
+
+        // ---- your bills ----
+        static Bill draft(Game g, BillDef d) {
+            Bill b = new Bill();
+            b.defId = d.id; b.name = d.name; b.ours = true;
+            b.first = d.origRevenue ? HOUSE : HOUSE;
+            b.payFor = d.cost > 60 && g.party == DEM ? 1 : 0;
+            return b;
+        }
+
+        static void introduce(Game g, Bill b) {
+            b.stage = ST_COMMITTEE;
+            b.stageWeek = g.week;
+            b.introduced = g.week;
+            if (b.recon) g.cong.reconFy = Hill.fiscalYear(g);
+            if (!g.cong.bills.contains(b)) g.cong.bills.add(b);
+            g.log(NK_INFO, "The White House sends " + b.name + " to Congress", null, 1.0);
+        }
+
+        static int stageWeeks(Bill b) {
+            switch (b.stage) {
+                case ST_COMMITTEE: case ST_COMMITTEE2: return b.recon ? 2 : 3;
+                case ST_CONFERENCE: return 2;
+                default: return 1;
+            }
+        }
+
+        static void week(Game g) {
+            Congress c = g.cong;
+            c.floorUsed[0] = false; c.floorUsed[1] = false;
+            for (Bill b : new ArrayList<Bill>(c.bills)) step(g, b);
+            if (g.week % 7 == 3) congressBill(g);
+        }
+
+        static void step(Game g, Bill b) {
+            if (b.stage >= ST_DESK) return;
+            if (g.week - b.stageWeek < stageWeeks(b)) return;
+            Random r = g.rng;
+            int ch = b.chamberNow();
+            switch (b.stage) {
+                case ST_COMMITTEE: case ST_COMMITTEE2: {
+                    double ok = chairOk(g, b, ch);
+                    if (r.nextDouble() < ok) {
+                        Member chair = Hill.chairFor(g, b, ch);
+                        if (chair != null && chair.party != sponsorParty(g, b) && b.size > 0.8) { b.size = Math.max(0.6, b.size - 0.15); b.note = "The committee trimmed it."; }
+                        b.stage++; b.stageWeek = g.week; b.bottled = false;
+                        g.log(NK_INFO, CHAMBER[ch] + " committee approves " + b.name, null, 0.6);
+                    } else {
+                        if (!b.bottled) {
+                            Member chair = Hill.chairFor(g, b, ch);
+                            g.log(NK_BAD, (chair != null ? chair.name + " (" + PARTY_SHORT[chair.party] + ")" : "The committee chair") + " bottles up " + b.name + " in committee", null, 1.0);
+                        }
+                        b.bottled = true;
+                        b.stageWeek = g.week;
+                        if (g.week - b.introduced > 30) kill(g, b, "dies in committee");
+                    }
+                    break;
+                }
+                case ST_FLOOR: case ST_FLOOR2: {
+                    if (g.cong.floorUsed[ch]) return;
+                    if (hold(g, b, ch)) return;
+                    g.cong.floorUsed[ch] = true;
+                    if (vote(g, b, ch, false)) { b.stage++; b.stageWeek = g.week; }
+                    else kill(g, b, ch == SENATE && !b.recon && !g.filibusterGone && lastYes(b, ch) >= 50 ? "is filibustered" : "fails");
+                    break;
+                }
+                case ST_CONFERENCE: {
+                    b.stage = ST_DESK;
+                    b.stageWeek = g.week;
+                    toDesk(g, b);
+                    break;
+                }
+                default: break;
+            }
+        }
+
+        /**
+         * Leaders don't call votes they expect to lose. Your own party's leaders keep whipping for a while;
+         * the other party's won't bring your bill up unless most of their members want it.
+         */
+        static boolean hold(Game g, Bill b, int ch) {
+            Member lead = Hill.leaderOf(g, ch, true);
+            int sp = sponsorParty(g, b);
+            int waited = g.week - b.stageWeek;
+            double p = chance(g, b, ch, false);
+            boolean friendly = lead == null || lead.party == sp;
+            if (friendly) {
+                if (p >= 0.75 || waited >= 12) { b.held = false; return false; }
+                for (int i = 0; i < g.cong.blocs.size(); i++) { Bloc bl = g.cong.blocs.get(i); if (bl.chamber == ch && bl.party == sp) b.sweet[i] += 0.05; }
+            } else {
+                double maj = 0, seats = 0;
+                for (int i = 0; i < g.cong.blocs.size(); i++) { Bloc bl = g.cong.blocs.get(i); if (bl.chamber == ch && bl.party == lead.party) { maj += bl.seats * logistic(blocLogit(g, b, i, false)); seats += bl.seats; } }
+                if (maj / Math.max(1, seats) >= 0.5 && p >= 0.4) { b.held = false; return false; }
+                if (waited >= 14) { kill(g, b, "never gets a vote: " + lead.name + " won't bring it up"); return true; }
+            }
+            if (!b.held) g.log(NK_INFO, (friendly ? "Leaders put off the " + CHAMBER[ch] + " vote on " + b.name + " while they hunt for votes" : lead.name + " refuses to schedule a vote on " + b.name), null, b.ours ? 1.0 : 0.5);
+            b.held = true;
+            return true;
+        }
+
+        static int lastYes(Bill b, int ch) { return ch == HOUSE ? b.houseYes : b.senYes; }
+
+        static boolean vote(Game g, Bill b, int ch, boolean override) {
+            double[] c = count(g, b, ch, override);
+            int total = ch == HOUSE ? 435 : 100;
+            int yes = (int) Math.round(clamp(c[0] + g.rng.nextGaussian() * c[1], 0, total));
+            int no = total - yes;
+            if (ch == HOUSE) { b.houseYes = yes; b.houseNo = no; } else { b.senYes = yes; b.senNo = no; }
+            boolean pass = yes >= need(g, b, ch, override);
+            String what = override ? "the veto override" : ch == SENATE && !b.recon && !g.filibusterGone ? "cloture on " + b.name : b.name;
+            g.log(pass ? NK_GOOD : NK_BAD, CHAMBER[ch] + (pass ? " passes " : " rejects ") + what + ", " + yes + "-" + no, null, b.ours ? 1.6 : 0.9);
+            return pass;
+        }
+
+        static void kill(Game g, Bill b, String how) {
+            b.stage = ST_DEAD;
+            b.stageWeek = g.week;
+            if (b.recon && g.cong.reconFy == Hill.fiscalYear(g)) g.cong.reconFy = -1;      // the reconciliation slot is free again
+            g.log(NK_BAD, b.name + " " + how, null, b.ours ? 1.4 : 0.6);
+            if (b.ours) { g.capital = Math.max(0, g.capital - 5); g.issueAdj[b.def().area] -= 0.2; g.perf -= 0.3; }
+        }
+
+        static void toDesk(Game g, Bill b) {
+            BillDef d = b.def();
+            String who = b.ours ? "your" : "the " + PARTIES[sponsorParty(g, b)] + "'";
+            String body = "Congress has passed " + who + " bill: " + d.desc + " House " + b.houseYes + "-" + b.houseNo + ", Senate " + b.senYes + "-" + b.senNo + ". "
+                    + "About " + Math.round(b.support()) + "% of the public supports it." + (b.netCost() > 0 ? " It adds about $" + Math.round(b.netCost()) + " billion a year to the deficit." : b.netCost() < 0 ? " It cuts the deficit by about $" + Math.round(-b.netCost()) + " billion a year." : "");
+            String[] adv;
+            boolean mine = b.ours || d.lean == g.party || d.lean < 0;
+            if (mine) adv = new String[]{"Legislative director: \"This is the win we fought for. Sign it in the Rose Garden.\"",
+                    "Chief of staff: \"Only if you want to throw away months of work. Vetoing your own priority would stun everyone.\"",
+                    "Counsel: \"It becomes law in ten days anyway, but you'd get none of the credit.\""};
+            else adv = new String[]{"Chief of staff: \"Signing it takes the issue off the table and looks bipartisan, but your base won't like it.\"",
+                    "Political director: \"Veto it. Your voters hate this bill, and they can't override you.\"",
+                    "Counsel: \"Let it become law without your signature: you neither own it nor fight it.\""};
+            Decision dd = Decisions.add(g, D_SIGN, b.name + " is on your desk", body, new String[]{"Sign it", "Veto it", "Let it become law without signing"}, adv);
+            dd.bill = b;
+        }
+
+        /** The president's call on a bill: 0 sign, 1 veto, 2 no signature. */
+        static void decide(Game g, Bill b, int k) {
+            if (k == 1) {
+                b.vetoed = true;
+                g.cong.vetoes++;
+                g.log(NK_BIG, "PRESIDENT " + g.pres.last.toUpperCase() + " VETOES " + b.name.toUpperCase(), null, 2.5);
+                boolean mine = b.ours || b.def().lean == g.party;
+                if (mine) { g.perf -= 1.5; g.capital = Math.max(0, g.capital - 10); }
+                else { g.issueAdj[b.def().area] += 0.1; for (Bloc bl : g.cong.blocs) if (bl.party != g.party) bl.rel = Math.max(0, bl.rel - 4); }
+                // an override vote if Congress has the numbers to try
+                double ch = chance(g, b, HOUSE, true) * chance(g, b, SENATE, true);
+                if (ch > 0.05 || b.houseYes >= 280 && b.senYes >= 64) {
+                    b.stage = ST_OVERRIDE;
+                    boolean h = vote(g, b, HOUSE, true), s = h && vote(g, b, SENATE, true);
+                    if (h && s) { g.cong.overrides++; g.log(NK_BIG, "CONGRESS OVERRIDES THE VETO OF " + b.name.toUpperCase(), null, 2.6); enact(g, b, false); g.capital = Math.max(0, g.capital - 10); g.perf -= 1; }
+                    else { b.stage = ST_DEAD; g.log(NK_GOOD, "The veto of " + b.name + " stands", null, 1.2); }
+                } else b.stage = ST_DEAD;
+                return;
+            }
+            enact(g, b, k == 0);
+        }
+
+        static void enact(Game g, Bill b, boolean signed) {
+            BillDef d = b.def();
+            b.stage = ST_LAW;
+            b.lawWeek = g.week;
+            b.strength = b.size * (0.7 + 0.6 * b.scope) * (b.recon && b.scope > 0.6 ? 0.85 : 1);
+            g.cong.laws++;
+            Econ e = g.econ;
+            double pctGdp = b.netCost() / (e.nominalGdp * 10);
+            e.fiscal += pctGdp;
+            e.polGdp += d.gdp * b.strength * 0.3; e.polUnemp += d.unemp * b.strength * 0.5; e.polInfl += d.infl * b.strength * 0.6;
+            boolean mine = b.ours || d.lean == g.party || d.lean < 0;
+            if (signed) {
+                double sup = b.support() - 50;
+                g.issueAdj[d.area] = clamp(g.issueAdj[d.area] + sup * 0.02 * Math.min(1.5, b.strength) * (mine ? 1 : 0.4), -1.5, 1.5);
+                g.perf += mine ? 0.6 + sup * 0.02 : 0.2;
+                if (b.ours) g.capital = Math.min(100, g.capital + 6);
+                if (!mine) for (Bloc bl : g.cong.blocs) if (bl.party == g.party) bl.rel = Math.max(0, bl.rel - 3);
+                g.log(NK_BIG, "PRESIDENT " + g.pres.last.toUpperCase() + " SIGNS " + b.name.toUpperCase(), d.desc + (b.recon && b.scope > 0.6 ? " The parliamentarian struck several provisions under the Byrd rule." : ""), 3.0);
+                snd(Sfx.CHEER);
+            } else g.log(NK_INFO, b.name + " becomes law without the president's signature", null, 1.4);
+        }
+
+        /** The majority in Congress moves bills of its own. */
+        static void congressBill(Game g) {
+            Random r = g.rng;
+            boolean oppHouse = !Hill.majority(g, HOUSE, g.party), oppSen = !Hill.majority(g, SENATE, g.party);
+            int active = 0;
+            for (Bill b : g.cong.bills) if (!b.ours && b.stage < ST_DESK) active++;
+            if (active >= 2) return;
+            int sp = oppHouse ? Hill.other(g.party) : g.party;
+            List<BillDef> l = new ArrayList<BillDef>();
+            for (BillDef d : BILLS) {
+                if (d.lean != sp && d.lean >= 0) continue;
+                boolean used = false;
+                for (Bill b : g.cong.bills) if (b.defId.equals(d.id) && (b.stage != ST_DEAD || g.week - b.stageWeek < 52)) used = true;
+                if (!used) l.add(d);
+            }
+            if (l.isEmpty() || (!oppHouse && !oppSen && r.nextDouble() < 0.6)) return;
+            BillDef d = l.get(r.nextInt(l.size()));
+            Bill b = new Bill();
+            b.defId = d.id; b.name = d.name; b.ours = false; b.first = oppHouse || !oppSen ? HOUSE : SENATE;
+            b.stage = ST_COMMITTEE; b.stageWeek = g.week; b.introduced = g.week;
+            g.cong.bills.add(b);
+            g.log(NK_INFO, (b.first == HOUSE ? "House " : "Senate ") + PARTIES[sp] + " move " + d.name, null, 0.7);
+        }
+
+        // ---- deals to win votes ----
+        static final int DL_CALL = 0, DL_PROJECT = 1, DL_APPOINT = 2, DL_ENDORSE = 3, DL_THREAT = 4, DL_PUBLIC = 5;
+        static final String[] DEAL = {"Call", "Project back home", "Appointment", "Endorsement", "Threaten", "Go public"};
+        static final int[] DEAL_COST = {2, 5, 6, 4, 4, 3};
+
+        static String deal(Game g, Bill b, Member m, int kind) {
+            if (g.capital < DEAL_COST[kind]) return "You don't have enough political capital.";
+            if (m != null && m.lastDeal == g.week) return m.name + " has already heard from you this week.";
+            Random r = g.rng;
+            g.capital -= DEAL_COST[kind];
+            if (kind == DL_PUBLIC) {
+                b.publicPush = true;
+                g.issueSal[b.def().area] = Math.min(2, g.issueSal[b.def().area] + 0.1);
+                return "You make the case for " + b.name + " to the country. Moderates feel the pressure.";
+            }
+            m.lastDeal = g.week;
+            double boost;
+            String msg;
+            switch (kind) {
+                case DL_PROJECT:
+                    boost = m.price == PRICE_PROJECT ? 1.4 : 0.7;
+                    g.econ.fiscal += 0.01;
+                    msg = "You promise " + m.name + " a project back home.";
+                    if (r.nextDouble() < 0.15) g.log(NK_BAD, "\"Pork for votes\": reporters dig into the White House's deal with " + m.name, null, 1.0);
+                    break;
+                case DL_APPOINT: boost = m.price == PRICE_APPOINT ? 1.5 : 0.8; msg = "You give " + m.name + " a say in an appointment."; break;
+                case DL_ENDORSE:
+                    boost = m.party == g.party ? (m.price == PRICE_ENDORSE ? 1.5 : 0.9) : 0.2;
+                    msg = m.party == g.party ? "You promise to campaign for " + m.name + "." : m.name + " is polite, but your endorsement won't help a member of the other party.";
+                    break;
+                case DL_THREAT:
+                    boost = m.party == g.party ? 0.8 : -0.3;
+                    m.rel = Math.max(0, m.rel - 15);
+                    msg = m.party == g.party ? "You make it clear you'd back a primary challenger. " + m.name + " is furious, but listening." : "The threat backfires: " + m.name + " goes on TV to complain.";
+                    if (r.nextDouble() < 0.3) g.log(NK_BAD, m.name + " says the White House threatened them over " + b.name, null, 1.2);
+                    break;
+                default:
+                    boost = 0.35 * (g.pres.a[A_CHA] + g.pres.a[A_EST]) / 140;
+                    m.rel = Math.min(100, m.rel + 4);
+                    msg = "You call " + m.name + ".";
+                    break;
+            }
+            if (m.role == RO_SWING || m.role == RO_CHAIR) {
+                // a named member moves their bloc a little and votes with you
+                b.sweet[m.bloc] += boost * (m.role == RO_CHAIR ? 0.35 : 0.22);
+                b.deals.add(DEAL[kind] + ": " + m.name);
+                if (m.role == RO_CHAIR) m.rel = Math.min(100, m.rel + 6 * boost);
+            } else {
+                b.sweet[m.bloc] += boost * 0.3;
+                m.rel = Math.min(100, m.rel + 5 * boost);
+                b.deals.add(DEAL[kind] + ": " + m.name);
+            }
+            return msg;
+        }
+
+        /** The nuclear option: a simple majority changes the Senate's rules. Your own moderates usually balk. */
+        static double nukeChance(Game g) {
+            if (g.filibusterGone || !Hill.majority(g, SENATE, g.party)) return 0;
+            double rel = 0, n = 0;
+            for (Bloc b : g.cong.blocs) if (b.chamber == SENATE && b.party == g.party) { rel += b.rel * b.seats; n += b.seats; }
+            rel /= Math.max(1, n);
+            return clamp(0.06 + 0.06 * (g.mySenate() - 50) + (rel - 55) / 120 + (g.approval - 50) / 100, 0.02, 0.6);
+        }
+
+        static String nuke(Game g) {
+            if (g.capital < 15) return "You need 15 political capital.";
+            g.capital -= 15;
+            if (g.rng.nextDouble() < nukeChance(g)) {
+                g.filibusterGone = true;
+                for (Bloc b : g.cong.blocs) if (b.chamber == SENATE && b.party != g.party) b.rel = Math.max(0, b.rel - 15);
+                g.log(NK_BIG, "SENATE ENDS THE FILIBUSTER FOR LEGISLATION", "A simple majority can now pass bills. The minority vows to remember.", 4);
+                return "The Senate changes its rules: bills now pass with a simple majority.";
+            }
+            for (Bloc b : g.cong.blocs) if (b.chamber == SENATE && b.party == g.party && b.name.contains("oderate")) b.rel = Math.max(0, b.rel - 8);
+            g.perf -= 0.5;
+            g.log(NK_BAD, "Senate " + PARTIES[g.party] + " lack the votes to end the filibuster", "Several of your own senators say they won't change the rules.", 2.2);
+            return "Not enough of your own senators would go along.";
+        }
+
+        /** The whip's read of where a bloc stands. */
+        static String lean(double p) { return p > 0.8 ? "Yes" : p > 0.6 ? "Leans yes" : p > 0.4 ? "Undecided" : p > 0.2 ? "Leans no" : "No"; }
+    }
+    // =====================================================================
+    //  14.  THE BUDGET
+    //  Your budget request in February; twelve spending bills over the summer; a deadline on October 1;
+    //  continuing resolutions, shutdowns and, every so often, the debt limit.
+    // =====================================================================
+    static final class Budget {
+        static void setup(Game g) {
+            Congress c = g.cong;
+            double subj = debtSubject(g);
+            c.debtLimit = g.era.year == 2025 ? 36.1 : Math.round((subj + 0.9) * 10) / 10.0;
+            c.xWeek = g.era.year == 2025 ? 28 : -1;
+            Arrays.fill(c.approps, 4);              // the fiscal year already under way runs on a CR or full-year bills
+        }
+
+        /** Debt subject to the limit, $ trillions (debt held by the public plus what the government owes its own trust funds). */
+        static double debtSubject(Game g) { return g.econ.debt / 100 * g.econ.nominalGdp * 1.25; }
+
+        static boolean weekHas(Game g, int m, int d) { return Economy.weekHas(g, m, d); }
+
+        static void week(Game g) {
+            Congress c = g.cong;
+            int[] d0 = dateOf(g.day());
+            int fy = Hill.fiscalYear(g);
+            if (fy != c.fy) c.fy = fy;
+            // a new budget cycle each year: the request, then twelve bills for the fiscal year that starts in October
+            if (weekHas(g, 0, 2)) c.budgetSent = false;
+            if (weekHas(g, 1, 1) && c.crUntil < 0 && !c.shutdown) Arrays.fill(c.approps, 0);
+            boolean due = g.week < 20 ? weekHas(g, 3, 15) : weekHas(g, 1, 3);
+            if (due && !c.budgetSent) {
+                Decisions.add(g, D_BUDGET, "Your budget is due", (g.week < 20 ? "A new president's first budget goes to Congress in the spring." : "The law asks for the president's budget on the first Monday in February.")
+                                + " Your budget director has a draft that follows your agenda. You can send it as is, or write your own in the Roosevelt Room (the budget tab).",
+                        new String[]{"Send the draft", "I'll write it myself"}, new String[]{"Budget director: \"It funds your priorities and keeps the deficit about where it is.\"", "Chief of staff: \"Your call. It goes to Congress when you hit send.\""});
+            }
+            if ((g.week < 20 ? weekHas(g, 4, 13) : weekHas(g, 2, 3)) && !c.budgetSent) autoRequest(g);
+            // appropriations: May through September
+            boolean divided = !Hill.majority(g, HOUSE, g.party) || !Hill.majority(g, SENATE, g.party);
+            int m = d0[1];
+            if (m >= 4 && m <= 8 && !c.shutdown) {
+                for (int i = 0; i < 12; i++) {
+                    if (c.approps[i] >= 3) continue;
+                    double p = (divided ? 0.05 : 0.09) * (c.approps[i] == 2 ? 1.3 : 1);
+                    if (g.rng.nextDouble() < p) {
+                        c.approps[i]++;
+                        if (c.approps[i] == 3) g.log(NK_INFO, "Congress passes the " + APPROPS[i] + " spending bill; you sign it", null, 0.3);
+                    }
+                }
+            }
+            // the deadline
+            if (weekHas(g, 8, 26) && !c.shutdown) deadline(g, divided);
+            if (c.crUntil >= 0 && g.week >= c.crUntil && !c.shutdown) {
+                c.crUntil = -1;
+                if (!divided || g.rng.nextDouble() < 0.7) { omnibus(g); }
+                else deadline(g, true);
+            }
+            if (c.shutdown) shutdownWeek(g);
+            debtLimit(g);
+        }
+
+        static int unfinished(Congress c) { int n = 0; for (int a : c.approps) if (a < 3) n++; return n; }
+
+        static void deadline(Game g, boolean divided) {
+            Congress c = g.cong;
+            int left = unfinished(c);
+            if (left == 0) { g.log(NK_GOOD, "All twelve spending bills are law before the deadline, the first time in decades", null, 1.6); g.perf += 0.5; return; }
+            int minority = g.party == DEM ? 100 - g.senateD : g.senateD;
+            if (!divided && minority >= 41 && !g.filibusterGone && g.rng.nextDouble() < 0.12 + 0.2 * g.era.polarization + Math.max(0, 48 - g.approval) * 0.015) {
+                Member ml = Hill.leaderOf(g, SENATE, false);
+                c.crMinority = true;
+                Decisions.add(g, D_CR, "The Senate minority blocks the stopgap", left + " of the 12 spending bills aren't done, and a stopgap needs 60 votes in the Senate. " + (ml != null ? ml.name : "The minority leader")
+                                + " says " + PARTIES[Hill.other(g.party)] + " won't supply them unless you extend " + (g.party == REP ? "the health insurance subsidies that expire this year" : "the border and policing money they want") + ".",
+                        new String[]{"Give them what they want and sign the stopgap", "Demand a clean stopgap", "Refuse: let them own the shutdown"},
+                        new String[]{"Budget director: \"It's a few billion dollars. A shutdown costs more.\"",
+                                "Legislative director: \"A few of their moderates will break. Make them choose.\"",
+                                "Political director: \"Our voters want us to stand firm. It's a gamble with everyone else.\""});
+                return;
+            }
+            if (!divided) {
+                c.crUntil = g.week + 11;
+                for (int i = 0; i < 12; i++) if (c.approps[i] < 3) c.approps[i] = 4;
+                g.log(NK_INFO, "Congress passes a stopgap to keep the government open until December", left + " of 12 spending bills are unfinished.", 1.0);
+                return;
+            }
+            Member opp = Hill.leaderOf(g, HOUSE, !Hill.majority(g, HOUSE, g.party));
+            String who = opp != null ? opp.name : "The other party's leaders";
+            Decisions.add(g, D_CR, "The government runs out of money on October 1", left + " of the 12 spending bills aren't done. " + who + " will pass a stopgap to December only with spending cuts attached.",
+                    new String[]{"Accept the cuts and sign the stopgap", "Demand a clean stopgap", "Refuse: no deal without full-year funding"},
+                    new String[]{"Budget director: \"The cuts are small. A shutdown costs more than they do.\"",
+                            "Legislative director: \"They don't want a shutdown either. Call their bluff, but have an exit.\"",
+                            "Political director: \"A shutdown fight rallies our side. It's a gamble with everyone else.\""});
+        }
+
+        static void crDecision(Game g, int k) {
+            Congress c = g.cong;
+            Random r = g.rng;
+            boolean minority = c.crMinority;
+            c.crMinority = false;
+            if (k == 0) {
+                c.crUntil = g.week + 11;
+                for (int i = 0; i < 12; i++) if (c.approps[i] < 3) c.approps[i] = 4;
+                g.econ.fiscal += minority ? 0.04 : -0.05;
+                for (Bloc b : c.blocs) if (b.party == g.party && (b.econ < -0.3 == (g.party == DEM) || minority && b.hawk > 0.6)) b.rel = Math.max(0, b.rel - 3);
+                g.log(NK_INFO, minority ? "You give the minority its price and sign the stopgap; your hardliners fume" : "You sign a stopgap with spending cuts; your party's base grumbles", null, 1.2);
+            } else if (k == 1 && r.nextDouble() < (minority ? 0.45 : 0.55) + (g.approval - 45) / 40) {
+                c.crUntil = g.week + 11;
+                for (int i = 0; i < 12; i++) if (c.approps[i] < 3) c.approps[i] = 4;
+                g.perf += 0.6;
+                g.capital = Math.min(100, g.capital + 4);
+                g.log(NK_GOOD, "The other side blinks: Congress passes a clean stopgap", null, 1.4);
+            } else {
+                startShutdown(g, minority ? (k == 2 ? 0.5 : 0.42) : (k == 2 ? 0.6 : 0.5));
+            }
+        }
+
+        static void startShutdown(Game g, double blame) {
+            Congress c = g.cong;
+            c.shutdown = true; c.shutdowns++;
+            c.shutdownWeeks = 0;
+            c.blame = blame;
+            g.log(NK_BIG, "THE GOVERNMENT SHUTS DOWN", "Hundreds of thousands of federal workers are furloughed; national parks close; air travel slows.", 3.5);
+        }
+
+        static void shutdownWeek(Game g) {
+            Congress c = g.cong;
+            c.shutdownWeeks++; c.shutdownTotal++;
+            g.econ.demandShock -= 0.08;
+            g.perf -= 0.5 * c.blame;
+            g.stress = Math.min(100, g.stress + 4);
+            if (c.shutdownWeeks % 2 == 1) g.log(NK_BAD, "The shutdown enters week " + c.shutdownWeeks + "; polls show " + Math.round(c.blame * 100) + "% blame the White House", null, 1.6);
+            Decisions.add(g, D_SHUTDOWN, "Week " + c.shutdownWeeks + " of the shutdown", "Federal workers are missing paychecks and airports are backing up. About " + Math.round(c.blame * 100) + "% of Americans blame you, the rest blame Congress.",
+                    new String[]{"Hold firm", "Cut a deal and reopen the government"},
+                    new String[]{"Political director: \"Every week they look worse. A few more days.\"", "Chief of staff: \"End it. Nobody wins a long shutdown.\""});
+        }
+
+        static void shutdownDecision(Game g, int k) {
+            Congress c = g.cong;
+            if (k == 1) { endShutdown(g, false); return; }
+            double cave = 0.12 + c.shutdownWeeks * 0.06 + (0.5 - c.blame) * 0.6;
+            if (g.rng.nextDouble() < cave) endShutdown(g, true);
+            else c.blame = clamp(c.blame + (g.approval < 45 ? 0.03 : -0.02), 0.2, 0.8);
+        }
+
+        static void endShutdown(Game g, boolean won) {
+            Congress c = g.cong;
+            c.shutdown = false;
+            c.crUntil = g.week + 10;
+            for (int i = 0; i < 12; i++) if (c.approps[i] < 3) c.approps[i] = 4;
+            if (won) { g.perf += 1.2; g.capital = Math.min(100, g.capital + 8); g.log(NK_BIG, "SHUTDOWN ENDS ON THE PRESIDENT'S TERMS AFTER " + c.shutdownWeeks + " WEEKS", null, 3.0); }
+            else { g.capital = Math.max(0, g.capital - 8); g.econ.fiscal -= 0.05; g.log(NK_BIG, "THE SHUTDOWN ENDS AFTER " + c.shutdownWeeks + " WEEKS WITH A DEAL", "The White House accepted spending cuts to reopen the government.", 2.6); }
+        }
+
+        static void omnibus(Game g) {
+            Congress c = g.cong;
+            for (int i = 0; i < 12; i++) if (c.approps[i] >= 4 || c.approps[i] < 3) c.approps[i] = 3;
+            boolean unified = Hill.majority(g, HOUSE, g.party) && Hill.majority(g, SENATE, g.party);
+            double share = unified ? 0.5 : 0.2;
+            if (c.budgetSent) g.econ.fiscal += share * (c.reqDefense * 0.03 + c.reqNondefense * 0.033);
+            g.log(NK_INFO, "Congress passes a year-long spending package and you sign it", null, 1.0);
+        }
+
+        // ---- your budget request ----
+        static void autoRequest(Game g) {
+            Congress c = g.cong;
+            c.reqDefense = g.party == REP ? 4 : 1;
+            c.reqNondefense = g.party == DEM ? 4 : -6;
+            c.reqTax = g.party == DEM ? 0.3 : -0.3;
+            c.reqMandatory = 0;
+            send(g);
+        }
+
+        static void send(Game g) {
+            Congress c = g.cong;
+            c.budgetSent = true;
+            double change = deficitChange(c);
+            g.log(NK_INFO, "The White House sends its budget to Congress", "It would " + (change > 0.05 ? "add about " + fmt1(change) + "% of GDP to the deficit" : change < -0.05 ? "cut the deficit by about " + fmt1(-change) + "% of GDP" : "leave the deficit about where it is")
+                    + ". Defense " + signed1(c.reqDefense) + "%, other agencies " + signed1(c.reqNondefense) + "%.", 1.2);
+            for (Bloc b : c.blocs) {
+                if (b.hawk > 0.6 && change > 0.3) b.rel = Math.max(0, b.rel - 3);
+                if (b.hawk > 0.6 && change < -0.3) b.rel = Math.min(100, b.rel + 2);
+            }
+        }
+
+        /** The request's effect on the deficit, % of GDP. */
+        static double deficitChange(Congress c) { return c.reqDefense * 0.03 + c.reqNondefense * 0.033 - c.reqTax + c.reqMandatory; }
+
+        /** Ten years of deficits and debt under the request: {deficit[], debt[]} as % of GDP. */
+        static double[][] projection(Game g) {
+            Econ e = g.econ;
+            double[] def = new double[11], debt = new double[11];
+            double d = e.debt, rate = e.interest / Math.max(1, e.debt) * 100;
+            double primary = e.deficit - e.interest + deficitChange(g.cong);
+            double growth = (e.potential + e.polGdp + 2.2) / 100;
+            for (int y = 0; y <= 10; y++) {
+                rate += (e.tenYr - rate) * 0.25;
+                double interest = d * rate / 100;
+                double dd = primary + 0.08 * y + interest;
+                def[y] = dd;
+                debt[y] = d;
+                d = d + dd - d * growth;
+            }
+            return new double[][]{def, debt};
+        }
+
+        // ---- the debt limit ----
+        static void debtLimit(Game g) {
+            Congress c = g.cong;
+            double subj = debtSubject(g);
+            if (c.xWeek < 0 && subj >= c.debtLimit) {
+                c.xWeek = g.week + 22;
+                g.log(NK_ECON, "Treasury hits the debt limit and starts \"extraordinary measures\"", "The Treasury secretary says the money runs out around " + dateStr(c.xWeek * 7) + ".", 1.6);
+            }
+            if (c.xWeek < 0) return;
+            int left = c.xWeek - g.week;
+            if (left == 8 || left == 3) {
+                boolean unified = Hill.majority(g, HOUSE, g.party) && Hill.majority(g, SENATE, g.party);
+                Decisions.add(g, D_DEBT, "The debt limit: " + left + " weeks to go", "Unless Congress raises the $" + fmt1(c.debtLimit) + " trillion limit by " + dateStr(c.xWeek * 7) + ", the United States can't pay all its bills."
+                                + (unified ? " Your party controls Congress, but a handful of fiscal hawks want something in return." : " The other side wants spending cuts in exchange."),
+                        new String[]{"Ask for a clean increase", "Trade spending cuts for an increase", "Go to the brink: no negotiating over the full faith and credit"},
+                        new String[]{"Treasury secretary: \"Markets are calm now. They won't be in a month.\"",
+                                "Budget director: \"Cuts we can live with, and it's over.\"",
+                                "Political director: \"They'll fold before they take the blame for a default. Probably.\""});
+            }
+            if (left == 1) {
+                Decisions.add(g, D_DEBT, "The Treasury runs out of room next week", "Talks have failed. Unless the limit goes up within days, the United States will miss payments to bondholders, retirees and soldiers. "
+                                + "The other side's terms are still on the table.",
+                        new String[]{"Take their deal", "Invoke the 14th Amendment and keep paying", "Refuse: let it happen"},
+                        new String[]{"Treasury secretary: \"Take it. A default would be a catastrophe for decades.\"",
+                                "Counsel: \"The Constitution says the public debt shall not be questioned. The courts may agree. Markets won't wait to find out.\"",
+                                "Chief of staff: \"Nobody who has sat in that chair has ever let this happen.\""}).a = 1;
+            }
+            if (left <= 0 && !c.defaulted) {
+                c.defaulted = true;
+                g.econ.finShock -= 4.5;
+                g.perf -= 6;
+                g.log(NK_BIG, "THE UNITED STATES MISSES PAYMENTS AS THE DEBT LIMIT BINDS", "Stocks plunge and Treasury yields spike. Congress rushes to raise the limit.", 5);
+                raise(g, 1.0);
+            }
+        }
+
+        static void debtDecision(Game g, int k, boolean lastChance) {
+            Congress c = g.cong;
+            Random r = g.rng;
+            boolean unified = Hill.majority(g, HOUSE, g.party) && Hill.majority(g, SENATE, g.party);
+            if (c.xWeek < 0) return;
+            if (lastChance) {
+                if (k == 0) { raise(g, 1.0); g.econ.fiscal -= 0.2; g.capital = Math.max(0, g.capital - 12); g.perf -= 0.8; for (Bloc b : c.blocs) if (b.party == g.party) b.rel = Math.max(0, b.rel - 4); g.log(NK_BIG, "A LAST-MINUTE DEAL RAISES THE DEBT LIMIT", "The White House gave up more than it wanted to.", 2.6); }
+                else if (k == 1) { raise(g, 1.5); g.econ.finShock -= 1.6; g.perf -= 1.5; g.scandal += 4; g.log(NK_BIG, "PRESIDENT INVOKES THE 14TH AMENDMENT TO KEEP PAYING THE NATION'S BILLS", "Treasury keeps borrowing past the limit. Lawsuits are filed within hours; bond markets lurch.", 3.6); }
+                return;
+            }
+            if (k == 1) { raise(g, 1.5); g.econ.fiscal -= 0.15; g.capital = Math.max(0, g.capital - 5); g.log(NK_INFO, "A deal: spending cuts for a higher debt limit", null, 1.6); return; }
+            double p = k == 0 ? (unified ? 0.85 : 0.35) : (unified ? 0.7 : 0.45);
+            if (r.nextDouble() < p) {
+                raise(g, 2.0);
+                if (k == 2) { g.perf += 1; g.capital = Math.min(100, g.capital + 6); }
+                g.log(NK_GOOD, "Congress raises the debt limit" + (k == 0 ? " with no strings attached" : " after a tense standoff"), null, 1.8);
+            } else {
+                g.econ.finShock -= k == 2 ? 1.2 : 0.6;
+                g.log(NK_BAD, "Debt-limit talks collapse; markets slide", null, 1.8);
+            }
+        }
+
+        /** Raises the limit by enough for this many years of borrowing. */
+        static void raise(Game g, double years) {
+            Congress c = g.cong;
+            double perYear = Math.max(0.8, g.econ.deficit / 100 * g.econ.nominalGdp * 1.25);
+            c.debtLimit = Math.round((debtSubject(g) + years * perYear) * 10) / 10.0;
+            c.xWeek = -1;
+            c.defaulted = false;
+        }
+    }
+    // =====================================================================
+    //  15.  THE MIDTERMS
+    //  They run themselves, mostly on your approval and the economy. From August you can campaign and raise money
+    //  for your party's candidates, and the Senate seats up that year are fought state by state.
+    // =====================================================================
+    static final class Midterms {
+        /** Election day: the Tuesday after the first Monday in November, two years in. */
+        static int electionDay(Game g) {
+            int y = g.era.year + 1;
+            for (int d = 2; d <= 8; d++) { int day = dayOfDate(y, 10, d); if (dowOf(day) == 1) return day; }
+            return dayOfDate(y, 10, 3);
+        }
+
+        static boolean season(Game g) {
+            int ed = electionDay(g);
+            return !g.cong.midDone && g.day() >= ed - 100 && g.day() <= ed;
+        }
+
+        /** The Senate seats up at the midterm: "AB:D" or "AB:R" for the party holding each. */
+        static String seatsUp(Game g) {
+            if (g.era.midSeats != null) return g.era.midSeats;
+            return "";
+        }
+
+        static double nationalMargin(Game g, double noise) {
+            Econ e = g.econ;
+            double camp = 0;
+            for (double v : g.cong.campaign) camp += v;
+            double mP = 0.5 * (g.approval - 50) - 2.5 + 0.4 * (e.gdp - 2) - 0.3 * (e.unemp - 4.5) + Math.min(1.5, g.funds / 40) + Math.min(1.0, camp * 0.05) + noise;
+            return mP;
+        }
+
+        static void week(Game g) {
+            if (g.cong.midDone) return;
+            int ed = electionDay(g);
+            if (g.day() + 7 > ed && g.day() <= ed) run(g);
+            else if (g.day() + 7 > ed - 63 && g.day() <= ed - 63) g.log(NK_INFO, "Campaign season: the midterms are nine weeks away", "You can now schedule campaign stops for your party's candidates from your calendar.", 1.2);
+        }
+
+        static void run(Game g) {
+            Congress c = g.cong;
+            Random r = g.rng;
+            c.midDone = true;
+            double mP = nationalMargin(g, r.nextGaussian() * 1.8);
+            c.midMargin = mP;
+            double natD = g.party == DEM ? mP : -mP;
+            int hB = g.myHouse(), sB = g.mySenate();
+            boolean houseBefore = Hill.majority(g, HOUSE, g.party), senBefore = Hill.majority(g, SENATE, g.party);
+            g.houseD = clampi((int) Math.round(222 + 3.8 * natD + r.nextGaussian() * 5), 120, 330);
+            int dUp = 0, dWon = 0;
+            StringBuilder flips = new StringBuilder();
+            String up = seatsUp(g);
+            if (!up.isEmpty()) for (String tok : up.split(" ")) {
+                String[] p = tok.split(":");
+                int s = stateIdx(p[0]);
+                if (s < 0) continue;
+                boolean dHeld = p[1].equals("D");
+                if (dHeld) dUp++;
+                double m = Elect.lean[s] + natD + (dHeld ? 3 : -3) + c.campaign[s] * 1.2 * (g.party == DEM ? 1 : -1) + r.nextGaussian() * 3.5;
+                if (m > 0) dWon++;
+                if (dHeld != m > 0) flips.append(flips.length() > 0 ? ", " : "").append(STATES[s].name).append(m > 0 ? " (D gain)" : " (R gain)");
+            }
+            g.senateD = clampi(g.senateD - dUp + dWon, 0, 100);
+            Hill.seats(g);
+            boolean houseAfter = Hill.majority(g, HOUSE, g.party), senAfter = Hill.majority(g, SENATE, g.party);
+            Leaders.reshuffle(g, houseBefore != houseAfter, senBefore != senAfter);
+            String head = (mP >= 0 ? "Your party gains" : "Your party loses") + " in the midterms";
+            String body = "The national House vote went " + (g.party == DEM ? margin(natD) : margin(natD)) + ". " + PARTIES[g.party] + " now hold " + g.myHouse() + " House seats (" + signedInt(g.myHouse() - hB) + ") and "
+                    + g.mySenate() + " Senate seats (" + signedInt(g.mySenate() - sB) + ")." + (flips.length() > 0 ? " Senate seats that changed hands: " + flips + "." : "")
+                    + (houseBefore && !houseAfter ? " You have lost the House." : !houseBefore && houseAfter ? " You have won back the House." : "")
+                    + (senBefore && !senAfter ? " You have lost the Senate." : !senBefore && senAfter ? " You have won the Senate." : "");
+            c.midSummary = body;
+            g.log(NK_BIG, head.toUpperCase(), body, 4.5);
+            Decisions.info(g, "The Midterm Elections", body + "\n\n" + (houseAfter && senAfter ? "You keep control of Congress for the second half of your term." : !houseAfter && !senAfter ? "Divided government: the other party controls Congress. Expect investigations and hard bargaining." : "A split Congress: one chamber is yours, the other isn't."));
+            if (mP < -3) g.perf -= 1;
+            Arrays.fill(c.campaign, 0);
+            g.funds *= 0.3;
+        }
+
+        static String signedInt(int v) { return (v >= 0 ? "+" : "") + v; }
+    }
+
+    /** New leaders after a change of control. */
+    static final class Leaders {
+        static void reshuffle(Game g, boolean house, boolean senate) {
+            Congress c = g.cong;
+            Random r = new Random(g.set.seed ^ g.week);
+            Era e = g.era;
+            if (house || senate) {
+                for (int i = c.members.size() - 1; i >= 0; i--) {
+                    Member m = c.members.get(i);
+                    if ((m.role == RO_LEADER || m.role == RO_CHAIR) && (m.chamber == HOUSE && house || m.chamber == SENATE && senate)) c.members.remove(i);
+                }
+            }
+            boolean dHouse = g.houseD >= 218, dSen = g.senateD > 50 || g.senateD == 50 && g.party == DEM;
+            if (house) {
+                Hill.leader(g, r, HOUSE, dHouse ? DEM : REP, "Speaker of the House", dHouse ? e.speakerD : e.speakerR);
+                Hill.leader(g, r, HOUSE, dHouse ? REP : DEM, "House " + (dHouse ? "Republican" : "Democratic") + " leader", dHouse ? e.houseLeaderR : e.houseLeaderD);
+                chairs(g, r, HOUSE, dHouse ? DEM : REP);
+            }
+            if (senate) {
+                Hill.leader(g, r, SENATE, dSen ? DEM : REP, "Senate Majority Leader", dSen ? e.leaderD : e.leaderR);
+                Hill.leader(g, r, SENATE, dSen ? REP : DEM, "Senate " + (dSen ? "Republican" : "Democratic") + " leader", dSen ? e.leaderR : e.leaderD);
+                chairs(g, r, SENATE, dSen ? DEM : REP);
+            }
+            for (Member m : c.members) if (m.bloc >= c.blocs.size()) m.bloc = 0;
+        }
+
+        static void chairs(Game g, Random r, int ch, int maj) {
+            String[] names = ch == HOUSE ? CHAIR_H : CHAIR_S;
+            for (int k = 0; k < names.length; k++) {
+                Member m = Hill.person(g.cong, r, maj, ch);
+                m.role = RO_CHAIR; m.committee = names[k];
+                m.title = "Chair, " + (ch == HOUSE ? "House " : "Senate ") + names[k];
+                m.bloc = Hill.blocOf(g.cong, ch, maj, r.nextDouble() < 0.7 ? 1 : r.nextBoolean() ? 0 : 2);
+                Hill.ideo(g.cong, m, r);
+                m.rel = maj == g.party ? 55 : 35;
+                g.cong.members.add(m);
+            }
+        }
+    }
+    // =====================================================================
+    //  16.  DECISIONS
+    //  Things only the president can decide land in the inbox. Each choice comes with what your advisers say.
+    // =====================================================================
+    static final int D_SIGN = 1, D_CR = 2, D_SHUTDOWN = 3, D_DEBT = 4, D_BUDGET = 5, D_INFO = 6, D_MUSTPASS = 7;
+
+    static final class Decision implements Serializable {
+        private static final long serialVersionUID = 1L;
+        int kind, a, b;
+        String title, body;
+        String[] opts, advice;
+        Bill bill;
+    }
+
+    static final class Decisions {
+        static Decision add(Game g, int kind, String title, String body, String[] opts, String[] advice) {
+            Decision d = new Decision();
+            d.kind = kind; d.title = title; d.body = body; d.opts = opts; d.advice = advice;
+            g.inbox.add(d);
+            return d;
+        }
+
+        static void info(Game g, String title, String body) { add(g, D_INFO, title, body, new String[]{"OK"}, null); }
+
+        /** Shows the next decision as a modal, if nothing else is on screen. */
+        static void show(ResoluteDesk u, Game g) {
+            if (g.inbox.isEmpty() || u.modal != null || u.popup != null) return;
+            Decision d = g.inbox.remove(0);
+            Runnable[] acts = new Runnable[d.opts.length];
+            for (int i = 0; i < d.opts.length; i++) { final int k = i; acts[i] = () -> { apply(g, d, k); g.dirty = true; }; }
+            Modal m = new Modal();
+            m.title = d.title; m.body = d.body; m.buttons = d.opts; m.actions = acts; m.descs = d.advice;
+            m.stacked = d.opts.length > 2 || d.advice != null;
+            m.col = d.kind == D_INFO ? C_ACCENT : C_GOLD;
+            if (d.bill != null) m.w = 720;
+            u.modal = m;
+            snd(Sfx.OPEN);
+        }
+
+        /** What a cautious president would do: used by the test sim and, later, by watch mode. */
+        static int auto(Game g, Decision d) {
+            switch (d.kind) {
+                case D_SIGN: {
+                    BillDef b = d.bill.def();
+                    boolean mine = d.bill.ours || b.lean == g.party || b.lean < 0;
+                    if (mine) return 0;
+                    return d.bill.support() >= 60 ? 0 : 1;
+                }
+                case D_MUSTPASS: return 0;
+                case D_CR: return g.rng.nextDouble() < 0.6 ? 0 : 1;
+                case D_SHUTDOWN: return g.cong.shutdownWeeks >= 2 || g.cong.blame > 0.5 ? 1 : 0;
+                case D_DEBT: return 0;
+                default: return 0;
+            }
+        }
+
+        static void autoAll(Game g) {
+            int guard = 0;
+            while (!g.inbox.isEmpty() && guard++ < 20) { Decision d = g.inbox.remove(0); apply(g, d, auto(g, d)); }
+        }
+
+        /** Spends capital on the swing votes for a bill that's stuck short of a majority. */
+        static void autoWhip(Game g) {
+            int made = 0;
+            for (Bill b : g.cong.bills) {
+                if (!b.ours || b.stage < ST_COMMITTEE || b.stage > ST_FLOOR2 || made >= 2) continue;
+                int ch = b.chamberNow();
+                if (Legis.chance(g, b, ch, false) >= 0.6) continue;
+                for (Member m : g.cong.members) {
+                    if (made >= 2 || g.capital < 12) break;
+                    if (m.role != RO_SWING || m.chamber != ch || m.lastDeal == g.week) continue;
+                    int kind = m.price == PRICE_PROJECT ? Legis.DL_PROJECT : m.price == PRICE_APPOINT ? Legis.DL_APPOINT : m.price == PRICE_ENDORSE && m.party == g.party ? Legis.DL_ENDORSE : Legis.DL_CALL;
+                    Legis.deal(g, b, m, kind);
+                    made++;
+                }
+                if (!b.publicPush && g.capital > 20 && b.support() > 55) Legis.deal(g, b, null, Legis.DL_PUBLIC);
+            }
+        }
+
+        /** Sends the president's next agenda bill to Congress when fewer than two are moving. */
+        static void autoAgenda(Game g) {
+            int active = 0;
+            for (Bill b : g.cong.bills) if (b.ours && b.stage > ST_DRAFT && b.stage < ST_LAW && b.stage != ST_DEAD) active++;
+            if (active >= 2) return;
+            for (BillDef d : HillUI.agenda(g)) {
+                if (d.lean >= 0 && d.lean != g.party) continue;
+                if (HillUI.inPlay(g, d)) continue;
+                boolean tried = false;
+                for (Bill b : g.cong.bills) if (b.ours && b.defId.equals(d.id)) tried = true;
+                if (tried) continue;
+                Bill b = Legis.draft(g, d);
+                b.recon = d.budget && Legis.reconOk(g, b);
+                if (Legis.chance(g, b, HOUSE, false) * Legis.chance(g, b, SENATE, false) < 0.05) { b.size = 0.6; b.scope = 0.2; }
+                if (Legis.chance(g, b, HOUSE, false) * Legis.chance(g, b, SENATE, false) < 0.03) continue;
+                Legis.introduce(g, b);
+                return;
+            }
+        }
+
+        static void apply(Game g, Decision d, int k) {
+            switch (d.kind) {
+                case D_SIGN: Legis.decide(g, d.bill, k); break;
+                case D_MUSTPASS: Legis.decide(g, d.bill, k == 0 ? 0 : 1); break;
+                case D_CR: Budget.crDecision(g, k); break;
+                case D_SHUTDOWN: Budget.shutdownDecision(g, k); break;
+                case D_DEBT: Budget.debtDecision(g, k, d.a == 1); break;
+                case D_BUDGET: if (k == 0) Budget.autoRequest(g); break;
+                default: break;
+            }
         }
     }
 
@@ -2912,6 +4184,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     final List<Toast> toasts = new ArrayList<Toast>();
 
     void toast(String s, Color c) {
+        for (Toast o : toasts) if (o.text.equals(s)) { o.t0 = tsec; return; }
         Toast t = new Toast();
         t.text = s; t.col = c == null ? C_ACCENT : c; t.t0 = tsec;
         toasts.add(t);
@@ -5096,7 +6369,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     static final String[] ROOM_NAME = {"The Resolute Desk", "The Country", "The Economy", "The Residence", "The West Wing", "The Roosevelt Room", "The Situation Room", "The Press Briefing Room"};
     static final String[] ROOM_SUB = {"Your week, slot by slot", "Approval, by issue, group and state", "Jobs, prices, markets and the budget", "Your health, your sleep and your family",
             "Your staff and your cabinet", "Congress: the leaders, the votes, the budget", "The world: allies, rivals and crises", "The press corps and the media"};
-    static final boolean[] ROOM_OPEN = {true, true, true, true, false, false, false, false};
+    static final boolean[] ROOM_OPEN = {true, true, true, true, false, true, false, false};
     static final String[] ROOM_LATER = {"", "", "", "",
             "Your chief of staff, national security adviser, press secretary and counsel, each with skills, traits and loyalty; all 15 departments and their secretaries; cabinet meetings; leaks and resignations; and your vice president's missions.",
             "Named leaders, committee chairs and swing votes; bills you negotiate provision by provision; the filibuster, reconciliation and the Byrd rule; your budget, the 12 spending bills, shutdowns, the debt ceiling and vetoes.",
@@ -5119,7 +6392,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             SaveGame.save(u, SaveGame.AUTO);
         }
 
-        static void update(ResoluteDesk u, double dt) { tick += dt * 60; }
+        static void update(ResoluteDesk u, double dt) { tick += dt * 60; if (u.game != null) Decisions.show(u, u.game); }
 
         static void key(ResoluteDesk u, KeyEvent e) {
             int k = e.getKeyCode();
@@ -5131,6 +6404,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         static void endWeek(ResoluteDesk u) {
             Game g = u.game;
             if (g == null || g.over || u.modal != null) return;
+            if (!g.inbox.isEmpty()) { Decisions.show(u, g); return; }
             Week.resolve(g);
             snd(Sfx.TURN);
             SaveGame.save(u, SaveGame.AUTO);
@@ -5255,6 +6529,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             }
             topBar(u, g, game);
             weekCard(u, g, game);
+            hillCard(u, g, game);
             ticker(u, g, game);
         }
 
@@ -5274,6 +6549,31 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             textR(g, String.valueOf(Math.round(ps)), x + w - 14, y + 83, F_SB, Color.white);
             text(g, "Sleep about " + fmt1(Week.sleepOf(game)) + " hours a night", x + 14, y + 104, F_XS, C_DIM);
             u.button(g, x + 14, y + 114, w - 28, 26, "Plan the week", B_NORM, () -> Rooms.open(u, R_DESK));
+        }
+
+        /** What's moving on Capitol Hill, bottom right of the office. */
+        static void hillCard(ResoluteDesk u, Graphics2D g, Game game) {
+            if (game.cong == null) return;
+            Congress c = game.cong;
+            double w = 300, h = 150, x = DW - 24 - w, y = 640;
+            g.setColor(new Color(8, 13, 26, 220));
+            g.fill(new RoundRectangle2D.Double(x, y, w, h, 12, 12));
+            g.setColor(new Color(242, 193, 78, 70));
+            g.draw(new RoundRectangle2D.Double(x, y, w, h, 12, 12));
+            label(g, "ON THE HILL", x + 14, y + 22, C_GOLD);
+            double yy = y + 44;
+            int n = 0;
+            for (int i = c.bills.size() - 1; i >= 0 && n < 3; i--) {
+                Bill b = c.bills.get(i);
+                if (!b.ours || b.stage < ST_COMMITTEE || b.stage > ST_DESK) continue;
+                textFit(g, b.name, x + 14, yy, 160, F_XS, Color.white);
+                textR(g, b.held ? "votes short" : STAGE[b.stage], x + w - 14, yy, F_XS, b.held || b.bottled ? C_AMBER : C_ACCENT);
+                yy += 18; n++;
+            }
+            if (n == 0) { text(g, "None of your bills is moving.", x + 14, yy, F_XS, C_DIM); yy += 18; }
+            String status = c.shutdown ? "The government is shut down" : c.xWeek >= 0 ? "Debt limit: " + Math.max(0, c.xWeek - game.week) + " weeks of room" : c.crUntil >= 0 ? "Funded by a stopgap until " + dateStr(c.crUntil * 7) : "Government funded";
+            text(g, status, x + 14, Math.max(yy, y + 100), F_XS, c.shutdown || c.xWeek >= 0 ? C_AMBER : C_DIM);
+            u.button(g, x + 14, y + 114, w - 28, 26, "The Roosevelt Room", B_NORM, () -> Rooms.open(u, R_CONGRESS));
         }
 
         static void ticker(ResoluteDesk u, Graphics2D g, Game game) {
@@ -5491,7 +6791,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     static final Color[] AC_COL = {rgb(0x34415a), rgb(0x2f8f5a), rgb(0x2f8f5a), rgb(0x2f8f5a), rgb(0x2f6fe0), rgb(0x7c4dff), rgb(0xd4a52a), rgb(0x1fbf6a), rgb(0x5aa0d8), rgb(0xc8323a), rgb(0x2f8f5a), rgb(0x8a6a1a), rgb(0x55607a)};
 
     static final class Rooms {
-        static int room = R_DESK, pendingSlot = -1, mapMode = 0, selState = -1, chartSel = 0;
+        static int room = R_DESK, pendingSlot = -1, pendingAct = AC_TRIP, mapMode = 0, selState = -1, chartSel = 0;
         static final String[] MAPMODE = {"Approval", "Unemployment", "Gas prices"};
 
         static void open(ResoluteDesk u, int r) {
@@ -5519,7 +6819,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             Oval.topBar(u, g, game);
             u.button(g, 24, 70, 200, 32, "<  Oval Office", B_GHOST, () -> u.go(SC_OVAL), "Back to the Oval Office (Esc)");
             text(g, ROOM_NAME[room], 248, 96, F_DISPLAY, Color.white);
-            text(g, ROOM_SUB[room], 252 + strW(g, ROOM_NAME[room], F_DISPLAY) + 16, 94, F_B, C_DIM);
+            double tabsW = 0;
+            for (int r = 0; r < NROOM; r++) tabsW += strW(g, ROOM_TAB[r], F_XSB) + 24;
+            double subX = 252 + strW(g, ROOM_NAME[room], F_DISPLAY) + 16;
+            textFit(g, ROOM_SUB[room], subX, 94, DW - 48 - tabsW - subX - 16, F_B, C_DIM);
             // room tabs
             double tx = DW - 48;
             for (int r = NROOM - 1; r >= 0; r--) {
@@ -5534,6 +6837,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 case R_COUNTRY: country(u, g, game); break;
                 case R_ECON: econ(u, g, game); break;
                 case R_RESIDENCE: residence(u, g, game); break;
+                case R_CONGRESS: HillUI.draw(u, g, game); break;
                 default: later(u, g, game); break;
             }
         }
@@ -5578,9 +6882,9 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             label(g, "Air Force One", px + 18, 266, C_GOLD);
             double ty = 286;
             int n = 0;
-            for (int i = 0; i < NSLOT; i++) if (game.act[i] == AC_TRIP && game.arg[i] >= 0) {
+            for (int i = 0; i < NSLOT; i++) if (isTrip(game.act[i]) && game.arg[i] >= 0) {
                 int s = game.arg[i];
-                text(g, DOW3[dowOf(game.day() + i / 3)] + " " + SLOT[i % 3].toLowerCase() + ": " + STATES[s].name, px + 18, ty, F_XS, C_TEXT);
+                text(g, DOW3[dowOf(game.day() + i / 3)] + " " + SLOT[i % 3].toLowerCase() + ": " + STATES[s].name + (game.act[i] == AC_CAMPAIGN ? " (campaign)" : ""), px + 18, ty, F_XS, C_TEXT);
                 textR(g, fmt1(Week.flight(s)) + " hours each way", px + pw - 18, ty, F_XS, Week.flight(s) > 3.5 ? C_AMBER : C_DIM);
                 ty += 18;
                 if (++n >= 8) break;
@@ -5589,7 +6893,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             // the map, for picking trip destinations
             u.panel(g, px, 482, pw, 330, pendingSlot >= 0 ? "Click a state for the trip" : "Where you're going");
             for (int s = 0; s < NS; s++) { USMap.paint[s] = null; USMap.tags[s] = null; }
-            for (int i = 0; i < NSLOT; i++) if (game.act[i] == AC_TRIP && game.arg[i] >= 0) USMap.paint[game.arg[i]] = rgb(0xd4a52a);
+            for (int i = 0; i < NSLOT; i++) if (isTrip(game.act[i]) && game.arg[i] >= 0) USMap.paint[game.arg[i]] = rgb(0xd4a52a);
             if (pendingSlot >= 0) for (int s = 0; s < NS; s++) if (USMap.paint[s] == null) USMap.paint[s] = mix(C_STATE, marginColor(game.stateApp[s] - 50, 1), 0.5);
             USMap.markState = Week.dc(); USMap.markCand = game.pres;
             double[] f = USMap.draw(u, g, px + 10, 510, pw - 20, 290, -1, true);
@@ -5597,7 +6901,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             if (hs >= 0 && u.my > 510) {
                 u.tip = STATES[hs].name + ": approval " + Math.round(game.stateApp[hs]) + "%, " + STATES[hs].ev + " electoral votes, " + fmt1(Week.flight(hs)) + " hours from Washington";
                 final int ss = hs;
-                if (pendingSlot >= 0) u.hit(px + 10, 510, pw - 20, 290, () -> { game.act[pendingSlot] = AC_TRIP; game.arg[pendingSlot] = ss; pendingSlot = -1; snd(Sfx.CHIME, 0.5, 1); }, null);
+                if (pendingSlot >= 0) u.hit(px + 10, 510, pw - 20, 290, () -> { game.act[pendingSlot] = pendingAct; game.arg[pendingSlot] = ss; pendingSlot = -1; snd(Sfx.CHIME, 0.5, 1); }, null);
             }
         }
 
@@ -5612,7 +6916,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             String sub = arg >= 0 && AC_ISSUE[a] ? PISSUE[arg] : arg >= 0 && AC_STATE[a] ? STATES[arg].name : pend ? "pick a state on the map" : null;
             if (sub != null) wrap(g, sub, x + 20, y + 64, w - 28, F_XS, pend ? C_GOLD : C_TEXT);
             double c = AC_STAMINA[a];
-            if (a == AC_TRIP && arg >= 0) c -= Math.min(6, Week.flight(arg) * 0.9);
+            if (isTrip(a) && arg >= 0) c -= Math.min(6, Week.flight(arg) * 0.9);
             text(g, (c >= 0 ? "+" : "") + fmt1(c) + " stamina", x + 20, y + h - 14, F_T, c >= 0 ? C_GOOD : C_DIM);
         }
 
@@ -5624,6 +6928,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 if (a == AC_CAMPDAVID && !weekend) continue;
                 if (a == AC_CONGRESS && weekend) continue;
                 if (a == AC_WORKLATE && i % 3 != 2) continue;
+                if (a == AC_CAMPAIGN && !Midterms.season(game)) continue;
                 opts.add(a);
             }
             String[] names = new String[opts.size()];
@@ -5635,7 +6940,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                     for (int j = 0; j < NPI; j++) iss[j] = PISSUE[j] + "  (" + Math.round(game.issueApp[j]) + "% approve)";
                     u.openPopup(Math.min(u.mx, DW - 340), 140, 320, AC_NAME[a] + ": which issue?", iss, j -> { game.act[i] = a; game.arg[i] = j; });
                 } else if (AC_STATE[a]) {
-                    pendingSlot = i;
+                    pendingSlot = i; pendingAct = a;
                 } else { game.act[i] = a; game.arg[i] = -1; }
             });
         }
@@ -5923,7 +7228,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             Econ e = g.econ;
             StringBuilder trips = new StringBuilder();
             int nt = 0;
-            for (int i = 0; i < NSLOT; i++) if (g.act[i] == AC_TRIP && g.arg[i] >= 0) { trips.append(nt++ > 0 ? ", " : "").append(STATES[g.arg[i]].name); }
+            for (int i = 0; i < NSLOT; i++) if (isTrip(g.act[i]) && g.arg[i] >= 0) { trips.append(nt++ > 0 ? ", " : "").append(STATES[g.arg[i]].name); }
             int top = Week.topIssue(g);
             String ahead = (nt > 0 ? "The president travels to " + trips + ". " : "No travel is planned. ") + "Policy meetings focus on " + PISSUE[top].toLowerCase() + ".";
             double prev = g.hist.size() >= 5 ? g.hist.get(g.hist.size() - 5)[H_APP] : g.approval0;
@@ -5948,6 +7253,435 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             return "President " + g.pres.last + " begins the week with " + Math.round(g.approval) + " percent of Americans approving of the job, according to the latest polling average. "
                     + "Unemployment stands at " + fmt1(e.unemp) + " percent and prices are up " + fmt1(e.infl) + " percent from a year ago. "
                     + (g.stamina < 35 ? "Aides privately worry about the president's punishing schedule." : "Aides say the president's schedule this week focuses on " + PISSUE[Week.topIssue(g)].toLowerCase() + ".");
+        }
+    }
+    // =====================================================================
+    //  27.  THE ROOSEVELT ROOM: Congress, your bills, the whip count, the budget and the midterms
+    // =====================================================================
+    static final Color[] BLOC_COL = {rgb(0x1e4fb8), rgb(0x2f7bf6), rgb(0x79acff), rgb(0x8a1f26), rgb(0xe5484d), rgb(0xff8a8d),
+            rgb(0x1e4fb8), rgb(0x2f7bf6), rgb(0x79acff), rgb(0x8a1f26), rgb(0xe5484d), rgb(0xff8a8d)};
+
+    static final class HillUI {
+        static int tab, chairCh, sel = -1, draftSel = -1;
+        static Bill draft;
+        static String msg;
+        static final String[] TABS = {"The Hill", "Bills", "Whip count", "The budget", "Elections"};
+
+        static void draw(ResoluteDesk u, Graphics2D g, Game game) {
+            Congress c = game.cong;
+            u.segmented(g, 48, 116, 640, 30, TABS, tab, i -> tab = i, null);
+            text(g, "Political capital", 720, 136, F_S, C_DIM);
+            bar(g, 840, 127, 160, 10, game.capital / 100, C_GOLD);
+            text(g, String.valueOf(Math.round(game.capital)), 1010, 137, F_BB, C_GOLD);
+            if (msg != null) textFit(g, msg, 1050, 137, DW - 1100, F_XS, C_GOLD);
+            switch (tab) {
+                case 1: bills(u, g, game); break;
+                case 2: whip(u, g, game); break;
+                case 3: budget(u, g, game); break;
+                case 4: elections(u, g, game); break;
+                default: hill(u, g, game); break;
+            }
+        }
+
+        // ---- the Hill ----
+        static void hill(ResoluteDesk u, Graphics2D g, Game game) {
+            Congress c = game.cong;
+            u.panel(g, 48, 160, 700, 652, "Congress");
+            double y = 196;
+            for (int ch = 0; ch < 2; ch++) {
+                int total = ch == HOUSE ? 435 : 100;
+                int dem = ch == HOUSE ? game.houseD : game.senateD;
+                text(g, ch == HOUSE ? "House of Representatives" : "Senate", 66, y, F_H3, Color.white);
+                textR(g, dem + " D - " + (total - dem) + " R" + (Hill.majority(game, ch, game.party) ? "   your party's majority" : "   the other party's majority"), 730, y, F_XS, Hill.majority(game, ch, game.party) ? C_GOOD : C_AMBER);
+                double bx = 66, bw = 664;
+                for (int i = 0; i < c.blocs.size(); i++) {
+                    Bloc b = c.blocs.get(i);
+                    if (b.chamber != ch) continue;
+                    double w = bw * b.seats / (double) total;
+                    g.setColor(BLOC_COL[i]);
+                    g.fill(new Rectangle2D.Double(bx, y + 10, Math.max(0, w - 1), 18));
+                    bx += w;
+                }
+                g.setColor(Color.white);
+                g.fill(new Rectangle2D.Double(66 + bw * (ch == HOUSE ? 218 : 50.5) / total, y + 6, 2, 26));
+                y += 46;
+                for (int i = 0; i < c.blocs.size(); i++) {
+                    Bloc b = c.blocs.get(i);
+                    if (b.chamber != ch) continue;
+                    g.setColor(BLOC_COL[i]);
+                    g.fill(new RoundRectangle2D.Double(66, y - 10, 10, 10, 3, 3));
+                    text(g, b.name, 84, y, F_XS, C_TEXT);
+                    textR(g, b.seats + " seats", 360, y, F_XS, C_DIM);
+                    text(g, "relationship", 390, y, F_T, C_FAINT);
+                    bar(g, 460, y - 8, 200, 8, b.rel / 100, b.rel >= 55 ? C_GOOD : b.rel >= 40 ? C_GOLD : C_BAD);
+                    textR(g, String.valueOf(Math.round(b.rel)), 730, y, F_XSB, Color.white);
+                    y += 22;
+                }
+                y += 24;
+            }
+            wrap(g, "Hill meetings on your calendar improve your relationships with the leaders and every bloc. Wins, deals and vetoes move them too.", 66, y + 6, 660, F_XS, C_DIM);
+            if (game.filibusterGone) text(g, "The legislative filibuster is gone: bills pass the Senate with a simple majority.", 66, 780, F_XS, C_GOLD);
+            else if (Hill.majority(game, SENATE, game.party)) {
+                double p = Legis.nukeChance(game);
+                u.button(g, 66, 756, 300, 36, "Ask the Senate to end the filibuster", game.capital >= 15 ? B_NORM : B_OFF, game.capital >= 15 ? () -> msg = Legis.nuke(game) : null,
+                        "Costs 15 capital. About a " + Math.round(p * 100) + "% chance your own senators go along. The other side won't forget.");
+                text(g, "About " + Math.round(p * 100) + "% chance; 15 capital", 380, 779, F_XS, C_DIM);
+            }
+            // leaders and chairs
+            double px = 764, pw = DW - 48 - px;
+            u.panel(g, px, 160, pw, 300, "The leaders");
+            double lx = px + 18;
+            int k = 0;
+            for (Member m : c.members) {
+                if (m.role != RO_LEADER) continue;
+                double cx = lx + (k % 2) * (pw / 2 - 6), cy = 196 + (k / 2) * 128;
+                Portrait.draw(g, m.face, cx, cy, 70, 84, u.tsec, 0, true, true);
+                text(g, m.name, cx + 82, cy + 18, F_BB, Color.white);
+                textFit(g, m.title, cx + 82, cy + 36, pw / 2 - 110, F_XS, partyLight(m.party));
+                bar(g, cx + 82, cy + 48, 150, 8, m.rel / 100, m.rel >= 55 ? C_GOOD : m.rel >= 40 ? C_GOLD : C_BAD);
+                text(g, Math.round(m.rel) + "", cx + 240, cy + 57, F_XSB, Color.white);
+                final Member mm = m;
+                u.button(g, cx + 82, cy + 64, 150, 24, "Meet (2 capital)", game.capital >= 2 ? B_NORM : B_OFF, game.capital >= 2 ? () -> { game.capital -= 2; mm.rel = Math.min(100, mm.rel + 5 + game.pres.a[A_EST] / 30.0); msg = "You meet with " + mm.name + "."; } : null, "A private meeting. Improves your relationship.");
+                k++;
+            }
+            u.panel(g, px, 470, pw, 342, "Committee chairs");
+            u.segmented(g, px + pw - 220, 476, 200, 24, new String[]{"House", "Senate"}, chairCh, i -> chairCh = i, null);
+            double yy = 518;
+            for (Member m : c.members) {
+                if (m.role != RO_CHAIR || m.chamber != chairCh) continue;
+                textFit(g, m.committee, px + 18, yy, 270, F_XS, C_TEXT);
+                text(g, m.name + " (" + PARTY_SHORT[m.party] + ")", px + 300, yy, F_XS, partyLight(m.party));
+                bar(g, px + pw - 140, yy - 8, 100, 7, m.rel / 100, m.rel >= 55 ? C_GOOD : m.rel >= 40 ? C_GOLD : C_BAD);
+                textR(g, String.valueOf(Math.round(m.rel)), px + pw - 18, yy, F_XSB, Color.white);
+                yy += 23;
+            }
+        }
+
+        // ---- bills ----
+        static void bills(ResoluteDesk u, Graphics2D g, Game game) {
+            Congress c = game.cong;
+            u.panel(g, 48, 160, 600, 652, "Before Congress");
+            double y = 196;
+            int shown = 0;
+            label(g, "Your bills", 66, y, C_GOLD);
+            y += 18;
+            for (int i = c.bills.size() - 1; i >= 0; i--) {
+                Bill b = c.bills.get(i);
+                if (!b.ours) continue;
+                if (b.stage == ST_DEAD && game.week - b.stageWeek > 26) continue;
+                y = billRow(u, g, game, b, i, y);
+                if (++shown >= 6) break;
+            }
+            if (shown == 0) { text(g, "None yet. Draft one on the right.", 66, y + 14, F_XS, C_DIM); y += 30; }
+            y += 10;
+            label(g, "Congress's bills", 66, y, C_GOLD);
+            y += 18;
+            shown = 0;
+            for (int i = c.bills.size() - 1; i >= 0; i--) {
+                Bill b = c.bills.get(i);
+                if (b.ours) continue;
+                if (b.stage >= ST_LAW && game.week - b.stageWeek > 16) continue;
+                y = billRow(u, g, game, b, i, y);
+                if (++shown >= 4 || y > 760) break;
+            }
+            if (shown == 0) text(g, "Nothing moving right now.", 66, y + 14, F_XS, C_DIM);
+            // drafting
+            double px = 664, pw = DW - 48 - px;
+            u.panel(g, px, 160, pw, 652, "Draft a bill");
+            List<BillDef> defs = agenda(game);
+            textR(g, "public support", px + 330, 178, F_T, C_DIM);
+            double ly = 194;
+            double top = ly, h = 600;
+            double off = u.beginScroll(g, "drafts", px + 10, top, 330, h);
+            int h0 = u.hits.size();
+            for (int i = 0; i < defs.size(); i++) {
+                BillDef d = defs.get(i);
+                final int k = i;
+                double ry = top - off + i * 40;
+                boolean busy = inPlay(game, d);
+                u.card(g, px + 14, ry, 316, 36, draftSel == i, () -> { draftSel = k; draft = Legis.draft(game, defs.get(k)); }, d.desc);
+                g.setColor(d.lean == DEM ? C_DEM : d.lean == REP ? C_REP : C_GOLD);
+                g.fill(new RoundRectangle2D.Double(px + 20, ry + 10, 4, 16, 3, 3));
+                textFit(g, d.name, px + 32, ry + 23, 230, F_S, busy ? C_DIM : Color.white);
+                textR(g, busy ? "in play" : Math.round(d.support) + "%", px + 322, ry + 23, F_XS, busy ? C_DIM : C_TEXT);
+            }
+            u.clipHits(h0, top, top + h);
+            u.endScroll(g, "drafts", defs.size() * 40);
+            double dx = px + 350, dw = pw - 368;
+            if (draft == null || draftSel < 0 || draftSel >= defs.size()) { wrap(g, "Pick a bill. Blue bills are Democratic priorities, red Republican, gold bipartisan.", dx, 200, dw, F_S, C_DIM); return; }
+            BillDef d = draft.def();
+            text(g, d.name, dx, 206, F_H2, Color.white);
+            double yy = 216 + wrap(g, d.desc, dx, 226, dw, F_XS, C_TEXT);
+            text(g, "Public support " + Math.round(draft.support()) + "%", dx, yy + 18, F_XSB, draft.support() >= 55 ? C_GOOD : draft.support() < 48 ? C_BAD : C_TEXT);
+            double nc = draft.netCost();
+            textR(g, nc > 1 ? "adds $" + Math.round(nc) + "B a year to the deficit" : nc < -1 ? "cuts the deficit by $" + Math.round(-nc) + "B a year" : "about deficit-neutral", dx + dw, yy + 18, F_XS, nc > 50 ? C_AMBER : C_DIM);
+            yy += 44;
+            text(g, "Size", dx, yy + 12, F_S, C_TEXT);
+            u.slider(g, dx + 90, yy + 8, dw - 160, (draft.size - 0.5), C_ACCENT, v -> draft.size = 0.5 + v, "Bigger bills do more and cost more; smaller ones are easier to pass.");
+            textR(g, Math.round(draft.size * 100) + "%", dx + dw, yy + 12, F_XSB, Color.white);
+            yy += 34;
+            text(g, "Scope", dx, yy + 12, F_S, C_TEXT);
+            u.slider(g, dx + 90, yy + 8, dw - 160, draft.scope, C_ACCENT, v -> draft.scope = v, "Narrow bills draw fewer objections; broad ones go further and lose votes in the middle.");
+            textR(g, draft.scope < 0.33 ? "narrow" : draft.scope > 0.66 ? "broad" : "middle", dx + dw, yy + 12, F_XSB, Color.white);
+            yy += 34;
+            if (d.cost > 0) {
+                text(g, "Paid for by", dx, yy + 18, F_S, C_TEXT);
+                u.segmented(g, dx + 90, yy, dw - 90, 28, PAYFOR, draft.payFor, i -> draft.payFor = i, new String[]{"Add it to the deficit. Fiscal hawks object.", "Moves the bill left. Popular, but business groups fight it.", "Moves the bill right. Hard for your own progressives (or easy, for a Republican)."});
+                yy += 40;
+            }
+            boolean rc = d.budget && Legis.reconOk(game, draft);
+            u.toggle(g, dx, yy, draft.recon && rc, rc ? () -> draft.recon = !draft.recon : null, d.budget ? (rc ? "A simple majority in the Senate, once a fiscal year. The Byrd rule strikes anything that isn't about money." : "Needs your party in control of both chambers, and one use a fiscal year.") : "Not a budget bill: the Byrd rule rules it out.");
+            text(g, "Budget reconciliation", dx + 46, yy + 16, F_S, rc ? C_TEXT : C_DIM);
+            if (!d.origRevenue) { u.segmented(g, dx + dw - 180, yy, 180, 26, new String[]{"House first", "Senate first"}, draft.first, i -> draft.first = i, null); }
+            else text(g, "Revenue bills start in the House", dx + dw - 190, yy + 16, F_T, C_DIM);
+            yy += 44;
+            if (!rc) draft.recon = false;
+            double pH = Legis.chance(game, draft, HOUSE, false), pS = Legis.chance(game, draft, SENATE, false);
+            double cH = Legis.chairOk(game, draft, HOUSE), cS = Legis.chairOk(game, draft, SENATE);
+            label(g, "The whip's first read", dx, yy, C_GOLD);
+            yy += 22;
+            double[] hc = Legis.count(game, draft, HOUSE, false), sc = Legis.count(game, draft, SENATE, false);
+            text(g, "House: about " + Math.round(hc[0]) + " votes of " + Legis.need(game, draft, HOUSE, false) + " needed", dx, yy, F_XS, C_TEXT);
+            textR(g, Math.round(pH * 100) + "%", dx + dw, yy, F_XSB, pH >= 0.6 ? C_GOOD : pH >= 0.3 ? C_GOLD : C_BAD); yy += 20;
+            text(g, "Senate: about " + Math.round(sc[0]) + " of " + Legis.need(game, draft, SENATE, false) + (draft.recon || game.filibusterGone ? "" : " (to end a filibuster)"), dx, yy, F_XS, C_TEXT);
+            textR(g, Math.round(pS * 100) + "%", dx + dw, yy, F_XSB, pS >= 0.6 ? C_GOOD : pS >= 0.3 ? C_GOLD : C_BAD); yy += 20;
+            text(g, "Committee chairs let it out", dx, yy, F_XS, C_TEXT);
+            textR(g, Math.round(cH * 100) + "% / " + Math.round(cS * 100) + "%", dx + dw, yy, F_XSB, Math.min(cH, cS) >= 0.6 ? C_GOOD : C_GOLD);
+            yy += 28;
+            int active = 0;
+            for (Bill b : game.cong.bills) if (b.ours && b.stage > ST_DRAFT && b.stage < ST_LAW) active++;
+            boolean can = !inPlay(game, d) && active < 3;
+            u.button(g, dx, Math.min(yy, 760), dw, 40, inPlay(game, d) ? "Already before Congress" : active >= 3 ? "Congress can only handle three of your bills at once" : "Send to Congress", can ? B_GOLD : B_OFF, can ? () -> {
+                if (d.origRevenue) draft.first = HOUSE;
+                Legis.introduce(game, draft);
+                sel = game.cong.bills.indexOf(draft);
+                draft = null; draftSel = -1; tab = 2; msg = "Sent to Congress.";
+            } : null);
+        }
+
+        static boolean inPlay(Game g, BillDef d) { for (Bill b : g.cong.bills) if (b.defId.equals(d.id) && b.stage > ST_DRAFT && b.stage < ST_LAW && b.stage != ST_DEAD) return true; for (Bill b : g.cong.bills) if (b.defId.equals(d.id) && b.stage == ST_LAW) return true; return false; }
+
+        static List<BillDef> agenda(Game g) {
+            List<BillDef> l = new ArrayList<BillDef>();
+            for (BillDef d : BILLS) if (d.lean == g.party) l.add(d);
+            for (BillDef d : BILLS) if (d.lean < 0) l.add(d);
+            for (BillDef d : BILLS) if (d.lean >= 0 && d.lean != g.party) l.add(d);
+            return l;
+        }
+
+        static double billRow(ResoluteDesk u, Graphics2D g, Game game, Bill b, int idx, double y) {
+            final int k = idx;
+            u.card(g, 62, y, 572, 54, sel == idx, () -> { sel = k; tab = 2; }, "Open the whip count");
+            text(g, b.name, 76, y + 22, F_BB, Color.white);
+            Color sc = b.stage == ST_LAW ? C_GOOD : b.stage == ST_DEAD ? C_BAD : b.bottled ? C_AMBER : C_ACCENT;
+            textR(g, b.stage == ST_COMMITTEE || b.stage == ST_COMMITTEE2 ? STAGE[b.stage].replace("committee", CHAMBER[b.chamberNow()] + " committee") + (b.bottled ? ", stuck" : "") : STAGE[b.stage], 620, y + 22, F_XSB, sc);
+            for (int s = 1; s <= 6; s++) {
+                g.setColor(b.stage >= s && b.stage != ST_DEAD ? C_GOLD : b.stage == ST_DEAD && s <= 2 ? C_BAD : new Color(255, 255, 255, 30));
+                g.fill(new RoundRectangle2D.Double(76 + (s - 1) * 60, y + 34, 54, 6, 3, 3));
+            }
+            if (b.stage >= ST_COMMITTEE && b.stage <= ST_FLOOR2) {
+                double p = Legis.chance(game, b, b.chamberNow(), false);
+                textR(g, "chance of the next vote " + Math.round(p * 100) + "%", 620, y + 42, F_T, C_DIM);
+            }
+            return y + 60;
+        }
+
+        // ---- the whip count ----
+        static void whip(ResoluteDesk u, Graphics2D g, Game game) {
+            Congress c = game.cong;
+            Bill b = sel >= 0 && sel < c.bills.size() ? c.bills.get(sel) : null;
+            if (b == null) {
+                for (int i = c.bills.size() - 1; i >= 0; i--) if (c.bills.get(i).stage < ST_DESK && c.bills.get(i).stage > ST_DRAFT) { sel = i; b = c.bills.get(i); break; }
+            }
+            if (b == null) { u.panel(g, 48, 160, DW - 96, 652, "Whip count"); wrap(g, "Nothing to count yet. Send a bill to Congress from the Bills tab.", 70, 200, 800, F_S, C_DIM); return; }
+            final Bill bb = b;
+            int ch = b.stage >= ST_DESK ? b.second() : b.chamberNow();
+            u.panel(g, 48, 160, 760, 652, b.name + ": " + STAGE[b.stage]);
+            double y = 196;
+            for (int cc = 0; cc < 2; cc++) {
+                int chamber = cc == 0 ? ch : (ch == HOUSE ? SENATE : HOUSE);
+                double[] cnt = Legis.count(game, b, chamber, false);
+                int need = Legis.need(game, b, chamber, false);
+                text(g, CHAMBER[chamber] + (cc == 0 ? " (next)" : ""), 66, y, F_H3, Color.white);
+                textR(g, "about " + Math.round(cnt[0]) + " yes, " + need + " needed  |  " + Math.round(Legis.chance(game, b, chamber, false) * 100) + "% to pass", 790, y, F_XSB, cnt[0] >= need ? C_GOOD : C_AMBER);
+                y += 22;
+                for (int i = 0; i < c.blocs.size(); i++) {
+                    Bloc bl = c.blocs.get(i);
+                    if (bl.chamber != chamber) continue;
+                    double p = logistic(Legis.blocLogit(game, b, i, false));
+                    g.setColor(BLOC_COL[i]);
+                    g.fill(new RoundRectangle2D.Double(66, y - 10, 10, 10, 3, 3));
+                    text(g, bl.name, 84, y, F_XS, C_TEXT);
+                    text(g, Legis.lean(p), 330, y, F_XSB, p > 0.6 ? C_GOOD : p > 0.4 ? C_GOLD : C_BAD);
+                    bar(g, 440, y - 8, 240, 8, p, p > 0.6 ? C_GOOD : p > 0.4 ? C_GOLD : C_BAD);
+                    textR(g, Math.round(p * bl.seats) + " of " + bl.seats, 790, y, F_XS, C_DIM);
+                    y += 22;
+                }
+                y += 18;
+            }
+            if (b.stage <= ST_FLOOR2 && b.stage >= ST_COMMITTEE) {
+                label(g, "Change the bill", 66, y, C_GOLD);
+                y += 16;
+                text(g, "Size", 66, y + 12, F_XS, C_TEXT);
+                u.slider(g, 120, y + 8, 260, bb.size - 0.5, C_ACCENT, v -> bb.size = 0.5 + v, "Shrinking a bill wins over the middle.");
+                text(g, "Scope", 420, y + 12, F_XS, C_TEXT);
+                u.slider(g, 470, y + 8, 260, bb.scope, C_ACCENT, v -> bb.scope = v, "Narrower is easier to pass.");
+                y += 30;
+                if (b.def().cost > 0) u.segmented(g, 66, y, 724, 26, PAYFOR, bb.payFor, i -> bb.payFor = i, null);
+                y += 36;
+            }
+            double cx = 66;
+            for (int i = c.bills.size() - 1; i >= 0 && cx < 700; i--) {
+                Bill o = c.bills.get(i);
+                if (o.stage < ST_COMMITTEE || o.stage > ST_FLOOR2) continue;
+                final int k = i;
+                double w = Math.min(230, strW(g, o.name, F_XSB) + 22);
+                u.button(g, cx, 770, w, 28, o.name, o == b ? B_TABON : B_TAB, () -> sel = k, (o.ours ? "Your bill" : "Congress's bill") + ": " + STAGE[o.stage]);
+                cx += w + 6;
+            }
+            if (!b.deals.isEmpty()) {
+                StringBuilder s = new StringBuilder("Deals so far: ");
+                for (int i = 0; i < b.deals.size(); i++) s.append(i > 0 ? "; " : "").append(b.deals.get(i));
+                wrap(g, s.toString(), 66, Math.min(y, 730), 720, F_XS, C_DIM);
+            }
+            // the people
+            double px = 824, pw = DW - 48 - px;
+            u.panel(g, px, 160, pw, 652, "Working the votes");
+            double yy = 196;
+            List<Member> people = new ArrayList<Member>();
+            for (Member m : c.members) if (m.role == RO_LEADER && m.chamber == ch) people.add(m);
+            Member chair = Hill.chairFor(game, b, ch);
+            if (chair != null) people.add(chair);
+            for (Member m : c.members) if (m.role == RO_SWING && m.chamber == ch) people.add(m);
+            for (Member m : people) {
+                double p = logistic(Legis.blocLogit(game, b, m.bloc, false) + (m.rel - 50) / 30);
+                Portrait.draw(g, m.face, px + 14, yy - 4, 34, 40, u.tsec, 0, true, true);
+                text(g, m.title != null && m.role == RO_SWING ? m.title : m.name, px + 56, yy + 10, F_SB, Color.white);
+                textFit(g, m.role == RO_SWING ? "wants " + PRICE[m.price] : m.title, px + 56, yy + 26, 250, F_T, C_DIM);
+                text(g, Legis.lean(p), px + 300, yy + 10, F_XSB, p > 0.6 ? C_GOOD : p > 0.4 ? C_GOLD : C_BAD);
+                if (b.stage >= ST_COMMITTEE && b.stage <= ST_FLOOR2) {
+                    double bx = px + 300;
+                    int[] kinds = {Legis.DL_CALL, Legis.DL_PROJECT, Legis.DL_APPOINT, Legis.DL_ENDORSE, Legis.DL_THREAT};
+                    String[] ab = {"Call", "Project", "Appoint", "Endorse", "Threat"};
+                    for (int j = 0; j < kinds.length; j++) {
+                        final int kind = kinds[j];
+                        final Member mm = m;
+                        boolean ok = game.capital >= Legis.DEAL_COST[kind] && mm.lastDeal != game.week;
+                        u.button(g, bx + j * 62, yy + 16, 58, 20, ab[j], ok ? B_NORM : B_OFF, ok ? () -> msg = Legis.deal(game, bb, mm, kind) : null, Legis.DEAL[kind] + " (" + Legis.DEAL_COST[kind] + " capital)");
+                    }
+                }
+                yy += 46;
+                if (yy > 700) break;
+            }
+            if (b.stage >= ST_COMMITTEE && b.stage <= ST_FLOOR2) {
+                u.button(g, px + 14, 760, 220, 36, b.publicPush ? "You've gone public" : "Go public (3 capital)", !b.publicPush && game.capital >= 3 ? B_PRIMARY : B_OFF, !b.publicPush && game.capital >= 3 ? () -> msg = Legis.deal(game, bb, null, Legis.DL_PUBLIC) : null, "Make the case to the country. Moderates feel the pressure.");
+                if (b.ours) u.button(g, px + pw - 180, 760, 166, 36, "Withdraw the bill", B_GHOST, () -> { bb.stage = ST_DEAD; bb.stageWeek = game.week; if (bb.recon && game.cong.reconFy == Hill.fiscalYear(game)) game.cong.reconFy = -1; msg = "You pulled " + bb.name + "."; }, "Pull it before it fails.");
+            }
+        }
+
+        // ---- the budget ----
+        static void budget(ResoluteDesk u, Graphics2D g, Game game) {
+            Congress c = game.cong;
+            u.panel(g, 48, 160, 760, 652, "Your budget request" + (c.budgetSent ? " (sent to Congress)" : ""));
+            double y = 200;
+            String[] names = {"Defense", "Other agencies", "Taxes (revenue)", "Entitlements"};
+            String[] tips = {"Change in defense spending, percent.", "Change in non-defense discretionary spending, percent.", "Revenue change, % of GDP. Positive raises taxes.", "Social Security, Medicare and other mandatory spending, % of GDP."};
+            double[] lo = {-15, -25, -1.5, -1}, hi = {15, 25, 1.5, 1};
+            double[] val = {c.reqDefense, c.reqNondefense, c.reqTax, c.reqMandatory};
+            for (int i = 0; i < 4; i++) {
+                final int k = i;
+                text(g, names[i], 66, y + 12, F_S, C_TEXT);
+                if (!c.budgetSent) u.slider(g, 220, y + 8, 420, (val[i] - lo[i]) / (hi[i] - lo[i]), C_GOLD, v -> setReq(c, k, lo[k] + v * (hi[k] - lo[k])), tips[i], false);
+                else bar(g, 220, y + 4, 420, 8, (val[i] - lo[i]) / (hi[i] - lo[i]), C_FAINT);
+                textR(g, (i < 2 ? signed1(val[i]) + "%" : signed1(val[i]) + "% of GDP"), 790, y + 12, F_XSB, Color.white);
+                y += 38;
+            }
+            double ch = Budget.deficitChange(c);
+            text(g, "Your plan " + (ch > 0.05 ? "adds " + fmt1(ch) : ch < -0.05 ? "cuts " + fmt1(-ch) : "changes about 0") + " % of GDP " + (ch < 0 ? "from" : "to") + " the yearly deficit", 66, y + 10, F_S, ch > 0.3 ? C_AMBER : C_TEXT);
+            y += 30;
+            double[][] pr = Budget.projection(game);
+            List<double[]> ser = new ArrayList<double[]>();
+            ser.add(pr[0]);
+            ResoluteDesk.chart(g, 110, y, 660, 160, ser, new Color[]{C_BAD}, new String[]{"Deficit, % of GDP, next ten years"}, 0, Math.max(10, Rooms.maxOf(pr[0]) + 1), "%.0f%%", 11);
+            y += 176;
+            List<double[]> ser2 = new ArrayList<double[]>();
+            ser2.add(pr[1]);
+            ResoluteDesk.chart(g, 110, y, 660, 140, ser2, new Color[]{C_AMBER}, new String[]{"Debt held by the public, % of GDP"}, Math.floor(Rooms.minOf(pr[1]) / 10) * 10, Math.ceil(Rooms.maxOf(pr[1]) / 10) * 10 + 10, "%.0f%%", 11);
+            y += 156;
+            if (!c.budgetSent) u.button(g, 66, Math.min(y, 760), 300, 38, "Send the budget to Congress", B_GOLD, () -> { Budget.send(game); msg = "Budget sent."; });
+            else text(g, "Congress writes the actual spending bills; your request sets the terms of the fight.", 66, Math.min(y + 20, 780), F_XS, C_DIM);
+            // appropriations, the shutdown clock and the debt limit
+            double px = 824, pw = DW - 48 - px;
+            u.panel(g, px, 160, pw, 420, "Fiscal year " + (c.fy + (dateOf(game.day())[1] >= 4 ? 1 : 0)) + " spending bills");
+            String[] stn = {"not started", "passed one chamber", "passed both chambers", "law", "on a stopgap"};
+            Color[] stc = {C_FAINT, C_GOLD, C_ACCENT, C_GOOD, C_AMBER};
+            double yy = 198;
+            for (int i = 0; i < 12; i++) {
+                textFit(g, APPROPS[i], px + 18, yy, 330, F_XS, C_TEXT);
+                textR(g, stn[c.approps[i]], px + pw - 18, yy, F_XSB, stc[c.approps[i]]);
+                yy += 23;
+            }
+            yy += 10;
+            if (c.shutdown) text(g, "THE GOVERNMENT IS SHUT DOWN: week " + c.shutdownWeeks, px + 18, yy, F_BB, C_BAD);
+            else if (c.crUntil >= 0) text(g, "Running on a stopgap until " + dateStr(c.crUntil * 7), px + 18, yy, F_S, C_AMBER);
+            else text(g, "Deadline: September 30", px + 18, yy, F_S, C_DIM);
+            u.panel(g, px, 590, pw, 222, "The debt limit");
+            double subj = Budget.debtSubject(game);
+            text(g, "$" + fmt1(subj) + " trillion owed, limit $" + fmt1(c.debtLimit) + " trillion", px + 18, 630, F_S, C_TEXT);
+            bar(g, px + 18, 642, pw - 36, 12, subj / c.debtLimit, subj >= c.debtLimit ? C_BAD : subj > c.debtLimit * 0.97 ? C_AMBER : C_ACCENT);
+            if (c.xWeek >= 0) text(g, "The Treasury runs out of room around " + dateStr(c.xWeek * 7) + ".", px + 18, 680, F_SB, C_AMBER);
+            else text(g, "Room to borrow for about " + Math.max(0, Math.round((c.debtLimit - subj) / Math.max(0.01, subj * (game.econ.deficit / Math.max(1, game.econ.debt))) * 52)) + " more weeks.", px + 18, 680, F_S, C_DIM);
+            wrap(g, "When the debt reaches the limit, the Treasury uses accounting moves for a few months. Then Congress has to raise it, or the government starts missing payments.", px + 18, 704, pw - 36, F_XS, C_DIM);
+        }
+
+        static void setReq(Congress c, int k, double v) {
+            v = Math.round(v * 10) / 10.0;
+            if (k == 0) c.reqDefense = v; else if (k == 1) c.reqNondefense = v; else if (k == 2) c.reqTax = v; else c.reqMandatory = v;
+        }
+
+        // ---- the midterms ----
+        static void elections(ResoluteDesk u, Graphics2D g, Game game) {
+            Congress c = game.cong;
+            u.panel(g, 48, 160, 600, 652, "The midterms, " + monthYear(Midterms.electionDay(game)));
+            double y = 200;
+            if (c.midDone) {
+                wrap(g, c.midSummary == null ? "The midterms are over." : c.midSummary, 66, y, 560, F_S, C_TEXT);
+                return;
+            }
+            double mP = Midterms.nationalMargin(game, 0);
+            double natD = game.party == DEM ? mP : -mP;
+            int house = (int) Math.round(222 + 3.8 * natD);
+            int myHouse = game.party == DEM ? house : 435 - house;
+            text(g, "If the election were held today", 66, y, F_H3, Color.white);
+            y += 30;
+            text(g, "Your party " + (mP >= 0 ? "wins" : "loses") + " the national House vote by about " + fmt1(Math.abs(mP)) + " points", 66, y, F_S, mP >= 0 ? C_GOOD : C_BAD);
+            y += 24;
+            text(g, "That's about " + myHouse + " House seats for " + PARTIES[game.party] + " (" + Midterms.signedInt(myHouse - game.myHouse()) + "); 218 is a majority.", 66, y, F_S, C_TEXT);
+            y += 36;
+            wrap(g, "The president's party usually loses ground in a midterm. Your approval and the economy matter most; campaigning and the money you raise for candidates can add a point or two. "
+                    + (Midterms.season(game) ? "It's campaign season: schedule \"Campaign\" stops from your calendar." : "Campaign season opens in late summer of " + (game.era.year + 1) + "."), 66, y, 560, F_XS, C_DIM);
+            y += 70;
+            text(g, "Raised for your party: $" + fmt1(game.funds) + " million", 66, y, F_S, C_TEXT);
+            // senate seats up
+            double px = 664, pw = DW - 48 - px;
+            u.panel(g, px, 160, pw, 652, "Senate seats up");
+            String up = Midterms.seatsUp(game);
+            double yy = 198;
+            int col = 0;
+            if (!up.isEmpty()) for (String tok : up.split(" ")) {
+                String[] p = tok.split(":");
+                int s = stateIdx(p[0]);
+                if (s < 0) continue;
+                boolean dHeld = p[1].equals("D");
+                double m = Elect.lean[s] + natD + (dHeld ? 3 : -3) + c.campaign[s] * 1.2 * (game.party == DEM ? 1 : -1);
+                double x = px + 18 + col * (pw / 3 - 6);
+                text(g, STATES[s].name, x, yy, F_XS, C_TEXT);
+                text(g, p[1], x + 140, yy, F_XSB, dHeld ? C_DEM_L : C_REP_L);
+                textR(g, margin(m), x + pw / 3 - 30, yy, F_XSB, m > 0 ? C_DEM_L : C_REP_L);
+                col++;
+                if (col == 3) { col = 0; yy += 22; }
+            }
+            wrap(g, "Holder, then the projected margin. Campaign stops in a state help your party's candidate there.", px + 18, Math.max(yy + 40, 700), pw - 36, F_XS, C_DIM);
         }
     }
     // =====================================================================
@@ -6002,11 +7736,19 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             }
         }
 
+        /** Fills in what a save from an earlier update doesn't have. */
+        static void upgrade(Game g) {
+            if (g.inbox == null) g.inbox = new ArrayList<Decision>();
+            if (g.era.midSeats == null) g.era.midSeats = era(g.era.year).midSeats;
+            if (g.cong == null) { Hill.setup(g); g.capital = 30; }
+        }
+
         static void resume(ResoluteDesk u, Game g) {
             if (g.version < Game.VERSION) { u.info("An older save", "This game was saved by an earlier version and can't be continued in this one."); return; }
             CAL_Y = g.era.year; CAL_M = 0; CAL_D = 20;
             Elect.init();
             Groups.init();
+            upgrade(g);
             g.dirty = true;
             u.game = g;
             u.setup = g.set;
@@ -6030,6 +7772,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             USMap.load();
             System.out.println("init " + (System.currentTimeMillis() - t0) + " ms");
             String what = a.length > 1 ? a[1] : "sim";
+            for (String x : a) if (x.equals("trace")) TRACE = true;
             if (what.equals("sim")) {
                 int runs = a.length > 2 ? Integer.parseInt(a[2]) : 1;
                 int year = a.length > 3 ? Integer.parseInt(a[3]) : 2029;
@@ -6039,6 +7782,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 for (int r = 0; r < runs; r++) sim(1000 + r, year, pres, scen, weeks);
             }
             if (what.equals("ui")) ui(a.length > 2 ? a[2] : "shots");
+            if (what.equals("whip")) whip(a.length > 2 ? Integer.parseInt(a[2]) : 2025, a.length > 3 ? a[3] : null, a.length > 4 ? Integer.parseInt(a[4]) : 0);
         }
 
         static Game newGame(long seed, int year, String pres, int scen) {
@@ -6058,7 +7802,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 if (w % 4 == 0) Week.routine(g);
                 if (w % 8 == 3) Rooms.roadWeek(g);
                 if (g.stamina < 35) Rooms.restWeek(g);
+                if (w % 6 == 1) Decisions.autoAgenda(g);
+                Decisions.autoWhip(g);
                 Week.resolve(g);
+                Decisions.autoAll(g);
                 if (g.week % 26 == 0) {
                     Econ e = g.econ;
                     b.append("  wk").append(g.week).append(" ").append(dateStr(g.day())).append(": approval ").append(fmt1(g.approval)).append(" gdp ").append(fmt1(e.gdp)).append(" u ").append(fmt1(e.unemp))
@@ -6068,8 +7815,28 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                             .append(" Black ").append(fmt0(g.groupApp[10])).append(" WhiteNoDeg ").append(fmt0(g.groupApp[8])).append("\n");
                 }
             }
+            Congress c = g.cong;
+            b.append("  congress: laws ").append(c.laws).append(" vetoes ").append(c.vetoes).append(" overrides ").append(c.overrides).append(" shutdowns ").append(c.shutdowns).append(" (").append(c.shutdownTotal).append(" wks) default ").append(c.defaulted)
+                    .append(" capital ").append(fmt0(g.capital)).append(" House D ").append(g.houseD).append(" Senate D ").append(g.senateD).append("\n");
+            for (Bill bl : c.bills) b.append("    ").append(bl.ours ? "* " : "  ").append(bl.name).append(": ").append(STAGE[bl.stage]).append(" wk").append(bl.introduced).append("-").append(bl.stageWeek).append(bl.recon ? " recon" : "").append(" H ").append(bl.houseYes).append("-").append(bl.houseNo).append(" S ").append(bl.senYes).append("-").append(bl.senNo).append("\n");
+            if (c.midSummary != null) b.append("  midterms: ").append(c.midSummary).append("\n");
             b.append("  news ").append(g.news.size()).append(", last: ").append(g.news.isEmpty() ? "" : g.news.get(g.news.size() - 1).head);
             System.out.println(b);
+        }
+
+        static void whip(int year, String pres, int scen) {
+            Game g = newGame(7, year, pres, scen);
+            StringBuilder s = new StringBuilder("=== whip " + g.pres.name() + " House D " + g.houseD + " Senate D " + g.senateD + " approval " + fmt1(g.approval) + "\n");
+            for (BillDef d : HillUI.agenda(g)) {
+                Bill b = Legis.draft(g, d);
+                b.recon = d.budget && Legis.reconOk(g, b);
+                s.append(String.format("%-34s econ %5.2f cult %5.2f sup %3.0f cost %5.0f %s  H %.0f (%.2f)  S %.0f (%.2f)  chair %.2f/%.2f%n", d.name, b.econ(), b.cult(), b.support(), b.netCost(), b.recon ? "R" : " ",
+                        Legis.count(g, b, HOUSE, false)[0], Legis.chance(g, b, HOUSE, false), Legis.count(g, b, SENATE, false)[0], Legis.chance(g, b, SENATE, false), Legis.chairOk(g, b, HOUSE), Legis.chairOk(g, b, SENATE)));
+                StringBuilder bl = new StringBuilder("      ");
+                for (int i = 0; i < g.cong.blocs.size(); i++) bl.append(String.format("%.2f ", logistic(Legis.blocLogit(g, b, i, false))));
+                s.append(bl).append("\n");
+            }
+            System.out.print(s);
         }
 
         static void shot(ResoluteDesk u, String dir, String name) {
@@ -6090,12 +7857,21 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             u.setup.presId = "trump"; u.setup.vpId = "vance"; u.go(SC_VP); shot(u, dir, "vp");
             u.game = newGame(5, 2025, "trump", 0);
             u.go(SC_OVAL); shot(u, dir, "oval");
-            for (int w = 0; w < 30; w++) { if (w % 8 == 3) Rooms.roadWeek(u.game); else Week.routine(u.game); Week.resolve(u.game); }
+            for (int w = 0; w < 30; w++) { if (w % 8 == 3) Rooms.roadWeek(u.game); else Week.routine(u.game); if (u.game.stamina < 40) Rooms.restWeek(u.game); if (w % 6 == 1) Decisions.autoAgenda(u.game); Week.resolve(u.game); Decisions.autoAll(u.game); }
             u.go(SC_PAPER); shot(u, dir, "paper");
             u.go(SC_OVAL); shot(u, dir, "oval_later");
             for (int r = 0; r < NROOM; r++) { Rooms.open(u, r); if (r == R_DESK) Rooms.roadWeek(u.game); shot(u, dir, "room_" + r); }
             Rooms.chartSel = 2; Rooms.open(u, R_ECON); shot(u, dir, "room_econ_stocks");
             Rooms.mapMode = 1; Rooms.selState = stateIdx("MI"); Rooms.open(u, R_COUNTRY); shot(u, dir, "room_country_unemp");
+            Rooms.open(u, R_CONGRESS);
+            for (int t = 0; t < HillUI.TABS.length; t++) { HillUI.tab = t; HillUI.sel = -1; shot(u, dir, "hill_" + t); }
+            HillUI.tab = 1; HillUI.draftSel = 1; HillUI.draft = Legis.draft(u.game, HillUI.agenda(u.game).get(1)); shot(u, dir, "hill_draft");
+            HillUI.tab = 0; HillUI.chairCh = 1; shot(u, dir, "hill_senate_chairs");
+            for (Bill b : u.game.cong.bills) if (b.stage == ST_LAW) { Legis.toDesk(u.game, b); break; }
+            Decisions.show(u, u.game); shot(u, dir, "decision_sign");
+            u.modal = null; u.game.inbox.clear();
+            u.game.cong.approps[0] = 1;
+            Budget.deadline(u.game, true); Decisions.show(u, u.game); shot(u, dir, "decision_cr");
         }
     }
 }

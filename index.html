@@ -1236,6 +1236,9 @@ this.gdpReported = 0;
 this.cpiReported = 0;
 this.stUnemp = $arr(NS, 0);
 this.stGas = $arr(NS, 0);
+this.polGdp = 0;
+this.polUnemp = 0;
+this.polInfl = 0;
 }
 }
 class Game {
@@ -1282,6 +1285,10 @@ this.hill = 50;
 this.houseD = 0;
 this.senateD = 0;
 this.econ = new Econ();
+this.cong = null;
+this.capital = 30;
+this.inbox = [];
+this.filibusterGone = false;
 this.hist = [];
 this.news = [];
 this.paperWeek = -1;
@@ -1312,6 +1319,7 @@ n.head = head;
 n.body = body;
 n.weight = weight;
 this.news.add(n);
+if (TRACE) { console.log(((("    [" + dateStr(n.day)) + "] ") + head)); }
 if ((this.news.length > 400)) { this.news.splice(0, 1)[0]; }
 this.ticker.add(head);
 if ((this.ticker.length > 40)) { this.ticker.splice(0, 1)[0]; }
@@ -1458,14 +1466,14 @@ e.aiShock *= 0.99;
 e.ogHist[e.ogPos] = e.og;
 e.ogPos = (((e.ogPos + 1)) % 53);
 let old = e.ogHist[e.ogPos];
-e.gdp = ((e.potential + ((e.og - old))) + ((g.era.ai ? ((0.15 * ((e.aiInvest - 100))) / 100) : 0)));
+e.gdp = (((e.potential + e.polGdp) + ((e.og - old))) + ((g.era.ai ? ((0.15 * ((e.aiInvest - 100))) / 100) : 0)));
 e.structural = Math.max(0, ((e.structural * 0.995) + (e.aiShock * 0.004)));
-let uTarget = ((e.nairu + e.structural) - (0.5 * e.og));
+let uTarget = (((e.nairu + e.polUnemp) + e.structural) - (0.5 * e.og));
 e.unemp += ((((uTarget - e.unemp)) * 0.035) + (r.nextGaussian() * 0.012));
 e.unemp = clamp(e.unemp, 2.5, 25);
 let anchor = ((e.fedCred * 2.0) + (((1 - e.fedCred)) * e.infl));
 e.expect += (((anchor - e.expect)) * 0.02);
-let piT = ((((e.expect + (0.28 * e.og)) + e.supplyShock) + (0.012 * ((e.oil - e.oilBase)))) + (0.05 * ((e.tariff - g.era.tariff))));
+let piT = (((((e.expect + e.polInfl) + (0.28 * e.og)) + e.supplyShock) + (0.012 * ((e.oil - e.oilBase)))) + (0.05 * ((e.tariff - g.era.tariff))));
 e.infl += ((((piT - e.infl)) * 0.03) + (r.nextGaussian() * 0.025));
 e.infl = clamp(e.infl, -3, 20);
 e.core += ((((e.infl - 0.2) - e.core)) * 0.04);
@@ -2121,7 +2129,7 @@ for (let d = 0; (d < 7); d++) {
 let a = g.act[((d * 3) + 2)];
 let v = ((((a === AC_REST) || (a === AC_FAMILY)) || (a === AC_CAMPDAVID)) ? 7.4 : (((a === AC_FREE) || (a === AC_EXERCISE)) ? 6.8 : ((a === AC_WORKLATE) ? 4.8 : (((a === AC_TRIP) || (a === AC_FUNDRAISER)) ? 5.6 : 6.2))));
 let m = g.act[(d * 3)];
-if ((((m === AC_TRIP) && (g.arg[(d * 3)] >= 0)) && (Week.flight(g.arg[(d * 3)]) > 3.5))) { v -= 1; }
+if (((isTrip(m) && (g.arg[(d * 3)] >= 0)) && (Week.flight(g.arg[(d * 3)]) > 3.5))) { v -= 1; }
 h += v;
 }
 return (h / 7);
@@ -2130,7 +2138,7 @@ static cost(g) {
 let c = 0;
 for (let i = 0; (i < NSLOT); i++) {
 let v = AC_STAMINA[g.act[i]];
-if (((g.act[i] === AC_TRIP) && (g.arg[i] >= 0))) { v -= Math.min(6, (Week.flight(g.arg[i]) * 0.9)); }
+if ((isTrip(g.act[i]) && (g.arg[i] >= 0))) { v -= Math.min(6, (Week.flight(g.arg[i]) * 0.9)); }
 c += ((v < 0) ? (v * Week.ageFactor(g)) : v);
 }
 return c;
@@ -2179,6 +2187,7 @@ g.perf += 0.012;
 break;
 case AC_CONGRESS:
 g.hill = Math.min(100, (g.hill + ((1.2 * (((p != null) ? p.a[A_EST] : 60))) / 70)));
+Hill.meeting(g);
 break;
 case AC_FAMILY:
 g.perf += 0.004;
@@ -2188,6 +2197,14 @@ g.fitness = Math.min(100, (g.fitness + 1.2));
 break;
 case AC_CAMPDAVID:
 campDavid++;
+break;
+case AC_CAMPAIGN:
+if (((arg >= 0) && (g.cong != null))) {
+g.cong.campaign[arg] += (cha / 70);
+g.stateBump[arg] += 0.8;
+g.location = arg;
+trips++;
+}
 break;
 case AC_WORKLATE:
 {
@@ -2214,6 +2231,13 @@ g.stress = clamp((g.stress * 0.85), 0, 100);
 Week.health(g);
 Economy.week(g);
 Approval.week(g);
+if ((g.cong != null)) {
+Hill.drift(g);
+Legis.week(g);
+Budget.week(g);
+Midterms.week(g);
+g.capital = clamp((((g.capital + 0.6) + (((g.approval - 45)) * 0.05)) + (((g.honeymoon > 1) ? 0.5 : 0))), 0, 100);
+}
 Week.record(g);
 g.week++;
 if ((g.week >= g.termWeeks)) { g.over = true; }
@@ -2283,6 +2307,7 @@ this.houseLeaderD = null;
 this.houseLeaderR = null;
 this.issues = null;
 this.ai = true;
+this.midSeats = null;
 }
 }
 class Setup {
@@ -2320,13 +2345,1252 @@ g.hill = (45 + (((g.pres.a[A_EST] - 60)) * 0.3));
 g.stamina = (80 + (((g.pres.a[A_STA] - 60)) * 0.25));
 g.fitness = (40 + (((g.pres.a[A_STA] - 60)) * 0.5));
 Economy.init(g);
+Hill.setup(g);
 Approval.init(g);
 Week.routine(g);
 Week.record(g);
 let vp = ((g.vp != null) ? ((" " + g.vp.name()) + " is sworn in as vice president.") : "");
-g.log$4(NK_BIG, (g.pres.name().toUpperCase() + " IS SWORN IN AS PRESIDENT"), (((((((((((g.pres.name() + " took the oath of office at noon on ") + dateLong(0)) + ".") + vp) + " ") + PARTY[g.party]) + "s hold ") + g.myHouse()) + " House seats and ") + g.mySenate()) + " Senate seats."), 5);
+g.log$4(NK_BIG, (g.pres.name().toUpperCase() + " IS SWORN IN AS PRESIDENT"), (((((((((((g.pres.name() + " took the oath of office at noon on ") + dateLong(0)) + ".") + vp) + " ") + PARTIES[g.party]) + " hold ") + g.myHouse()) + " House seats and ") + g.mySenate()) + " Senate seats."), 5);
 g.log$4(NK_ECON, (((("The new president inherits unemployment of " + fmt1(g.econ.unemp)) + "% and inflation of ") + fmt1(g.econ.infl)) + "%"), null, 1.5);
 return g;
+}
+}
+class Bloc {
+constructor() {
+this.name = null;
+this.party = 0;
+this.chamber = 0;
+this.seats = 0;
+this.econ = 0;
+this.cult = 0;
+this.loyalty = 0;
+this.hawk = 0;
+this.rel = 50;
+}
+}
+class Member {
+constructor() {
+this.name = null;
+this.title = null;
+this.committee = null;
+this.party = 0;
+this.chamber = 0;
+this.bloc = 0;
+this.state = 0;
+this.role = 0;
+this.price = 0;
+this.rel = 50;
+this.econ = 0;
+this.cult = 0;
+this.face = null;
+this.lastDeal = -99;
+this.promised = false;
+}
+}
+class BillDef {
+constructor(id, name, desc, area, lean, econ, cult, cost, budget, support, gdp, unemp, infl, impact, base, fmt) {
+this.id = null;
+this.name = null;
+this.desc = null;
+this.impact = null;
+this.area = 0;
+this.lean = 0;
+this.econ = 0;
+this.cult = 0;
+this.cost = 0;
+this.support = 0;
+this.gdp = 0;
+this.unemp = 0;
+this.infl = 0;
+this.base = 0;
+this.budget = false;
+this.origRevenue = false;
+this.fmt = 0;
+{
+this.id = id;
+this.name = name;
+this.desc = desc;
+this.area = area;
+this.lean = lean;
+this.econ = econ;
+this.cult = cult;
+this.cost = cost;
+this.budget = budget;
+this.support = support;
+this.gdp = gdp;
+this.unemp = unemp;
+this.infl = infl;
+this.impact = impact;
+this.base = base;
+this.fmt = fmt;
+this.origRevenue = (((cost < 0) || id.includes("tax")) || $eq(id, "tariffs"));
+}
+}
+}
+class Bill {
+constructor() {
+this.defId = null;
+this.name = null;
+this.stage = 0;
+this.first = HOUSE;
+this.stageWeek = 0;
+this.introduced = -1;
+this.lawWeek = -1;
+this.payFor = 0;
+this.size = 1;
+this.scope = 0.5;
+this.strength = 1;
+this.recon = false;
+this.ours = true;
+this.vetoed = false;
+this.bottled = false;
+this.publicPush = false;
+this.held = false;
+this.houseYes = 0;
+this.houseNo = 0;
+this.senYes = 0;
+this.senNo = 0;
+this.note = "";
+this.deals = [];
+this.sweet = $arr(12, 0);
+}
+def() {
+return billDef(this.defId);
+}
+second() {
+return ((this.first === HOUSE) ? SENATE : HOUSE);
+}
+chamberNow() {
+return ((this.stage <= ST_FLOOR) ? this.first : this.second());
+}
+netCost() {
+let d = this.def();
+let c = ((d.cost * this.size) * ((0.7 + (0.6 * this.scope))));
+if (((c > 0) && (this.payFor !== 0))) { c *= 0.05; }
+return c;
+}
+econ() {
+let d = this.def();
+let dir = ((d.lean === REP) ? 1 : ((d.lean === DEM) ? -1 : (((d.econ >= 0) ? 0.5 : -0.5))));
+return clamp((((d.econ + ((dir * 0.15) * ((this.size - 1)))) + ((dir * 0.18) * ((this.scope - 0.5)))) + (((this.payFor === 1) ? -0.15 : ((this.payFor === 2) ? 0.15 : 0)))), -1, 1);
+}
+cult() {
+let d = this.def();
+let dir = ((d.lean === REP) ? 1 : ((d.lean === DEM) ? -1 : 0));
+return clamp((d.cult + ((dir * 0.18) * ((this.scope - 0.5)))), -1, 1);
+}
+support() {
+return (((this.def().support - (4 * ((this.scope - 0.5)))) - ((((this.payFor === 0) && (this.def().cost > 30)) ? 2 : 0))) + (((this.payFor === 1) ? 2 : 0)));
+}
+}
+class Congress {
+constructor() {
+this.blocs = [];
+this.members = [];
+this.bills = [];
+this.reconFy = -1;
+this.fy = 0;
+this.floorUsed = $arr(2, false);
+this.budgetSent = false;
+this.reqDefense = 0;
+this.reqNondefense = 0;
+this.reqTax = 0;
+this.reqMandatory = 0;
+this.approps = $arr(12, 0);
+this.crUntil = -1;
+this.xWeek = -1;
+this.shutdown = false;
+this.shutdownWeeks = 0;
+this.blame = 0;
+this.debtLimit = 0;
+this.xWarned = false;
+this.defaulted = false;
+this.crMinority = false;
+this.midDone = false;
+this.campaign = $arr(NS, 0);
+this.midMargin = 0;
+this.midSummary = null;
+this.overrides = 0;
+this.vetoes = 0;
+this.laws = 0;
+this.shutdowns = 0;
+this.shutdownTotal = 0;
+}
+}
+class Hill {
+static setup(g) {
+let c = new Congress();
+g.cong = c;
+let r = new Random((g.set.seed ^ 0x5eed));
+Hill.seats(g);
+let e = g.era;
+let dHouse = (g.houseD >= 218), dSen = ((g.senateD > 50) || ((g.senateD === 50) && (g.party === DEM)));
+Hill.leader(g, r, HOUSE, (dHouse ? DEM : REP), "Speaker of the House", (dHouse ? e.speakerD : e.speakerR));
+Hill.leader(g, r, HOUSE, (dHouse ? REP : DEM), (("House " + ((dHouse ? "Republican" : "Democratic"))) + " leader"), (dHouse ? e.houseLeaderR : e.houseLeaderD));
+Hill.leader(g, r, SENATE, (dSen ? DEM : REP), "Senate Majority Leader", (dSen ? e.leaderD : e.leaderR));
+Hill.leader(g, r, SENATE, (dSen ? REP : DEM), (("Senate " + ((dSen ? "Republican" : "Democratic"))) + " leader"), (dSen ? e.leaderR : e.leaderD));
+for (let ch = 0; (ch < 2); ch++) {
+let maj = ((ch === HOUSE) ? ((dHouse ? DEM : REP)) : ((dSen ? DEM : REP)));
+let names = ((ch === HOUSE) ? CHAIR_H : CHAIR_S);
+for (let k = 0; (k < names.length); k++) {
+let m = Hill.person(c, r, maj, ch);
+m.role = RO_CHAIR;
+m.committee = names[k];
+m.title = (("Chair, " + (((ch === HOUSE) ? "House " : "Senate "))) + names[k]);
+m.bloc = Hill.blocOf(c, ch, maj, ((r.nextDouble() < 0.7) ? 1 : (r.nextBoolean() ? 0 : 2)));
+Hill.ideo(c, m, r);
+c.members.add(m);
+}
+}
+let swing = [[HOUSE, g.party, 2], [HOUSE, g.party, 2], [HOUSE, Hill.other(g.party), 2], [HOUSE, Hill.other(g.party), 2], [HOUSE, g.party, 0], [SENATE, g.party, 2], [SENATE, g.party, 2], [SENATE, Hill.other(g.party), 2], [SENATE, Hill.other(g.party), 2], [SENATE, g.party, 0]];
+for (const sw of swing) {
+let m = Hill.person(c, r, sw[1], sw[0]);
+m.role = RO_SWING;
+m.bloc = Hill.blocOf(c, sw[0], sw[1], sw[2]);
+m.price = r.nextInt(4);
+m.state = Hill.swingState(r);
+for (let t = 0; ((t < 20) && Hill.stateTaken(c, m)); t++) { m.state = Hill.swingState(r); }
+m.title = (((((((((sw[0] === HOUSE) ? "Rep. " : "Sen. ")) + $split(m.name, " ")[1]) + " (") + PARTY_SHORT[sw[1]]) + "-") + STATES[m.state].ab) + ")");
+Hill.ideo(c, m, r);
+m.rel = (45 + (r.nextDouble() * 15));
+c.members.add(m);
+}
+for (const b of c.blocs) { b.rel = ((b.party === g.party) ? 58 : 38); }
+c.fy = Hill.fiscalYear(g);
+Budget.setup(g);
+}
+static other(p) {
+return ((p === REP) ? DEM : REP);
+}
+static meeting(g) {
+if ((g.cong == null)) { return; }
+let k = ((((g.pres != null) ? g.pres.a[A_EST] : 60)) / 70.0);
+for (const m of g.cong.members) {
+if ((m.role === RO_LEADER)) { m.rel = Math.min(100, (m.rel + ((((m.party === g.party) ? 1.6 : 0.9)) * k))); } else { if (((m.role === RO_CHAIR) || (m.role === RO_SWING))) { m.rel = Math.min(100, (m.rel + (0.4 * k))); } }
+}
+for (const b of g.cong.blocs) { b.rel = Math.min(100, (b.rel + ((((b.party === g.party) ? 0.7 : 0.35)) * k))); }
+}
+static drift(g) {
+let pull = (((g.approval - 45)) * 0.3);
+for (const b of g.cong.blocs) {
+let base = ((((b.party === g.party) ? 55 : 35)) + (pull * (((b.party === g.party) ? 1 : 0.5))));
+b.rel += (((base - b.rel)) * 0.02);
+}
+for (const m of g.cong.members) {
+let base = ((((m.party === g.party) ? 55 : 35)) + (pull * 0.5));
+m.rel += (((base - m.rel)) * 0.015);
+}
+}
+static swingState(r) {
+let sw = ["PA", "MI", "WI", "AZ", "NV", "GA", "NC", "NH", "ME", "VA", "MN", "OH", "IA", "TX", "FL", "CO", "NM"];
+return stateIdx(sw[r.nextInt(sw.length)]);
+}
+static person(c, r, party, chamber) {
+let m = new Member();
+let f = (r.nextDouble() < 0.33);
+let last = LASTS[r.nextInt(LASTS.length)];
+for (let t = 0; ((t < 30) && Hill.lastUsed(c, last)); t++) { last = LASTS[r.nextInt(LASTS.length)]; }
+m.name = ((((f ? FIRST_F[r.nextInt(FIRST_F.length)] : FIRST_M[r.nextInt(FIRST_M.length)])) + " ") + last);
+m.party = party;
+m.chamber = chamber;
+m.state = r.nextInt(NS);
+m.face = face(m.name, r, party);
+if ((m.face.look != null)) {
+m.face.look.female = f;
+if ((f && (m.face.look.style < 6))) { m.face.look.style = (6 + r.nextInt(4)); }
+if ((!f && (m.face.look.style >= 6))) { m.face.look.style = r.nextInt(5); }
+}
+return m;
+}
+static stateTaken(c, m) {
+for (const o of c.members) { if ((((o.role === RO_SWING) && (o.chamber === m.chamber)) && (o.state === m.state))) { return true; } }
+return false;
+}
+static lastUsed(c, last) {
+for (const m of c.members) { if (m.name.endsWith((" " + last))) { return true; } }
+return false;
+}
+static leader(g, r, chamber, party, title, name) {
+let m = new Member();
+m.name = name;
+m.party = party;
+m.chamber = chamber;
+m.role = RO_LEADER;
+m.title = title;
+m.face = face(name, r, party);
+m.bloc = Hill.blocOf(g.cong, chamber, party, 1);
+Hill.ideo(g.cong, m, r);
+m.rel = ((party === g.party) ? 62 : 35);
+g.cong.members.add(m);
+}
+static ideo(c, m, r) {
+let b = c.blocs[m.bloc];
+m.econ = clamp((b.econ + (r.nextGaussian() * 0.08)), -1, 1);
+m.cult = clamp((b.cult + (r.nextGaussian() * 0.08)), -1, 1);
+}
+static blocOf(c, chamber, party, k) {
+let n = 0;
+for (let i = 0; (i < c.blocs.length); i++) {
+let b = c.blocs[i];
+if (((b.chamber === chamber) && (b.party === party))) {
+if ((n === k)) { return i; }
+n++;
+}
+}
+return 0;
+}
+static seats(g) {
+let c = g.cong;
+let old = c.blocs;
+c.blocs = [];
+for (let t = 0; (t < Hill.TB_CH.length); t++) {
+let b = new Bloc();
+b.chamber = Hill.TB_CH[t];
+b.party = Hill.TB_PARTY[t];
+b.name = Hill.TB_NAME[t];
+let total = ((b.chamber === HOUSE) ? (((b.party === DEM) ? g.houseD : (435 - g.houseD))) : (((b.party === DEM) ? g.senateD : (100 - g.senateD))));
+b.seats = Math.round((total * Hill.TB_SHARE[t]));
+b.econ = Hill.TB_ECON[t];
+b.cult = Hill.TB_CULT[t];
+b.loyalty = Hill.TB_LOY[t];
+b.hawk = Hill.TB_HAWK[t];
+for (const o of old) { if (($eq(o.name, b.name) && (o.chamber === b.chamber))) { b.rel = o.rel; } }
+c.blocs.add(b);
+}
+for (let ch = 0; (ch < 2); ch++) { for (let p = DEM; (p <= REP); p++) {
+let total = ((ch === HOUSE) ? (((p === DEM) ? g.houseD : (435 - g.houseD))) : (((p === DEM) ? g.senateD : (100 - g.senateD)))), sum = 0;
+let big = null;
+for (const b of c.blocs) { if (((b.chamber === ch) && (b.party === p))) {
+sum += b.seats;
+if (((big == null) || (b.seats > big.seats))) { big = b; }
+} }
+if ((big != null)) { big.seats += (total - sum); }
+} }
+}
+static fiscalYear(g) {
+let d = dateOf(g.day());
+return ((d[1] >= 9) ? (d[0] + 1) : d[0]);
+}
+static majority(g, chamber, party) {
+if ((chamber === HOUSE)) { return ((party === DEM) ? (g.houseD >= 218) : ((435 - g.houseD) >= 218)); }
+let s = ((party === DEM) ? g.senateD : (100 - g.senateD));
+return ((s > 50) || ((s === 50) && (g.party === party)));
+}
+static leaderOf(g, chamber, majority) {
+for (const m of g.cong.members) { if ((((m.role === RO_LEADER) && (m.chamber === chamber)) && (Hill.majority(g, chamber, m.party) === majority))) { return m; } }
+return null;
+}
+static chairFor(g, b, chamber) {
+let k = committeeFor(b.def(), chamber);
+let names = ((chamber === HOUSE) ? CHAIR_H : CHAIR_S);
+for (const m of g.cong.members) { if ((((m.role === RO_CHAIR) && (m.chamber === chamber)) && $eq(m.committee, names[k]))) { return m; } }
+return null;
+}
+}
+class Legis {
+static need(g, b, chamber, override) {
+if ((chamber === HOUSE)) { return (override ? 290 : 218); }
+if (override) { return 67; }
+if ((b.recon || g.filibusterGone)) {
+let vpParty = g.party;
+return ((b.ours || (vpParty === Legis.partyOf(b))) ? 50 : 51);
+}
+return ((g.era.year < 1975) ? 67 : 60);
+}
+static partyOf(b) {
+return (b.ours ? -1 : b.def().lean);
+}
+static sponsorParty(g, b) {
+if (b.ours) { return g.party; }
+let l = b.def().lean;
+return ((l >= 0) ? l : g.party);
+}
+static blocLogit(g, b, bi, override) {
+let bl = g.cong.blocs[bi];
+let pol = g.era.polarization;
+let be = b.econ(), bc = b.cult();
+let spatial = ((2 * (((bl.econ * be) + ((0.8 * bl.cult) * bc)))) - (((be * be) + ((0.8 * bc) * bc))));
+let l = (0.3 + (2.2 * spatial));
+let sp = Legis.sponsorParty(g, b);
+let mine = (bl.party === g.party);
+let bip = (b.def().lean < 0);
+if (bip) { l += 0.2; }
+if ((bl.party === sp)) {
+let agree = clamp((0.5 + spatial), 0, 1);
+l += (bl.loyalty * (((b.ours && mine) ? (0.4 + (2.4 * agree)) : (0.5 + (1.3 * agree)))));
+} else { l -= ((0.9 * pol) * ((bip ? 0.7 : 1))); }
+if ((b.ours && !mine)) { l -= (0.35 + (((Midterms.season(g) || (g.week > 170)) ? 0.3 : 0))); }
+if ((b.ours || mine)) { l += (((bl.rel - 50)) / 35); }
+l += (mine ? (((g.approval - 45)) / 18) : (((g.approval - 50)) / 30));
+let cost = b.netCost();
+if ((cost > 0)) { l -= ((bl.hawk * cost) / 180); }
+let moderate = ((bl.name.includes("oderate") || bl.name.includes("Blue Dogs")) || bl.name.includes("Problem Solvers"));
+l += ((((b.support() - 55)) / 40) * ((moderate ? 1.2 : 0.4)));
+if (b.publicPush) { l += (moderate ? 0.25 : 0.1); }
+if ($eq(b.defId, "stock_ban")) { l -= 1.2; }
+if (override) { l += (mine ? (-1.6 * bl.loyalty) : 0.3); }
+if (((!b.ours && mine) && b.vetoed)) { l -= 0.5; }
+return ((1.6 * l) + (1.2 * b.sweet[bi]));
+}
+static count(g, b, chamber, override) {
+let yes = 0, var_ = 0;
+for (let i = 0; (i < g.cong.blocs.length); i++) {
+let bl = g.cong.blocs[i];
+if (((bl.chamber !== chamber) || (bl.seats <= 0))) { continue; }
+let p = logistic(Legis.blocLogit(g, b, i, override));
+yes += (bl.seats * p);
+var_ += (((bl.seats * p) * ((1 - p))) + Math.pow(((bl.seats * 0.06) * ((1 - Math.abs(((2 * p) - 1))))), 2));
+}
+return [yes, (Math.sqrt(var_) + (((chamber === HOUSE) ? 2 : 0.8)))];
+}
+static chance(g, b, chamber, override) {
+let c = Legis.count(g, b, chamber, override);
+return logistic(((1.702 * (((c[0] - Legis.need(g, b, chamber, override)) + 0.5))) / c[1]));
+}
+static chairOk(g, b, chamber) {
+let ch = Hill.chairFor(g, b, chamber);
+if ((ch == null)) { return 1; }
+let bi = ch.bloc;
+let l = (Legis.blocLogit(g, b, bi, false) + (((ch.rel - 50)) / 30));
+if ((ch.party === Legis.sponsorParty(g, b))) { l += 1.5; }
+if ((b.support() > 65)) { l += 0.8; }
+return logistic(l);
+}
+static reconOk(g, b) {
+return (((b.def().budget && (g.cong.reconFy !== Hill.fiscalYear(g))) && Hill.majority(g, HOUSE, g.party)) && Hill.majority(g, SENATE, g.party));
+}
+static draft(g, d) {
+let b = new Bill();
+b.defId = d.id;
+b.name = d.name;
+b.ours = true;
+b.first = (d.origRevenue ? HOUSE : HOUSE);
+b.payFor = (((d.cost > 60) && (g.party === DEM)) ? 1 : 0);
+return b;
+}
+static introduce(g, b) {
+b.stage = ST_COMMITTEE;
+b.stageWeek = g.week;
+b.introduced = g.week;
+if (b.recon) { g.cong.reconFy = Hill.fiscalYear(g); }
+if (!g.cong.bills.includes(b)) { g.cong.bills.add(b); }
+g.log$4(NK_INFO, (("The White House sends " + b.name) + " to Congress"), null, 1.0);
+}
+static stageWeeks(b) {
+switch (b.stage) {
+case ST_COMMITTEE:
+case ST_COMMITTEE2:
+return (b.recon ? 2 : 3);
+case ST_CONFERENCE:
+return 2;
+default:
+return 1;
+}
+}
+static week(g) {
+let c = g.cong;
+c.floorUsed[0] = false;
+c.floorUsed[1] = false;
+for (const b of $list(c.bills)) { Legis.step(g, b); }
+if (((g.week % 7) === 3)) { Legis.congressBill(g); }
+}
+static step(g, b) {
+if ((b.stage >= ST_DESK)) { return; }
+if (((g.week - b.stageWeek) < Legis.stageWeeks(b))) { return; }
+let r = g.rng;
+let ch = b.chamberNow();
+switch (b.stage) {
+case ST_COMMITTEE:
+case ST_COMMITTEE2:
+{
+let ok = Legis.chairOk(g, b, ch);
+if ((r.nextDouble() < ok)) {
+let chair = Hill.chairFor(g, b, ch);
+if ((((chair != null) && (chair.party !== Legis.sponsorParty(g, b))) && (b.size > 0.8))) {
+b.size = Math.max(0.6, (b.size - 0.15));
+b.note = "The committee trimmed it.";
+}
+b.stage++;
+b.stageWeek = g.week;
+b.bottled = false;
+g.log$4(NK_INFO, ((CHAMBER[ch] + " committee approves ") + b.name), null, 0.6);
+} else {
+if (!b.bottled) {
+let chair = Hill.chairFor(g, b, ch);
+g.log$4(NK_BAD, ((((((chair != null) ? (((chair.name + " (") + PARTY_SHORT[chair.party]) + ")") : "The committee chair")) + " bottles up ") + b.name) + " in committee"), null, 1.0);
+}
+b.bottled = true;
+b.stageWeek = g.week;
+if (((g.week - b.introduced) > 30)) { Legis.kill(g, b, "dies in committee"); }
+}
+break;
+}
+case ST_FLOOR:
+case ST_FLOOR2:
+{
+if (g.cong.floorUsed[ch]) { return; }
+if (Legis.hold(g, b, ch)) { return; }
+g.cong.floorUsed[ch] = true;
+if (Legis.vote(g, b, ch, false)) {
+b.stage++;
+b.stageWeek = g.week;
+} else { Legis.kill(g, b, (((((ch === SENATE) && !b.recon) && !g.filibusterGone) && (Legis.lastYes(b, ch) >= 50)) ? "is filibustered" : "fails")); }
+break;
+}
+case ST_CONFERENCE:
+{
+b.stage = ST_DESK;
+b.stageWeek = g.week;
+Legis.toDesk(g, b);
+break;
+}
+default:
+break;
+}
+}
+static hold(g, b, ch) {
+let lead = Hill.leaderOf(g, ch, true);
+let sp = Legis.sponsorParty(g, b);
+let waited = (g.week - b.stageWeek);
+let p = Legis.chance(g, b, ch, false);
+let friendly = ((lead == null) || (lead.party === sp));
+if (friendly) {
+if (((p >= 0.75) || (waited >= 12))) {
+b.held = false;
+return false;
+}
+for (let i = 0; (i < g.cong.blocs.length); i++) {
+let bl = g.cong.blocs[i];
+if (((bl.chamber === ch) && (bl.party === sp))) { b.sweet[i] += 0.05; }
+}
+} else {
+let maj = 0, seats = 0;
+for (let i = 0; (i < g.cong.blocs.length); i++) {
+let bl = g.cong.blocs[i];
+if (((bl.chamber === ch) && (bl.party === lead.party))) {
+maj += (bl.seats * logistic(Legis.blocLogit(g, b, i, false)));
+seats += bl.seats;
+}
+}
+if ((((maj / Math.max(1, seats)) >= 0.5) && (p >= 0.4))) {
+b.held = false;
+return false;
+}
+if ((waited >= 14)) {
+Legis.kill(g, b, (("never gets a vote: " + lead.name) + " won't bring it up"));
+return true;
+}
+}
+if (!b.held) { g.log$4(NK_INFO, ((friendly ? (((("Leaders put off the " + CHAMBER[ch]) + " vote on ") + b.name) + " while they hunt for votes") : ((lead.name + " refuses to schedule a vote on ") + b.name))), null, (b.ours ? 1.0 : 0.5)); }
+b.held = true;
+return true;
+}
+static lastYes(b, ch) {
+return ((ch === HOUSE) ? b.houseYes : b.senYes);
+}
+static vote(g, b, ch, override) {
+let c = Legis.count(g, b, ch, override);
+let total = ((ch === HOUSE) ? 435 : 100);
+let yes = Math.round(clamp((c[0] + (g.rng.nextGaussian() * c[1])), 0, total));
+let no = (total - yes);
+if ((ch === HOUSE)) {
+b.houseYes = yes;
+b.houseNo = no;
+} else {
+b.senYes = yes;
+b.senNo = no;
+}
+let pass = (yes >= Legis.need(g, b, ch, override));
+let what = (override ? "the veto override" : ((((ch === SENATE) && !b.recon) && !g.filibusterGone) ? ("cloture on " + b.name) : b.name));
+g.log$4((pass ? NK_GOOD : NK_BAD), ((((((CHAMBER[ch] + ((pass ? " passes " : " rejects "))) + what) + ", ") + yes) + "-") + no), null, (b.ours ? 1.6 : 0.9));
+return pass;
+}
+static kill(g, b, how) {
+b.stage = ST_DEAD;
+b.stageWeek = g.week;
+if ((b.recon && (g.cong.reconFy === Hill.fiscalYear(g)))) { g.cong.reconFy = -1; }
+g.log$4(NK_BAD, ((b.name + " ") + how), null, (b.ours ? 1.4 : 0.6));
+if (b.ours) {
+g.capital = Math.max(0, (g.capital - 5));
+g.issueAdj[b.def().area] -= 0.2;
+g.perf -= 0.3;
+}
+}
+static toDesk(g, b) {
+let d = b.def();
+let who = (b.ours ? "your" : (("the " + PARTIES[Legis.sponsorParty(g, b)]) + "'"));
+let body = ((((((((((((((("Congress has passed " + who) + " bill: ") + d.desc) + " House ") + b.houseYes) + "-") + b.houseNo) + ", Senate ") + b.senYes) + "-") + b.senNo) + ". About ") + Math.round(b.support())) + "% of the public supports it.") + (((b.netCost() > 0) ? ((" It adds about $" + Math.round(b.netCost())) + " billion a year to the deficit.") : ((b.netCost() < 0) ? ((" It cuts the deficit by about $" + Math.round(-b.netCost())) + " billion a year.") : ""))));
+let adv;
+let mine = ((b.ours || (d.lean === g.party)) || (d.lean < 0));
+if (mine) { adv = ["Legislative director: \"This is the win we fought for. Sign it in the Rose Garden.\"", "Chief of staff: \"Only if you want to throw away months of work. Vetoing your own priority would stun everyone.\"", "Counsel: \"It becomes law in ten days anyway, but you'd get none of the credit.\""]; } else { adv = ["Chief of staff: \"Signing it takes the issue off the table and looks bipartisan, but your base won't like it.\"", "Political director: \"Veto it. Your voters hate this bill, and they can't override you.\"", "Counsel: \"Let it become law without your signature: you neither own it nor fight it.\""]; }
+let dd = Decisions.add(g, D_SIGN, (b.name + " is on your desk"), body, ["Sign it", "Veto it", "Let it become law without signing"], adv);
+dd.bill = b;
+}
+static decide(g, b, k) {
+if ((k === 1)) {
+b.vetoed = true;
+g.cong.vetoes++;
+g.log$4(NK_BIG, ((("PRESIDENT " + g.pres.last.toUpperCase()) + " VETOES ") + b.name.toUpperCase()), null, 2.5);
+let mine = (b.ours || (b.def().lean === g.party));
+if (mine) {
+g.perf -= 1.5;
+g.capital = Math.max(0, (g.capital - 10));
+} else {
+g.issueAdj[b.def().area] += 0.1;
+for (const bl of g.cong.blocs) { if ((bl.party !== g.party)) { bl.rel = Math.max(0, (bl.rel - 4)); } }
+}
+let ch = (Legis.chance(g, b, HOUSE, true) * Legis.chance(g, b, SENATE, true));
+if (((ch > 0.05) || ((b.houseYes >= 280) && (b.senYes >= 64)))) {
+b.stage = ST_OVERRIDE;
+let h = Legis.vote(g, b, HOUSE, true), s = (h && Legis.vote(g, b, SENATE, true));
+if ((h && s)) {
+g.cong.overrides++;
+g.log$4(NK_BIG, ("CONGRESS OVERRIDES THE VETO OF " + b.name.toUpperCase()), null, 2.6);
+Legis.enact(g, b, false);
+g.capital = Math.max(0, (g.capital - 10));
+g.perf -= 1;
+} else {
+b.stage = ST_DEAD;
+g.log$4(NK_GOOD, (("The veto of " + b.name) + " stands"), null, 1.2);
+}
+} else { b.stage = ST_DEAD; }
+return;
+}
+Legis.enact(g, b, (k === 0));
+}
+static enact(g, b, signed) {
+let d = b.def();
+b.stage = ST_LAW;
+b.lawWeek = g.week;
+b.strength = ((b.size * ((0.7 + (0.6 * b.scope)))) * (((b.recon && (b.scope > 0.6)) ? 0.85 : 1)));
+g.cong.laws++;
+let e = g.econ;
+let pctGdp = (b.netCost() / ((e.nominalGdp * 10)));
+e.fiscal += pctGdp;
+e.polGdp += ((d.gdp * b.strength) * 0.3);
+e.polUnemp += ((d.unemp * b.strength) * 0.5);
+e.polInfl += ((d.infl * b.strength) * 0.6);
+let mine = ((b.ours || (d.lean === g.party)) || (d.lean < 0));
+if (signed) {
+let sup = (b.support() - 50);
+g.issueAdj[d.area] = clamp((g.issueAdj[d.area] + (((sup * 0.02) * Math.min(1.5, b.strength)) * ((mine ? 1 : 0.4)))), -1.5, 1.5);
+g.perf += (mine ? (0.6 + (sup * 0.02)) : 0.2);
+if (b.ours) { g.capital = Math.min(100, (g.capital + 6)); }
+if (!mine) { for (const bl of g.cong.blocs) { if ((bl.party === g.party)) { bl.rel = Math.max(0, (bl.rel - 3)); } } }
+g.log$4(NK_BIG, ((("PRESIDENT " + g.pres.last.toUpperCase()) + " SIGNS ") + b.name.toUpperCase()), (d.desc + (((b.recon && (b.scope > 0.6)) ? " The parliamentarian struck several provisions under the Byrd rule." : ""))), 3.0);
+snd$1(Sfx.CHEER);
+} else { g.log$4(NK_INFO, (b.name + " becomes law without the president's signature"), null, 1.4); }
+}
+static congressBill(g) {
+let r = g.rng;
+let oppHouse = !Hill.majority(g, HOUSE, g.party), oppSen = !Hill.majority(g, SENATE, g.party);
+let active = 0;
+for (const b of g.cong.bills) { if ((!b.ours && (b.stage < ST_DESK))) { active++; } }
+if ((active >= 2)) { return; }
+let sp = (oppHouse ? Hill.other(g.party) : g.party);
+let l = [];
+for (const d of BILLS) {
+if (((d.lean !== sp) && (d.lean >= 0))) { continue; }
+let used = false;
+for (const b of g.cong.bills) { if (($eq(b.defId, d.id) && (((b.stage !== ST_DEAD) || ((g.week - b.stageWeek) < 52))))) { used = true; } }
+if (!used) { l.add(d); }
+}
+if (((l.length === 0) || (((!oppHouse && !oppSen) && (r.nextDouble() < 0.6))))) { return; }
+let d = l[r.nextInt(l.length)];
+let b = new Bill();
+b.defId = d.id;
+b.name = d.name;
+b.ours = false;
+b.first = ((oppHouse || !oppSen) ? HOUSE : SENATE);
+b.stage = ST_COMMITTEE;
+b.stageWeek = g.week;
+b.introduced = g.week;
+g.cong.bills.add(b);
+g.log$4(NK_INFO, ((((((b.first === HOUSE) ? "House " : "Senate ")) + PARTIES[sp]) + " move ") + d.name), null, 0.7);
+}
+static deal(g, b, m, kind) {
+if ((g.capital < Legis.DEAL_COST[kind])) { return "You don't have enough political capital."; }
+if (((m != null) && (m.lastDeal === g.week))) { return (m.name + " has already heard from you this week."); }
+let r = g.rng;
+g.capital -= Legis.DEAL_COST[kind];
+if ((kind === Legis.DL_PUBLIC)) {
+b.publicPush = true;
+g.issueSal[b.def().area] = Math.min(2, (g.issueSal[b.def().area] + 0.1));
+return (("You make the case for " + b.name) + " to the country. Moderates feel the pressure.");
+}
+m.lastDeal = g.week;
+let boost;
+let msg;
+switch (kind) {
+case Legis.DL_PROJECT:
+boost = ((m.price === PRICE_PROJECT) ? 1.4 : 0.7);
+g.econ.fiscal += 0.01;
+msg = (("You promise " + m.name) + " a project back home.");
+if ((r.nextDouble() < 0.15)) { g.log$4(NK_BAD, ("\"Pork for votes\": reporters dig into the White House's deal with " + m.name), null, 1.0); }
+break;
+case Legis.DL_APPOINT:
+boost = ((m.price === PRICE_APPOINT) ? 1.5 : 0.8);
+msg = (("You give " + m.name) + " a say in an appointment.");
+break;
+case Legis.DL_ENDORSE:
+boost = ((m.party === g.party) ? (((m.price === PRICE_ENDORSE) ? 1.5 : 0.9)) : 0.2);
+msg = ((m.party === g.party) ? (("You promise to campaign for " + m.name) + ".") : (m.name + " is polite, but your endorsement won't help a member of the other party."));
+break;
+case Legis.DL_THREAT:
+boost = ((m.party === g.party) ? 0.8 : -0.3);
+m.rel = Math.max(0, (m.rel - 15));
+msg = ((m.party === g.party) ? (("You make it clear you'd back a primary challenger. " + m.name) + " is furious, but listening.") : (("The threat backfires: " + m.name) + " goes on TV to complain."));
+if ((r.nextDouble() < 0.3)) { g.log$4(NK_BAD, ((m.name + " says the White House threatened them over ") + b.name), null, 1.2); }
+break;
+default:
+boost = ((0.35 * ((g.pres.a[A_CHA] + g.pres.a[A_EST]))) / 140);
+m.rel = Math.min(100, (m.rel + 4));
+msg = (("You call " + m.name) + ".");
+break;
+}
+if (((m.role === RO_SWING) || (m.role === RO_CHAIR))) {
+b.sweet[m.bloc] += (boost * (((m.role === RO_CHAIR) ? 0.35 : 0.22)));
+b.deals.add(((Legis.DEAL[kind] + ": ") + m.name));
+if ((m.role === RO_CHAIR)) { m.rel = Math.min(100, (m.rel + (6 * boost))); }
+} else {
+b.sweet[m.bloc] += (boost * 0.3);
+m.rel = Math.min(100, (m.rel + (5 * boost)));
+b.deals.add(((Legis.DEAL[kind] + ": ") + m.name));
+}
+return msg;
+}
+static nukeChance(g) {
+if ((g.filibusterGone || !Hill.majority(g, SENATE, g.party))) { return 0; }
+let rel = 0, n = 0;
+for (const b of g.cong.blocs) { if (((b.chamber === SENATE) && (b.party === g.party))) {
+rel += (b.rel * b.seats);
+n += b.seats;
+} }
+rel /= Math.max(1, n);
+return clamp((((0.06 + (0.06 * ((g.mySenate() - 50)))) + (((rel - 55)) / 120)) + (((g.approval - 50)) / 100)), 0.02, 0.6);
+}
+static nuke(g) {
+if ((g.capital < 15)) { return "You need 15 political capital."; }
+g.capital -= 15;
+if ((g.rng.nextDouble() < Legis.nukeChance(g))) {
+g.filibusterGone = true;
+for (const b of g.cong.blocs) { if (((b.chamber === SENATE) && (b.party !== g.party))) { b.rel = Math.max(0, (b.rel - 15)); } }
+g.log$4(NK_BIG, "SENATE ENDS THE FILIBUSTER FOR LEGISLATION", "A simple majority can now pass bills. The minority vows to remember.", 4);
+return "The Senate changes its rules: bills now pass with a simple majority.";
+}
+for (const b of g.cong.blocs) { if ((((b.chamber === SENATE) && (b.party === g.party)) && b.name.includes("oderate"))) { b.rel = Math.max(0, (b.rel - 8)); } }
+g.perf -= 0.5;
+g.log$4(NK_BAD, (("Senate " + PARTIES[g.party]) + " lack the votes to end the filibuster"), "Several of your own senators say they won't change the rules.", 2.2);
+return "Not enough of your own senators would go along.";
+}
+static lean(p) {
+return ((p > 0.8) ? "Yes" : ((p > 0.6) ? "Leans yes" : ((p > 0.4) ? "Undecided" : ((p > 0.2) ? "Leans no" : "No"))));
+}
+}
+class Budget {
+static setup(g) {
+let c = g.cong;
+let subj = Budget.debtSubject(g);
+c.debtLimit = ((g.era.year === 2025) ? 36.1 : (Math.round((((subj + 0.9)) * 10)) / 10.0));
+c.xWeek = ((g.era.year === 2025) ? 28 : -1);
+c.approps.fill(4);
+}
+static debtSubject(g) {
+return (((g.econ.debt / 100) * g.econ.nominalGdp) * 1.25);
+}
+static weekHas(g, m, d) {
+return Economy.weekHas(g, m, d);
+}
+static week(g) {
+let c = g.cong;
+let d0 = dateOf(g.day());
+let fy = Hill.fiscalYear(g);
+if ((fy !== c.fy)) { c.fy = fy; }
+if (Budget.weekHas(g, 0, 2)) { c.budgetSent = false; }
+if (((Budget.weekHas(g, 1, 1) && (c.crUntil < 0)) && !c.shutdown)) { c.approps.fill(0); }
+let due = ((g.week < 20) ? Budget.weekHas(g, 3, 15) : Budget.weekHas(g, 1, 3));
+if ((due && !c.budgetSent)) {
+Decisions.add(g, D_BUDGET, "Your budget is due", ((((g.week < 20) ? "A new president's first budget goes to Congress in the spring." : "The law asks for the president's budget on the first Monday in February.")) + " Your budget director has a draft that follows your agenda. You can send it as is, or write your own in the Roosevelt Room (the budget tab)."), ["Send the draft", "I'll write it myself"], ["Budget director: \"It funds your priorities and keeps the deficit about where it is.\"", "Chief of staff: \"Your call. It goes to Congress when you hit send.\""]);
+}
+if (((((g.week < 20) ? Budget.weekHas(g, 4, 13) : Budget.weekHas(g, 2, 3))) && !c.budgetSent)) { Budget.autoRequest(g); }
+let divided = (!Hill.majority(g, HOUSE, g.party) || !Hill.majority(g, SENATE, g.party));
+let m = d0[1];
+if ((((m >= 4) && (m <= 8)) && !c.shutdown)) {
+for (let i = 0; (i < 12); i++) {
+if ((c.approps[i] >= 3)) { continue; }
+let p = (((divided ? 0.05 : 0.09)) * (((c.approps[i] === 2) ? 1.3 : 1)));
+if ((g.rng.nextDouble() < p)) {
+c.approps[i]++;
+if ((c.approps[i] === 3)) { g.log$4(NK_INFO, (("Congress passes the " + APPROPS[i]) + " spending bill; you sign it"), null, 0.3); }
+}
+}
+}
+if ((Budget.weekHas(g, 8, 26) && !c.shutdown)) { Budget.deadline(g, divided); }
+if ((((c.crUntil >= 0) && (g.week >= c.crUntil)) && !c.shutdown)) {
+c.crUntil = -1;
+if ((!divided || (g.rng.nextDouble() < 0.7))) {
+Budget.omnibus(g);
+} else { Budget.deadline(g, true); }
+}
+if (c.shutdown) { Budget.shutdownWeek(g); }
+Budget.debtLimit(g);
+}
+static unfinished(c) {
+let n = 0;
+for (const a of c.approps) { if ((a < 3)) { n++; } }
+return n;
+}
+static deadline(g, divided) {
+let c = g.cong;
+let left = Budget.unfinished(c);
+if ((left === 0)) {
+g.log$4(NK_GOOD, "All twelve spending bills are law before the deadline, the first time in decades", null, 1.6);
+g.perf += 0.5;
+return;
+}
+let minority = ((g.party === DEM) ? (100 - g.senateD) : g.senateD);
+if ((((!divided && (minority >= 41)) && !g.filibusterGone) && (g.rng.nextDouble() < ((0.12 + (0.2 * g.era.polarization)) + (Math.max(0, (48 - g.approval)) * 0.015))))) {
+let ml = Hill.leaderOf(g, SENATE, false);
+c.crMinority = true;
+Decisions.add(g, D_CR, "The Senate minority blocks the stopgap", (((((((left + " of the 12 spending bills aren't done, and a stopgap needs 60 votes in the Senate. ") + (((ml != null) ? ml.name : "The minority leader"))) + " says ") + PARTIES[Hill.other(g.party)]) + " won't supply them unless you extend ") + (((g.party === REP) ? "the health insurance subsidies that expire this year" : "the border and policing money they want"))) + "."), ["Give them what they want and sign the stopgap", "Demand a clean stopgap", "Refuse: let them own the shutdown"], ["Budget director: \"It's a few billion dollars. A shutdown costs more.\"", "Legislative director: \"A few of their moderates will break. Make them choose.\"", "Political director: \"Our voters want us to stand firm. It's a gamble with everyone else.\""]);
+return;
+}
+if (!divided) {
+c.crUntil = (g.week + 11);
+for (let i = 0; (i < 12); i++) { if ((c.approps[i] < 3)) { c.approps[i] = 4; } }
+g.log$4(NK_INFO, "Congress passes a stopgap to keep the government open until December", (left + " of 12 spending bills are unfinished."), 1.0);
+return;
+}
+let opp = Hill.leaderOf(g, HOUSE, !Hill.majority(g, HOUSE, g.party));
+let who = ((opp != null) ? opp.name : "The other party's leaders");
+Decisions.add(g, D_CR, "The government runs out of money on October 1", (((left + " of the 12 spending bills aren't done. ") + who) + " will pass a stopgap to December only with spending cuts attached."), ["Accept the cuts and sign the stopgap", "Demand a clean stopgap", "Refuse: no deal without full-year funding"], ["Budget director: \"The cuts are small. A shutdown costs more than they do.\"", "Legislative director: \"They don't want a shutdown either. Call their bluff, but have an exit.\"", "Political director: \"A shutdown fight rallies our side. It's a gamble with everyone else.\""]);
+}
+static crDecision(g, k) {
+let c = g.cong;
+let r = g.rng;
+let minority = c.crMinority;
+c.crMinority = false;
+if ((k === 0)) {
+c.crUntil = (g.week + 11);
+for (let i = 0; (i < 12); i++) { if ((c.approps[i] < 3)) { c.approps[i] = 4; } }
+g.econ.fiscal += (minority ? 0.04 : -0.05);
+for (const b of c.blocs) { if (((b.party === g.party) && ((((b.econ < -0.3) === ((g.party === DEM))) || (minority && (b.hawk > 0.6)))))) { b.rel = Math.max(0, (b.rel - 3)); } }
+g.log$4(NK_INFO, (minority ? "You give the minority its price and sign the stopgap; your hardliners fume" : "You sign a stopgap with spending cuts; your party's base grumbles"), null, 1.2);
+} else { if (((k === 1) && (r.nextDouble() < (((minority ? 0.45 : 0.55)) + (((g.approval - 45)) / 40))))) {
+c.crUntil = (g.week + 11);
+for (let i = 0; (i < 12); i++) { if ((c.approps[i] < 3)) { c.approps[i] = 4; } }
+g.perf += 0.6;
+g.capital = Math.min(100, (g.capital + 4));
+g.log$4(NK_GOOD, "The other side blinks: Congress passes a clean stopgap", null, 1.4);
+} else {
+Budget.startShutdown(g, (minority ? (((k === 2) ? 0.5 : 0.42)) : (((k === 2) ? 0.6 : 0.5))));
+} }
+}
+static startShutdown(g, blame) {
+let c = g.cong;
+c.shutdown = true;
+c.shutdowns++;
+c.shutdownWeeks = 0;
+c.blame = blame;
+g.log$4(NK_BIG, "THE GOVERNMENT SHUTS DOWN", "Hundreds of thousands of federal workers are furloughed; national parks close; air travel slows.", 3.5);
+}
+static shutdownWeek(g) {
+let c = g.cong;
+c.shutdownWeeks++;
+c.shutdownTotal++;
+g.econ.demandShock -= 0.08;
+g.perf -= (0.5 * c.blame);
+g.stress = Math.min(100, (g.stress + 4));
+if (((c.shutdownWeeks % 2) === 1)) { g.log$4(NK_BAD, (((("The shutdown enters week " + c.shutdownWeeks) + "; polls show ") + Math.round((c.blame * 100))) + "% blame the White House"), null, 1.6); }
+Decisions.add(g, D_SHUTDOWN, (("Week " + c.shutdownWeeks) + " of the shutdown"), (("Federal workers are missing paychecks and airports are backing up. About " + Math.round((c.blame * 100))) + "% of Americans blame you, the rest blame Congress."), ["Hold firm", "Cut a deal and reopen the government"], ["Political director: \"Every week they look worse. A few more days.\"", "Chief of staff: \"End it. Nobody wins a long shutdown.\""]);
+}
+static shutdownDecision(g, k) {
+let c = g.cong;
+if ((k === 1)) {
+Budget.endShutdown(g, false);
+return;
+}
+let cave = ((0.12 + (c.shutdownWeeks * 0.06)) + (((0.5 - c.blame)) * 0.6));
+if ((g.rng.nextDouble() < cave)) { Budget.endShutdown(g, true); } else { c.blame = clamp((c.blame + (((g.approval < 45) ? 0.03 : -0.02))), 0.2, 0.8); }
+}
+static endShutdown(g, won) {
+let c = g.cong;
+c.shutdown = false;
+c.crUntil = (g.week + 10);
+for (let i = 0; (i < 12); i++) { if ((c.approps[i] < 3)) { c.approps[i] = 4; } }
+if (won) {
+g.perf += 1.2;
+g.capital = Math.min(100, (g.capital + 8));
+g.log$4(NK_BIG, (("SHUTDOWN ENDS ON THE PRESIDENT'S TERMS AFTER " + c.shutdownWeeks) + " WEEKS"), null, 3.0);
+} else {
+g.capital = Math.max(0, (g.capital - 8));
+g.econ.fiscal -= 0.05;
+g.log$4(NK_BIG, (("THE SHUTDOWN ENDS AFTER " + c.shutdownWeeks) + " WEEKS WITH A DEAL"), "The White House accepted spending cuts to reopen the government.", 2.6);
+}
+}
+static omnibus(g) {
+let c = g.cong;
+for (let i = 0; (i < 12); i++) { if (((c.approps[i] >= 4) || (c.approps[i] < 3))) { c.approps[i] = 3; } }
+let unified = (Hill.majority(g, HOUSE, g.party) && Hill.majority(g, SENATE, g.party));
+let share = (unified ? 0.5 : 0.2);
+if (c.budgetSent) { g.econ.fiscal += (share * (((c.reqDefense * 0.03) + (c.reqNondefense * 0.033)))); }
+g.log$4(NK_INFO, "Congress passes a year-long spending package and you sign it", null, 1.0);
+}
+static autoRequest(g) {
+let c = g.cong;
+c.reqDefense = ((g.party === REP) ? 4 : 1);
+c.reqNondefense = ((g.party === DEM) ? 4 : -6);
+c.reqTax = ((g.party === DEM) ? 0.3 : -0.3);
+c.reqMandatory = 0;
+Budget.send(g);
+}
+static send(g) {
+let c = g.cong;
+c.budgetSent = true;
+let change = Budget.deficitChange(c);
+g.log$4(NK_INFO, "The White House sends its budget to Congress", (((((("It would " + (((change > 0.05) ? (("add about " + fmt1(change)) + "% of GDP to the deficit") : ((change < -0.05) ? (("cut the deficit by about " + fmt1(-change)) + "% of GDP") : "leave the deficit about where it is")))) + ". Defense ") + signed1(c.reqDefense)) + "%, other agencies ") + signed1(c.reqNondefense)) + "%."), 1.2);
+for (const b of c.blocs) {
+if (((b.hawk > 0.6) && (change > 0.3))) { b.rel = Math.max(0, (b.rel - 3)); }
+if (((b.hawk > 0.6) && (change < -0.3))) { b.rel = Math.min(100, (b.rel + 2)); }
+}
+}
+static deficitChange(c) {
+return ((((c.reqDefense * 0.03) + (c.reqNondefense * 0.033)) - c.reqTax) + c.reqMandatory);
+}
+static projection(g) {
+let e = g.econ;
+let def = $arr(11, 0), debt = $arr(11, 0);
+let d = e.debt, rate = ((e.interest / Math.max(1, e.debt)) * 100);
+let primary = ((e.deficit - e.interest) + Budget.deficitChange(g.cong));
+let growth = ((((e.potential + e.polGdp) + 2.2)) / 100);
+for (let y = 0; (y <= 10); y++) {
+rate += (((e.tenYr - rate)) * 0.25);
+let interest = ((d * rate) / 100);
+let dd = ((primary + (0.08 * y)) + interest);
+def[y] = dd;
+debt[y] = d;
+d = ((d + dd) - (d * growth));
+}
+return [def, debt];
+}
+static debtLimit(g) {
+let c = g.cong;
+let subj = Budget.debtSubject(g);
+if (((c.xWeek < 0) && (subj >= c.debtLimit))) {
+c.xWeek = (g.week + 22);
+g.log$4(NK_ECON, "Treasury hits the debt limit and starts \"extraordinary measures\"", (("The Treasury secretary says the money runs out around " + dateStr((c.xWeek * 7))) + "."), 1.6);
+}
+if ((c.xWeek < 0)) { return; }
+let left = (c.xWeek - g.week);
+if (((left === 8) || (left === 3))) {
+let unified = (Hill.majority(g, HOUSE, g.party) && Hill.majority(g, SENATE, g.party));
+Decisions.add(g, D_DEBT, (("The debt limit: " + left) + " weeks to go"), ((((("Unless Congress raises the $" + fmt1(c.debtLimit)) + " trillion limit by ") + dateStr((c.xWeek * 7))) + ", the United States can't pay all its bills.") + ((unified ? " Your party controls Congress, but a handful of fiscal hawks want something in return." : " The other side wants spending cuts in exchange."))), ["Ask for a clean increase", "Trade spending cuts for an increase", "Go to the brink: no negotiating over the full faith and credit"], ["Treasury secretary: \"Markets are calm now. They won't be in a month.\"", "Budget director: \"Cuts we can live with, and it's over.\"", "Political director: \"They'll fold before they take the blame for a default. Probably.\""]);
+}
+if ((left === 1)) {
+Decisions.add(g, D_DEBT, "The Treasury runs out of room next week", "Talks have failed. Unless the limit goes up within days, the United States will miss payments to bondholders, retirees and soldiers. The other side's terms are still on the table.", ["Take their deal", "Invoke the 14th Amendment and keep paying", "Refuse: let it happen"], ["Treasury secretary: \"Take it. A default would be a catastrophe for decades.\"", "Counsel: \"The Constitution says the public debt shall not be questioned. The courts may agree. Markets won't wait to find out.\"", "Chief of staff: \"Nobody who has sat in that chair has ever let this happen.\""]).a = 1;
+}
+if (((left <= 0) && !c.defaulted)) {
+c.defaulted = true;
+g.econ.finShock -= 4.5;
+g.perf -= 6;
+g.log$4(NK_BIG, "THE UNITED STATES MISSES PAYMENTS AS THE DEBT LIMIT BINDS", "Stocks plunge and Treasury yields spike. Congress rushes to raise the limit.", 5);
+Budget.raise(g, 1.0);
+}
+}
+static debtDecision(g, k, lastChance) {
+let c = g.cong;
+let r = g.rng;
+let unified = (Hill.majority(g, HOUSE, g.party) && Hill.majority(g, SENATE, g.party));
+if ((c.xWeek < 0)) { return; }
+if (lastChance) {
+if ((k === 0)) {
+Budget.raise(g, 1.0);
+g.econ.fiscal -= 0.2;
+g.capital = Math.max(0, (g.capital - 12));
+g.perf -= 0.8;
+for (const b of c.blocs) { if ((b.party === g.party)) { b.rel = Math.max(0, (b.rel - 4)); } }
+g.log$4(NK_BIG, "A LAST-MINUTE DEAL RAISES THE DEBT LIMIT", "The White House gave up more than it wanted to.", 2.6);
+} else { if ((k === 1)) {
+Budget.raise(g, 1.5);
+g.econ.finShock -= 1.6;
+g.perf -= 1.5;
+g.scandal += 4;
+g.log$4(NK_BIG, "PRESIDENT INVOKES THE 14TH AMENDMENT TO KEEP PAYING THE NATION'S BILLS", "Treasury keeps borrowing past the limit. Lawsuits are filed within hours; bond markets lurch.", 3.6);
+} }
+return;
+}
+if ((k === 1)) {
+Budget.raise(g, 1.5);
+g.econ.fiscal -= 0.15;
+g.capital = Math.max(0, (g.capital - 5));
+g.log$4(NK_INFO, "A deal: spending cuts for a higher debt limit", null, 1.6);
+return;
+}
+let p = ((k === 0) ? ((unified ? 0.85 : 0.35)) : ((unified ? 0.7 : 0.45)));
+if ((r.nextDouble() < p)) {
+Budget.raise(g, 2.0);
+if ((k === 2)) {
+g.perf += 1;
+g.capital = Math.min(100, (g.capital + 6));
+}
+g.log$4(NK_GOOD, ("Congress raises the debt limit" + (((k === 0) ? " with no strings attached" : " after a tense standoff"))), null, 1.8);
+} else {
+g.econ.finShock -= ((k === 2) ? 1.2 : 0.6);
+g.log$4(NK_BAD, "Debt-limit talks collapse; markets slide", null, 1.8);
+}
+}
+static raise(g, years) {
+let c = g.cong;
+let perYear = Math.max(0.8, (((g.econ.deficit / 100) * g.econ.nominalGdp) * 1.25));
+c.debtLimit = (Math.round((((Budget.debtSubject(g) + (years * perYear))) * 10)) / 10.0);
+c.xWeek = -1;
+c.defaulted = false;
+}
+}
+class Midterms {
+static electionDay(g) {
+let y = (g.era.year + 1);
+for (let d = 2; (d <= 8); d++) {
+let day = dayOfDate(y, 10, d);
+if ((dowOf(day) === 1)) { return day; }
+}
+return dayOfDate(y, 10, 3);
+}
+static season(g) {
+let ed = Midterms.electionDay(g);
+return ((!g.cong.midDone && (g.day() >= (ed - 100))) && (g.day() <= ed));
+}
+static seatsUp(g) {
+if ((g.era.midSeats != null)) { return g.era.midSeats; }
+return "";
+}
+static nationalMargin(g, noise) {
+let e = g.econ;
+let camp = 0;
+for (const v of g.cong.campaign) { camp += v; }
+let mP = (((((((0.5 * ((g.approval - 50))) - 2.5) + (0.4 * ((e.gdp - 2)))) - (0.3 * ((e.unemp - 4.5)))) + Math.min(1.5, (g.funds / 40))) + Math.min(1.0, (camp * 0.05))) + noise);
+return mP;
+}
+static week(g) {
+if (g.cong.midDone) { return; }
+let ed = Midterms.electionDay(g);
+if ((((g.day() + 7) > ed) && (g.day() <= ed))) { Midterms.run(g); } else { if ((((g.day() + 7) > (ed - 63)) && (g.day() <= (ed - 63)))) { g.log$4(NK_INFO, "Campaign season: the midterms are nine weeks away", "You can now schedule campaign stops for your party's candidates from your calendar.", 1.2); } }
+}
+static run(g) {
+let c = g.cong;
+let r = g.rng;
+c.midDone = true;
+let mP = Midterms.nationalMargin(g, (r.nextGaussian() * 1.8));
+c.midMargin = mP;
+let natD = ((g.party === DEM) ? mP : -mP);
+let hB = g.myHouse(), sB = g.mySenate();
+let houseBefore = Hill.majority(g, HOUSE, g.party), senBefore = Hill.majority(g, SENATE, g.party);
+g.houseD = clampi(Math.round(((222 + (3.8 * natD)) + (r.nextGaussian() * 5))), 120, 330);
+let dUp = 0, dWon = 0;
+let flips = new StringBuilder();
+let up = Midterms.seatsUp(g);
+if (!(up.length === 0)) { for (const tok of $split(up, " ")) {
+let p = $split(tok, ":");
+let s = stateIdx(p[0]);
+if ((s < 0)) { continue; }
+let dHeld = $eq(p[1], "D");
+if (dHeld) { dUp++; }
+let m = ((((Elect.lean[s] + natD) + ((dHeld ? 3 : -3))) + ((c.campaign[s] * 1.2) * (((g.party === DEM) ? 1 : -1)))) + (r.nextGaussian() * 3.5));
+if ((m > 0)) { dWon++; }
+if ((dHeld !== (m > 0))) { flips.append(((flips.length > 0) ? ", " : "")).append(STATES[s].name).append(((m > 0) ? " (D gain)" : " (R gain)")); }
+} }
+g.senateD = clampi(((g.senateD - dUp) + dWon), 0, 100);
+Hill.seats(g);
+let houseAfter = Hill.majority(g, HOUSE, g.party), senAfter = Hill.majority(g, SENATE, g.party);
+Leaders.reshuffle(g, (houseBefore !== houseAfter), (senBefore !== senAfter));
+let head = ((((mP >= 0) ? "Your party gains" : "Your party loses")) + " in the midterms");
+let body = ((((((((((((((("The national House vote went " + (((g.party === DEM) ? margin(natD) : margin(natD)))) + ". ") + PARTIES[g.party]) + " now hold ") + g.myHouse()) + " House seats (") + Midterms.signedInt((g.myHouse() - hB))) + ") and ") + g.mySenate()) + " Senate seats (") + Midterms.signedInt((g.mySenate() - sB))) + ").") + (((flips.length > 0) ? ((" Senate seats that changed hands: " + flips) + ".") : ""))) + (((houseBefore && !houseAfter) ? " You have lost the House." : ((!houseBefore && houseAfter) ? " You have won back the House." : "")))) + (((senBefore && !senAfter) ? " You have lost the Senate." : ((!senBefore && senAfter) ? " You have won the Senate." : ""))));
+c.midSummary = body;
+g.log$4(NK_BIG, head.toUpperCase(), body, 4.5);
+Decisions.info(g, "The Midterm Elections", ((body + "\n\n") + (((houseAfter && senAfter) ? "You keep control of Congress for the second half of your term." : ((!houseAfter && !senAfter) ? "Divided government: the other party controls Congress. Expect investigations and hard bargaining." : "A split Congress: one chamber is yours, the other isn't.")))));
+if ((mP < -3)) { g.perf -= 1; }
+c.campaign.fill(0);
+g.funds *= 0.3;
+}
+static signedInt(v) {
+return ((((v >= 0) ? "+" : "")) + v);
+}
+}
+class Leaders {
+static reshuffle(g, house, senate) {
+let c = g.cong;
+let r = new Random((g.set.seed ^ g.week));
+let e = g.era;
+if ((house || senate)) {
+for (let i = (c.members.length - 1); (i >= 0); i--) {
+let m = c.members[i];
+if (((((m.role === RO_LEADER) || (m.role === RO_CHAIR))) && ((((m.chamber === HOUSE) && house) || ((m.chamber === SENATE) && senate))))) { c.members.splice(i, 1)[0]; }
+}
+}
+let dHouse = (g.houseD >= 218), dSen = ((g.senateD > 50) || ((g.senateD === 50) && (g.party === DEM)));
+if (house) {
+Hill.leader(g, r, HOUSE, (dHouse ? DEM : REP), "Speaker of the House", (dHouse ? e.speakerD : e.speakerR));
+Hill.leader(g, r, HOUSE, (dHouse ? REP : DEM), (("House " + ((dHouse ? "Republican" : "Democratic"))) + " leader"), (dHouse ? e.houseLeaderR : e.houseLeaderD));
+Leaders.chairs(g, r, HOUSE, (dHouse ? DEM : REP));
+}
+if (senate) {
+Hill.leader(g, r, SENATE, (dSen ? DEM : REP), "Senate Majority Leader", (dSen ? e.leaderD : e.leaderR));
+Hill.leader(g, r, SENATE, (dSen ? REP : DEM), (("Senate " + ((dSen ? "Republican" : "Democratic"))) + " leader"), (dSen ? e.leaderR : e.leaderD));
+Leaders.chairs(g, r, SENATE, (dSen ? DEM : REP));
+}
+for (const m of c.members) { if ((m.bloc >= c.blocs.length)) { m.bloc = 0; } }
+}
+static chairs(g, r, ch, maj) {
+let names = ((ch === HOUSE) ? CHAIR_H : CHAIR_S);
+for (let k = 0; (k < names.length); k++) {
+let m = Hill.person(g.cong, r, maj, ch);
+m.role = RO_CHAIR;
+m.committee = names[k];
+m.title = (("Chair, " + (((ch === HOUSE) ? "House " : "Senate "))) + names[k]);
+m.bloc = Hill.blocOf(g.cong, ch, maj, ((r.nextDouble() < 0.7) ? 1 : (r.nextBoolean() ? 0 : 2)));
+Hill.ideo(g.cong, m, r);
+m.rel = ((maj === g.party) ? 55 : 35);
+g.cong.members.add(m);
+}
+}
+}
+class Decision {
+constructor() {
+this.kind = 0;
+this.a = 0;
+this.b = 0;
+this.title = null;
+this.body = null;
+this.opts = null;
+this.advice = null;
+this.bill = null;
+}
+}
+class Decisions {
+static add(g, kind, title, body, opts, advice) {
+let d = new Decision();
+d.kind = kind;
+d.title = title;
+d.body = body;
+d.opts = opts;
+d.advice = advice;
+g.inbox.add(d);
+return d;
+}
+static info(g, title, body) {
+Decisions.add(g, D_INFO, title, body, ["OK"], null);
+}
+static show(u, g) {
+if ((((g.inbox.length === 0) || (u.modal != null)) || (u.popup != null))) { return; }
+let d = g.inbox.splice(0, 1)[0];
+let acts = $arr(d.opts.length, null);
+for (let i = 0; (i < d.opts.length); i++) {
+let k = i;
+acts[i] = () => {
+Decisions.apply$(g, d, k);
+g.dirty = true;
+};
+}
+let m = new Modal();
+m.title = d.title;
+m.body = d.body;
+m.buttons = d.opts;
+m.actions = acts;
+m.descs = d.advice;
+m.stacked = ((d.opts.length > 2) || (d.advice != null));
+m.col = ((d.kind === D_INFO) ? C_ACCENT : C_GOLD);
+if ((d.bill != null)) { m.w = 720; }
+u.modal = m;
+snd$1(Sfx.OPEN);
+}
+static auto(g, d) {
+switch (d.kind) {
+case D_SIGN:
+{
+let b = d.bill.def();
+let mine = ((d.bill.ours || (b.lean === g.party)) || (b.lean < 0));
+if (mine) { return 0; }
+return ((d.bill.support() >= 60) ? 0 : 1);
+}
+case D_MUSTPASS:
+return 0;
+case D_CR:
+return ((g.rng.nextDouble() < 0.6) ? 0 : 1);
+case D_SHUTDOWN:
+return (((g.cong.shutdownWeeks >= 2) || (g.cong.blame > 0.5)) ? 1 : 0);
+case D_DEBT:
+return 0;
+default:
+return 0;
+}
+}
+static autoAll(g) {
+let guard = 0;
+while ((!(g.inbox.length === 0) && (guard++ < 20))) {
+let d = g.inbox.splice(0, 1)[0];
+Decisions.apply$(g, d, Decisions.auto(g, d));
+}
+}
+static autoWhip(g) {
+let made = 0;
+for (const b of g.cong.bills) {
+if ((((!b.ours || (b.stage < ST_COMMITTEE)) || (b.stage > ST_FLOOR2)) || (made >= 2))) { continue; }
+let ch = b.chamberNow();
+if ((Legis.chance(g, b, ch, false) >= 0.6)) { continue; }
+for (const m of g.cong.members) {
+if (((made >= 2) || (g.capital < 12))) { break; }
+if ((((m.role !== RO_SWING) || (m.chamber !== ch)) || (m.lastDeal === g.week))) { continue; }
+let kind = ((m.price === PRICE_PROJECT) ? Legis.DL_PROJECT : ((m.price === PRICE_APPOINT) ? Legis.DL_APPOINT : (((m.price === PRICE_ENDORSE) && (m.party === g.party)) ? Legis.DL_ENDORSE : Legis.DL_CALL)));
+Legis.deal(g, b, m, kind);
+made++;
+}
+if (((!b.publicPush && (g.capital > 20)) && (b.support() > 55))) { Legis.deal(g, b, null, Legis.DL_PUBLIC); }
+}
+}
+static autoAgenda(g) {
+let active = 0;
+for (const b of g.cong.bills) { if ((((b.ours && (b.stage > ST_DRAFT)) && (b.stage < ST_LAW)) && (b.stage !== ST_DEAD))) { active++; } }
+if ((active >= 2)) { return; }
+for (const d of HillUI.agenda(g)) {
+if (((d.lean >= 0) && (d.lean !== g.party))) { continue; }
+if (HillUI.inPlay(g, d)) { continue; }
+let tried = false;
+for (const b of g.cong.bills) { if ((b.ours && $eq(b.defId, d.id))) { tried = true; } }
+if (tried) { continue; }
+let b = Legis.draft(g, d);
+b.recon = (d.budget && Legis.reconOk(g, b));
+if (((Legis.chance(g, b, HOUSE, false) * Legis.chance(g, b, SENATE, false)) < 0.05)) {
+b.size = 0.6;
+b.scope = 0.2;
+}
+if (((Legis.chance(g, b, HOUSE, false) * Legis.chance(g, b, SENATE, false)) < 0.03)) { continue; }
+Legis.introduce(g, b);
+return;
+}
+}
+static apply$(g, d, k) {
+switch (d.kind) {
+case D_SIGN:
+Legis.decide(g, d.bill, k);
+break;
+case D_MUSTPASS:
+Legis.decide(g, d.bill, ((k === 0) ? 0 : 1));
+break;
+case D_CR:
+Budget.crDecision(g, k);
+break;
+case D_SHUTDOWN:
+Budget.shutdownDecision(g, k);
+break;
+case D_DEBT:
+Budget.debtDecision(g, k, (d.a === 1));
+break;
+case D_BUDGET:
+if ((k === 0)) { Budget.autoRequest(g); }
+break;
+default:
+break;
+}
 }
 }
 class Hit {
@@ -2520,16 +3784,16 @@ g.fill(new Ellipse2D.Double(((cx + (sgn * ((hw + 1)))) - 1.5), (cy + 19.5), 2, 2
 }
 }
 let jawW = (hw * ((0.52 + (0.34 * L.jaw)))), chinW = (9 + (11 * L.jaw));
-let face = new Path2D.Double();
-face.moveTo((cx - hw), (cy - 4));
-face.curveTo((cx - hw), (cy - (hh * 1.36)), (cx + hw), (cy - (hh * 1.36)), (cx + hw), (cy - 4));
-face.curveTo((cx + (hw * 1.01)), (cy + (hh * 0.42)), ((cx + jawW) + 4), (cy + (hh * 0.84)), (cx + chinW), (cy + (hh * 0.98)));
-face.curveTo((cx + (chinW * 0.45)), (cy + (hh * 1.05)), (cx - (chinW * 0.45)), (cy + (hh * 1.05)), (cx - chinW), (cy + (hh * 0.98)));
-face.curveTo(((cx - jawW) - 4), (cy + (hh * 0.84)), (cx - (hw * 1.01)), (cy + (hh * 0.42)), (cx - hw), (cy - 4));
-face.closePath();
+let face_ = new Path2D.Double();
+face_.moveTo((cx - hw), (cy - 4));
+face_.curveTo((cx - hw), (cy - (hh * 1.36)), (cx + hw), (cy - (hh * 1.36)), (cx + hw), (cy - 4));
+face_.curveTo((cx + (hw * 1.01)), (cy + (hh * 0.42)), ((cx + jawW) + 4), (cy + (hh * 0.84)), (cx + chinW), (cy + (hh * 0.98)));
+face_.curveTo((cx + (chinW * 0.45)), (cy + (hh * 1.05)), (cx - (chinW * 0.45)), (cy + (hh * 1.05)), (cx - chinW), (cy + (hh * 0.98)));
+face_.curveTo(((cx - jawW) - 4), (cy + (hh * 0.84)), (cx - (hw * 1.01)), (cy + (hh * 0.42)), (cx - hw), (cy - 4));
+face_.closePath();
 g.setPaint(new RadialGradientPaint(new Point2D.Double((cx - (hw * 0.25)), (cy - (hh * 0.25))), ((hw * 1.9)), [0, 0.62, 1], [shade(skin, 1.07), skin, shade(skin, 0.80)]));
-g.fill(face);
-let faceClip = face;
+g.fill(face_);
+let faceClip = face_;
 let prevClip = g.getClip();
 g.clip(faceClip);
 let blush = mix(skin, rgb(0xd0584e), 0.45);
@@ -2546,7 +3810,7 @@ g.fill(new Ellipse2D.Double(((cx - jawW) - 6), (cy + 18), (((jawW + 6)) * 2), hh
 g.setClip(prevClip);
 g.setColor(shade(skin, 0.66));
 g.setStroke(new BasicStroke(1.4));
-g.draw(face);
+g.draw(face_);
 let age = L.age;
 if ((age > 0.5)) {
 let a = clamp((((age - 0.5)) * 1.3), 0, 0.55);
@@ -3679,6 +4943,7 @@ SaveGame.save(u, SaveGame.AUTO);
 }
 static update(u, dt) {
 Oval.tick += (dt * 60);
+if ((u.game != null)) { Decisions.show(u, u.game); }
 }
 static key(u, e) {
 let k = e.getKeyCode();
@@ -3689,6 +4954,10 @@ if ((k === 80)) { u.go(SC_PAPER); }
 static endWeek(u) {
 let g = u.game;
 if ((((g == null) || g.over) || (u.modal != null))) { return; }
+if (!(g.inbox.length === 0)) {
+Decisions.show(u, g);
+return;
+}
 Week.resolve(g);
 snd$1(Sfx.TURN);
 SaveGame.save(u, SaveGame.AUTO);
@@ -3797,6 +5066,7 @@ text(g, lab, (lx + 14), (ly + 20), F_SB, C_GOLD);
 }
 Oval.topBar(u, g, game);
 Oval.weekCard(u, g, game);
+Oval.hillCard(u, g, game);
 Oval.ticker(u, g, game);
 }
 static weekCard(u, g, game) {
@@ -3820,6 +5090,33 @@ bar(g, (x + 14), (y + 74), (w - 80), 8, (ps / 100), ((ps >= 50) ? C_GOOD : ((ps 
 textR(g, String(Math.round(ps)), ((x + w) - 14), (y + 83), F_SB, Color.white);
 text(g, (("Sleep about " + fmt1(Week.sleepOf(game))) + " hours a night"), (x + 14), (y + 104), F_XS, C_DIM);
 u.button$8(g, (x + 14), (y + 114), (w - 28), 26, "Plan the week", B_NORM, () => (Rooms.open(u, R_DESK)));
+}
+static hillCard(u, g, game) {
+if ((game.cong == null)) { return; }
+let c = game.cong;
+let w = 300, h = 150, x = ((DW - 24) - w), y = 640;
+g.setColor(new Color(8, 13, 26, 220));
+g.fill(new RoundRectangle2D.Double(x, y, w, h, 12, 12));
+g.setColor(new Color(242, 193, 78, 70));
+g.draw(new RoundRectangle2D.Double(x, y, w, h, 12, 12));
+label(g, "ON THE HILL", (x + 14), (y + 22), C_GOLD);
+let yy = (y + 44);
+let n = 0;
+for (let i = (c.bills.length - 1); ((i >= 0) && (n < 3)); i--) {
+let b = c.bills[i];
+if (((!b.ours || (b.stage < ST_COMMITTEE)) || (b.stage > ST_DESK))) { continue; }
+textFit(g, b.name, (x + 14), yy, 160, F_XS, Color.white);
+textR(g, (b.held ? "votes short" : STAGE[b.stage]), ((x + w) - 14), yy, F_XS, ((b.held || b.bottled) ? C_AMBER : C_ACCENT));
+yy += 18;
+n++;
+}
+if ((n === 0)) {
+text(g, "None of your bills is moving.", (x + 14), yy, F_XS, C_DIM);
+yy += 18;
+}
+let status = (c.shutdown ? "The government is shut down" : ((c.xWeek >= 0) ? (("Debt limit: " + Math.max(0, (c.xWeek - game.week))) + " weeks of room") : ((c.crUntil >= 0) ? ("Funded by a stopgap until " + dateStr((c.crUntil * 7))) : "Government funded")));
+text(g, status, (x + 14), Math.max(yy, (y + 100)), F_XS, ((c.shutdown || (c.xWeek >= 0)) ? C_AMBER : C_DIM));
+u.button$8(g, (x + 14), (y + 114), (w - 28), 26, "The Roosevelt Room", B_NORM, () => (Rooms.open(u, R_CONGRESS)));
 }
 static ticker(u, g, game) {
 let y = (DH - 44);
@@ -4064,7 +5361,10 @@ u.backdrop(g);
 Oval.topBar(u, g, game);
 u.button$9(g, 24, 70, 200, 32, "<  Oval Office", B_GHOST, () => (u.go(SC_OVAL)), "Back to the Oval Office (Esc)");
 text(g, ROOM_NAME[Rooms.room], 248, 96, F_DISPLAY, Color.white);
-text(g, ROOM_SUB[Rooms.room], ((252 + strW(g, ROOM_NAME[Rooms.room], F_DISPLAY)) + 16), 94, F_B, C_DIM);
+let tabsW = 0;
+for (let r = 0; (r < NROOM); r++) { tabsW += (strW(g, Rooms.ROOM_TAB[r], F_XSB) + 24); }
+let subX = ((252 + strW(g, ROOM_NAME[Rooms.room], F_DISPLAY)) + 16);
+textFit(g, ROOM_SUB[Rooms.room], subX, 94, ((((DW - 48) - tabsW) - subX) - 16), F_B, C_DIM);
 let tx = (DW - 48);
 for (let r = (NROOM - 1); (r >= 0); r--) {
 let k = r;
@@ -4085,6 +5385,9 @@ Rooms.econ(u, g, game);
 break;
 case R_RESIDENCE:
 Rooms.residence(u, g, game);
+break;
+case R_CONGRESS:
+HillUI.draw(u, g, game);
 break;
 default:
 Rooms.later(u, g, game);
@@ -4131,9 +5434,9 @@ text(g, (("Age " + game.presAge()) + (((game.presAge() > 70) ? ": long days cost
 label(g, "Air Force One", (px + 18), 266, C_GOLD);
 let ty = 286;
 let n = 0;
-for (let i = 0; (i < NSLOT); i++) { if (((game.act[i] === AC_TRIP) && (game.arg[i] >= 0))) {
+for (let i = 0; (i < NSLOT); i++) { if ((isTrip(game.act[i]) && (game.arg[i] >= 0))) {
 let s = game.arg[i];
-text(g, ((((DOW3[dowOf((game.day() + $idiv(i, 3)))] + " ") + SLOT[(i % 3)].toLowerCase()) + ": ") + STATES[s].name), (px + 18), ty, F_XS, C_TEXT);
+text(g, (((((DOW3[dowOf((game.day() + $idiv(i, 3)))] + " ") + SLOT[(i % 3)].toLowerCase()) + ": ") + STATES[s].name) + (((game.act[i] === AC_CAMPAIGN) ? " (campaign)" : ""))), (px + 18), ty, F_XS, C_TEXT);
 textR(g, (fmt1(Week.flight(s)) + " hours each way"), ((px + pw) - 18), ty, F_XS, ((Week.flight(s) > 3.5) ? C_AMBER : C_DIM));
 ty += 18;
 if ((++n >= 8)) { break; }
@@ -4144,7 +5447,7 @@ for (let s = 0; (s < NS); s++) {
 USMap.paint[s] = null;
 USMap.tags[s] = null;
 }
-for (let i = 0; (i < NSLOT); i++) { if (((game.act[i] === AC_TRIP) && (game.arg[i] >= 0))) { USMap.paint[game.arg[i]] = rgb(0xd4a52a); } }
+for (let i = 0; (i < NSLOT); i++) { if ((isTrip(game.act[i]) && (game.arg[i] >= 0))) { USMap.paint[game.arg[i]] = rgb(0xd4a52a); } }
 if ((Rooms.pendingSlot >= 0)) { for (let s = 0; (s < NS); s++) { if ((USMap.paint[s] == null)) { USMap.paint[s] = mix(C_STATE, marginColor((game.stateApp[s] - 50), 1), 0.5); } } }
 USMap.markState = Week.dc();
 USMap.markCand = game.pres;
@@ -4154,7 +5457,7 @@ if (((hs >= 0) && (u.my > 510))) {
 u.tip = (((((((STATES[hs].name + ": approval ") + Math.round(game.stateApp[hs])) + "%, ") + STATES[hs].ev) + " electoral votes, ") + fmt1(Week.flight(hs))) + " hours from Washington");
 let ss = hs;
 if ((Rooms.pendingSlot >= 0)) { u.hit((px + 10), 510, (pw - 20), 290, () => {
-game.act[Rooms.pendingSlot] = AC_TRIP;
+game.act[Rooms.pendingSlot] = Rooms.pendingAct;
 game.arg[Rooms.pendingSlot] = ss;
 Rooms.pendingSlot = -1;
 snd$3(Sfx.CHIME, 0.5, 1);
@@ -4172,7 +5475,7 @@ text(g, AC_NAME[a], (x + 20), (y + 46), F_BB, ((a === AC_FREE) ? C_DIM : Color.w
 let sub = (((arg >= 0) && AC_ISSUE[a]) ? PISSUE[arg] : (((arg >= 0) && AC_STATE[a]) ? STATES[arg].name : (pend ? "pick a state on the map" : null)));
 if ((sub != null)) { wrap(g, sub, (x + 20), (y + 64), (w - 28), F_XS, (pend ? C_GOLD : C_TEXT)); }
 let c = AC_STAMINA[a];
-if (((a === AC_TRIP) && (arg >= 0))) { c -= Math.min(6, (Week.flight(arg) * 0.9)); }
+if ((isTrip(a) && (arg >= 0))) { c -= Math.min(6, (Week.flight(arg) * 0.9)); }
 text(g, (((((c >= 0) ? "+" : "")) + fmt1(c)) + " stamina"), (x + 20), ((y + h) - 14), F_T, ((c >= 0) ? C_GOOD : C_DIM));
 }
 static choose(u, game, i) {
@@ -4183,6 +5486,7 @@ if ((a === AC_TRAVEL)) { continue; }
 if (((a === AC_CAMPDAVID) && !weekend)) { continue; }
 if (((a === AC_CONGRESS) && weekend)) { continue; }
 if (((a === AC_WORKLATE) && ((i % 3) !== 2))) { continue; }
+if (((a === AC_CAMPAIGN) && !Midterms.season(game))) { continue; }
 opts.add(a);
 }
 let names = $arr(opts.length, null);
@@ -4198,6 +5502,7 @@ game.arg[i] = j;
 });
 } else { if (AC_STATE[a]) {
 Rooms.pendingSlot = i;
+Rooms.pendingAct = a;
 } else {
 game.act[i] = a;
 game.arg[i] = -1;
@@ -4539,7 +5844,7 @@ static features(g) {
 let e = g.econ;
 let trips = new StringBuilder();
 let nt = 0;
-for (let i = 0; (i < NSLOT); i++) { if (((g.act[i] === AC_TRIP) && (g.arg[i] >= 0))) {
+for (let i = 0; (i < NSLOT); i++) { if ((isTrip(g.act[i]) && (g.arg[i] >= 0))) {
 trips.append(((nt++ > 0) ? ", " : "")).append(STATES[g.arg[i]].name);
 } }
 let top = Week.topIssue(g);
@@ -4569,6 +5874,452 @@ return (((s == null) || (s.length === 0)) ? "" : (String.fromCharCode($ucChar(s.
 static leadBody(g, lead) {
 let e = g.econ;
 return ((((((((("President " + g.pres.last) + " begins the week with ") + Math.round(g.approval)) + " percent of Americans approving of the job, according to the latest polling average. Unemployment stands at ") + fmt1(e.unemp)) + " percent and prices are up ") + fmt1(e.infl)) + " percent from a year ago. ") + (((g.stamina < 35) ? "Aides privately worry about the president's punishing schedule." : (("Aides say the president's schedule this week focuses on " + PISSUE[Week.topIssue(g)].toLowerCase()) + "."))));
+}
+}
+class HillUI {
+static draw(u, g, game) {
+let c = game.cong;
+u.segmented(g, 48, 116, 640, 30, HillUI.TABS, HillUI.tab, (i) => (HillUI.tab = i), null);
+text(g, "Political capital", 720, 136, F_S, C_DIM);
+bar(g, 840, 127, 160, 10, (game.capital / 100), C_GOLD);
+text(g, String(Math.round(game.capital)), 1010, 137, F_BB, C_GOLD);
+if ((HillUI.msg != null)) { textFit(g, HillUI.msg, 1050, 137, (DW - 1100), F_XS, C_GOLD); }
+switch (HillUI.tab) {
+case 1:
+HillUI.bills(u, g, game);
+break;
+case 2:
+HillUI.whip(u, g, game);
+break;
+case 3:
+HillUI.budget(u, g, game);
+break;
+case 4:
+HillUI.elections(u, g, game);
+break;
+default:
+HillUI.hill(u, g, game);
+break;
+}
+}
+static hill(u, g, game) {
+let c = game.cong;
+u.panel(g, 48, 160, 700, 652, "Congress");
+let y = 196;
+for (let ch = 0; (ch < 2); ch++) {
+let total = ((ch === HOUSE) ? 435 : 100);
+let dem = ((ch === HOUSE) ? game.houseD : game.senateD);
+text(g, ((ch === HOUSE) ? "House of Representatives" : "Senate"), 66, y, F_H3, Color.white);
+textR(g, ((((dem + " D - ") + ((total - dem))) + " R") + ((Hill.majority(game, ch, game.party) ? "   your party's majority" : "   the other party's majority"))), 730, y, F_XS, (Hill.majority(game, ch, game.party) ? C_GOOD : C_AMBER));
+let bx = 66, bw = 664;
+for (let i = 0; (i < c.blocs.length); i++) {
+let b = c.blocs[i];
+if ((b.chamber !== ch)) { continue; }
+let w = ((bw * b.seats) / total);
+g.setColor(BLOC_COL[i]);
+g.fill(new Rectangle2D.Double(bx, (y + 10), Math.max(0, (w - 1)), 18));
+bx += w;
+}
+g.setColor(Color.white);
+g.fill(new Rectangle2D.Double((66 + ((bw * (((ch === HOUSE) ? 218 : 50.5))) / total)), (y + 6), 2, 26));
+y += 46;
+for (let i = 0; (i < c.blocs.length); i++) {
+let b = c.blocs[i];
+if ((b.chamber !== ch)) { continue; }
+g.setColor(BLOC_COL[i]);
+g.fill(new RoundRectangle2D.Double(66, (y - 10), 10, 10, 3, 3));
+text(g, b.name, 84, y, F_XS, C_TEXT);
+textR(g, (b.seats + " seats"), 360, y, F_XS, C_DIM);
+text(g, "relationship", 390, y, F_T, C_FAINT);
+bar(g, 460, (y - 8), 200, 8, (b.rel / 100), ((b.rel >= 55) ? C_GOOD : ((b.rel >= 40) ? C_GOLD : C_BAD)));
+textR(g, String(Math.round(b.rel)), 730, y, F_XSB, Color.white);
+y += 22;
+}
+y += 24;
+}
+wrap(g, "Hill meetings on your calendar improve your relationships with the leaders and every bloc. Wins, deals and vetoes move them too.", 66, (y + 6), 660, F_XS, C_DIM);
+if (game.filibusterGone) { text(g, "The legislative filibuster is gone: bills pass the Senate with a simple majority.", 66, 780, F_XS, C_GOLD); } else { if (Hill.majority(game, SENATE, game.party)) {
+let p = Legis.nukeChance(game);
+u.button$9(g, 66, 756, 300, 36, "Ask the Senate to end the filibuster", ((game.capital >= 15) ? B_NORM : B_OFF), ((game.capital >= 15) ? () => (HillUI.msg = Legis.nuke(game)) : null), (("Costs 15 capital. About a " + Math.round((p * 100))) + "% chance your own senators go along. The other side won't forget."));
+text(g, (("About " + Math.round((p * 100))) + "% chance; 15 capital"), 380, 779, F_XS, C_DIM);
+} }
+let px = 764, pw = ((DW - 48) - px);
+u.panel(g, px, 160, pw, 300, "The leaders");
+let lx = (px + 18);
+let k = 0;
+for (const m of c.members) {
+if ((m.role !== RO_LEADER)) { continue; }
+let cx = (lx + (((k % 2)) * (((pw / 2) - 6)))), cy = (196 + (($idiv(k, 2)) * 128));
+Portrait.draw(g, m.face, cx, cy, 70, 84, u.tsec, 0, true, true);
+text(g, m.name, (cx + 82), (cy + 18), F_BB, Color.white);
+textFit(g, m.title, (cx + 82), (cy + 36), ((pw / 2) - 110), F_XS, partyLight(m.party));
+bar(g, (cx + 82), (cy + 48), 150, 8, (m.rel / 100), ((m.rel >= 55) ? C_GOOD : ((m.rel >= 40) ? C_GOLD : C_BAD)));
+text(g, (Math.round(m.rel) + ""), (cx + 240), (cy + 57), F_XSB, Color.white);
+let mm = m;
+u.button$9(g, (cx + 82), (cy + 64), 150, 24, "Meet (2 capital)", ((game.capital >= 2) ? B_NORM : B_OFF), ((game.capital >= 2) ? () => {
+game.capital -= 2;
+mm.rel = Math.min(100, ((mm.rel + 5) + (game.pres.a[A_EST] / 30.0)));
+HillUI.msg = (("You meet with " + mm.name) + ".");
+} : null), "A private meeting. Improves your relationship.");
+k++;
+}
+u.panel(g, px, 470, pw, 342, "Committee chairs");
+u.segmented(g, ((px + pw) - 220), 476, 200, 24, ["House", "Senate"], HillUI.chairCh, (i) => (HillUI.chairCh = i), null);
+let yy = 518;
+for (const m of c.members) {
+if (((m.role !== RO_CHAIR) || (m.chamber !== HillUI.chairCh))) { continue; }
+textFit(g, m.committee, (px + 18), yy, 270, F_XS, C_TEXT);
+text(g, (((m.name + " (") + PARTY_SHORT[m.party]) + ")"), (px + 300), yy, F_XS, partyLight(m.party));
+bar(g, ((px + pw) - 140), (yy - 8), 100, 7, (m.rel / 100), ((m.rel >= 55) ? C_GOOD : ((m.rel >= 40) ? C_GOLD : C_BAD)));
+textR(g, String(Math.round(m.rel)), ((px + pw) - 18), yy, F_XSB, Color.white);
+yy += 23;
+}
+}
+static bills(u, g, game) {
+let c = game.cong;
+u.panel(g, 48, 160, 600, 652, "Before Congress");
+let y = 196;
+let shown = 0;
+label(g, "Your bills", 66, y, C_GOLD);
+y += 18;
+for (let i = (c.bills.length - 1); (i >= 0); i--) {
+let b = c.bills[i];
+if (!b.ours) { continue; }
+if (((b.stage === ST_DEAD) && ((game.week - b.stageWeek) > 26))) { continue; }
+y = HillUI.billRow(u, g, game, b, i, y);
+if ((++shown >= 6)) { break; }
+}
+if ((shown === 0)) {
+text(g, "None yet. Draft one on the right.", 66, (y + 14), F_XS, C_DIM);
+y += 30;
+}
+y += 10;
+label(g, "Congress's bills", 66, y, C_GOLD);
+y += 18;
+shown = 0;
+for (let i = (c.bills.length - 1); (i >= 0); i--) {
+let b = c.bills[i];
+if (b.ours) { continue; }
+if (((b.stage >= ST_LAW) && ((game.week - b.stageWeek) > 16))) { continue; }
+y = HillUI.billRow(u, g, game, b, i, y);
+if (((++shown >= 4) || (y > 760))) { break; }
+}
+if ((shown === 0)) { text(g, "Nothing moving right now.", 66, (y + 14), F_XS, C_DIM); }
+let px = 664, pw = ((DW - 48) - px);
+u.panel(g, px, 160, pw, 652, "Draft a bill");
+let defs = HillUI.agenda(game);
+textR(g, "public support", (px + 330), 178, F_T, C_DIM);
+let ly = 194;
+let top = ly, h = 600;
+let off = u.beginScroll(g, "drafts", (px + 10), top, 330, h);
+let h0 = u.hits.length;
+for (let i = 0; (i < defs.length); i++) {
+let d = defs[i];
+let k = i;
+let ry = ((top - off) + (i * 40));
+let busy = HillUI.inPlay(game, d);
+u.card(g, (px + 14), ry, 316, 36, (HillUI.draftSel === i), () => {
+HillUI.draftSel = k;
+HillUI.draft = Legis.draft(game, defs[k]);
+}, d.desc);
+g.setColor(((d.lean === DEM) ? C_DEM : ((d.lean === REP) ? C_REP : C_GOLD)));
+g.fill(new RoundRectangle2D.Double((px + 20), (ry + 10), 4, 16, 3, 3));
+textFit(g, d.name, (px + 32), (ry + 23), 230, F_S, (busy ? C_DIM : Color.white));
+textR(g, (busy ? "in play" : (Math.round(d.support) + "%")), (px + 322), (ry + 23), F_XS, (busy ? C_DIM : C_TEXT));
+}
+u.clipHits(h0, top, (top + h));
+u.endScroll(g, "drafts", (defs.length * 40));
+let dx = (px + 350), dw = (pw - 368);
+if ((((HillUI.draft == null) || (HillUI.draftSel < 0)) || (HillUI.draftSel >= defs.length))) {
+wrap(g, "Pick a bill. Blue bills are Democratic priorities, red Republican, gold bipartisan.", dx, 200, dw, F_S, C_DIM);
+return;
+}
+let d = HillUI.draft.def();
+text(g, d.name, dx, 206, F_H2, Color.white);
+let yy = (216 + wrap(g, d.desc, dx, 226, dw, F_XS, C_TEXT));
+text(g, (("Public support " + Math.round(HillUI.draft.support())) + "%"), dx, (yy + 18), F_XSB, ((HillUI.draft.support() >= 55) ? C_GOOD : ((HillUI.draft.support() < 48) ? C_BAD : C_TEXT)));
+let nc = HillUI.draft.netCost();
+textR(g, ((nc > 1) ? (("adds $" + Math.round(nc)) + "B a year to the deficit") : ((nc < -1) ? (("cuts the deficit by $" + Math.round(-nc)) + "B a year") : "about deficit-neutral")), (dx + dw), (yy + 18), F_XS, ((nc > 50) ? C_AMBER : C_DIM));
+yy += 44;
+text(g, "Size", dx, (yy + 12), F_S, C_TEXT);
+u.slider$8(g, (dx + 90), (yy + 8), (dw - 160), ((HillUI.draft.size - 0.5)), C_ACCENT, (v) => (HillUI.draft.size = (0.5 + v)), "Bigger bills do more and cost more; smaller ones are easier to pass.");
+textR(g, (Math.round((HillUI.draft.size * 100)) + "%"), (dx + dw), (yy + 12), F_XSB, Color.white);
+yy += 34;
+text(g, "Scope", dx, (yy + 12), F_S, C_TEXT);
+u.slider$8(g, (dx + 90), (yy + 8), (dw - 160), HillUI.draft.scope, C_ACCENT, (v) => (HillUI.draft.scope = v), "Narrow bills draw fewer objections; broad ones go further and lose votes in the middle.");
+textR(g, ((HillUI.draft.scope < 0.33) ? "narrow" : ((HillUI.draft.scope > 0.66) ? "broad" : "middle")), (dx + dw), (yy + 12), F_XSB, Color.white);
+yy += 34;
+if ((d.cost > 0)) {
+text(g, "Paid for by", dx, (yy + 18), F_S, C_TEXT);
+u.segmented(g, (dx + 90), yy, (dw - 90), 28, PAYFOR, HillUI.draft.payFor, (i) => (HillUI.draft.payFor = i), ["Add it to the deficit. Fiscal hawks object.", "Moves the bill left. Popular, but business groups fight it.", "Moves the bill right. Hard for your own progressives (or easy, for a Republican)."]);
+yy += 40;
+}
+let rc = (d.budget && Legis.reconOk(game, HillUI.draft));
+u.toggle(g, dx, yy, (HillUI.draft.recon && rc), (rc ? () => (HillUI.draft.recon = !HillUI.draft.recon) : null), (d.budget ? ((rc ? "A simple majority in the Senate, once a fiscal year. The Byrd rule strikes anything that isn't about money." : "Needs your party in control of both chambers, and one use a fiscal year.")) : "Not a budget bill: the Byrd rule rules it out."));
+text(g, "Budget reconciliation", (dx + 46), (yy + 16), F_S, (rc ? C_TEXT : C_DIM));
+if (!d.origRevenue) {
+u.segmented(g, ((dx + dw) - 180), yy, 180, 26, ["House first", "Senate first"], HillUI.draft.first, (i) => (HillUI.draft.first = i), null);
+} else { text(g, "Revenue bills start in the House", ((dx + dw) - 190), (yy + 16), F_T, C_DIM); }
+yy += 44;
+if (!rc) { HillUI.draft.recon = false; }
+let pH = Legis.chance(game, HillUI.draft, HOUSE, false), pS = Legis.chance(game, HillUI.draft, SENATE, false);
+let cH = Legis.chairOk(game, HillUI.draft, HOUSE), cS = Legis.chairOk(game, HillUI.draft, SENATE);
+label(g, "The whip's first read", dx, yy, C_GOLD);
+yy += 22;
+let hc = Legis.count(game, HillUI.draft, HOUSE, false), sc = Legis.count(game, HillUI.draft, SENATE, false);
+text(g, (((("House: about " + Math.round(hc[0])) + " votes of ") + Legis.need(game, HillUI.draft, HOUSE, false)) + " needed"), dx, yy, F_XS, C_TEXT);
+textR(g, (Math.round((pH * 100)) + "%"), (dx + dw), yy, F_XSB, ((pH >= 0.6) ? C_GOOD : ((pH >= 0.3) ? C_GOLD : C_BAD)));
+yy += 20;
+text(g, (((("Senate: about " + Math.round(sc[0])) + " of ") + Legis.need(game, HillUI.draft, SENATE, false)) + (((HillUI.draft.recon || game.filibusterGone) ? "" : " (to end a filibuster)"))), dx, yy, F_XS, C_TEXT);
+textR(g, (Math.round((pS * 100)) + "%"), (dx + dw), yy, F_XSB, ((pS >= 0.6) ? C_GOOD : ((pS >= 0.3) ? C_GOLD : C_BAD)));
+yy += 20;
+text(g, "Committee chairs let it out", dx, yy, F_XS, C_TEXT);
+textR(g, (((Math.round((cH * 100)) + "% / ") + Math.round((cS * 100))) + "%"), (dx + dw), yy, F_XSB, ((Math.min(cH, cS) >= 0.6) ? C_GOOD : C_GOLD));
+yy += 28;
+let active = 0;
+for (const b of game.cong.bills) { if (((b.ours && (b.stage > ST_DRAFT)) && (b.stage < ST_LAW))) { active++; } }
+let can = (!HillUI.inPlay(game, d) && (active < 3));
+u.button$8(g, dx, Math.min(yy, 760), dw, 40, (HillUI.inPlay(game, d) ? "Already before Congress" : ((active >= 3) ? "Congress can only handle three of your bills at once" : "Send to Congress")), (can ? B_GOLD : B_OFF), (can ? () => {
+if (d.origRevenue) { HillUI.draft.first = HOUSE; }
+Legis.introduce(game, HillUI.draft);
+HillUI.sel = game.cong.bills.indexOf(HillUI.draft);
+HillUI.draft = null;
+HillUI.draftSel = -1;
+HillUI.tab = 2;
+HillUI.msg = "Sent to Congress.";
+} : null));
+}
+static inPlay(g, d) {
+for (const b of g.cong.bills) { if (((($eq(b.defId, d.id) && (b.stage > ST_DRAFT)) && (b.stage < ST_LAW)) && (b.stage !== ST_DEAD))) { return true; } }
+for (const b of g.cong.bills) { if (($eq(b.defId, d.id) && (b.stage === ST_LAW))) { return true; } }
+return false;
+}
+static agenda(g) {
+let l = [];
+for (const d of BILLS) { if ((d.lean === g.party)) { l.add(d); } }
+for (const d of BILLS) { if ((d.lean < 0)) { l.add(d); } }
+for (const d of BILLS) { if (((d.lean >= 0) && (d.lean !== g.party))) { l.add(d); } }
+return l;
+}
+static billRow(u, g, game, b, idx, y) {
+let k = idx;
+u.card(g, 62, y, 572, 54, (HillUI.sel === idx), () => {
+HillUI.sel = k;
+HillUI.tab = 2;
+}, "Open the whip count");
+text(g, b.name, 76, (y + 22), F_BB, Color.white);
+let sc = ((b.stage === ST_LAW) ? C_GOOD : ((b.stage === ST_DEAD) ? C_BAD : (b.bottled ? C_AMBER : C_ACCENT)));
+textR(g, (((b.stage === ST_COMMITTEE) || (b.stage === ST_COMMITTEE2)) ? ($replace(STAGE[b.stage], "committee", (CHAMBER[b.chamberNow()] + " committee")) + ((b.bottled ? ", stuck" : ""))) : STAGE[b.stage]), 620, (y + 22), F_XSB, sc);
+for (let s = 1; (s <= 6); s++) {
+g.setColor((((b.stage >= s) && (b.stage !== ST_DEAD)) ? C_GOLD : (((b.stage === ST_DEAD) && (s <= 2)) ? C_BAD : new Color(255, 255, 255, 30))));
+g.fill(new RoundRectangle2D.Double((76 + (((s - 1)) * 60)), (y + 34), 54, 6, 3, 3));
+}
+if (((b.stage >= ST_COMMITTEE) && (b.stage <= ST_FLOOR2))) {
+let p = Legis.chance(game, b, b.chamberNow(), false);
+textR(g, (("chance of the next vote " + Math.round((p * 100))) + "%"), 620, (y + 42), F_T, C_DIM);
+}
+return (y + 60);
+}
+static whip(u, g, game) {
+let c = game.cong;
+let b = (((HillUI.sel >= 0) && (HillUI.sel < c.bills.length)) ? c.bills[HillUI.sel] : null);
+if ((b == null)) {
+for (let i = (c.bills.length - 1); (i >= 0); i--) { if (((c.bills[i].stage < ST_DESK) && (c.bills[i].stage > ST_DRAFT))) {
+HillUI.sel = i;
+b = c.bills[i];
+break;
+} }
+}
+if ((b == null)) {
+u.panel(g, 48, 160, (DW - 96), 652, "Whip count");
+wrap(g, "Nothing to count yet. Send a bill to Congress from the Bills tab.", 70, 200, 800, F_S, C_DIM);
+return;
+}
+let bb = b;
+let ch = ((b.stage >= ST_DESK) ? b.second() : b.chamberNow());
+u.panel(g, 48, 160, 760, 652, ((b.name + ": ") + STAGE[b.stage]));
+let y = 196;
+for (let cc = 0; (cc < 2); cc++) {
+let chamber = ((cc === 0) ? ch : (((ch === HOUSE) ? SENATE : HOUSE)));
+let cnt = Legis.count(game, b, chamber, false);
+let need = Legis.need(game, b, chamber, false);
+text(g, (CHAMBER[chamber] + (((cc === 0) ? " (next)" : ""))), 66, y, F_H3, Color.white);
+textR(g, (((((("about " + Math.round(cnt[0])) + " yes, ") + need) + " needed  |  ") + Math.round((Legis.chance(game, b, chamber, false) * 100))) + "% to pass"), 790, y, F_XSB, ((cnt[0] >= need) ? C_GOOD : C_AMBER));
+y += 22;
+for (let i = 0; (i < c.blocs.length); i++) {
+let bl = c.blocs[i];
+if ((bl.chamber !== chamber)) { continue; }
+let p = logistic(Legis.blocLogit(game, b, i, false));
+g.setColor(BLOC_COL[i]);
+g.fill(new RoundRectangle2D.Double(66, (y - 10), 10, 10, 3, 3));
+text(g, bl.name, 84, y, F_XS, C_TEXT);
+text(g, Legis.lean(p), 330, y, F_XSB, ((p > 0.6) ? C_GOOD : ((p > 0.4) ? C_GOLD : C_BAD)));
+bar(g, 440, (y - 8), 240, 8, p, ((p > 0.6) ? C_GOOD : ((p > 0.4) ? C_GOLD : C_BAD)));
+textR(g, ((Math.round((p * bl.seats)) + " of ") + bl.seats), 790, y, F_XS, C_DIM);
+y += 22;
+}
+y += 18;
+}
+if (((b.stage <= ST_FLOOR2) && (b.stage >= ST_COMMITTEE))) {
+label(g, "Change the bill", 66, y, C_GOLD);
+y += 16;
+text(g, "Size", 66, (y + 12), F_XS, C_TEXT);
+u.slider$8(g, 120, (y + 8), 260, (bb.size - 0.5), C_ACCENT, (v) => (bb.size = (0.5 + v)), "Shrinking a bill wins over the middle.");
+text(g, "Scope", 420, (y + 12), F_XS, C_TEXT);
+u.slider$8(g, 470, (y + 8), 260, bb.scope, C_ACCENT, (v) => (bb.scope = v), "Narrower is easier to pass.");
+y += 30;
+if ((b.def().cost > 0)) { u.segmented(g, 66, y, 724, 26, PAYFOR, bb.payFor, (i) => (bb.payFor = i), null); }
+y += 36;
+}
+let cx = 66;
+for (let i = (c.bills.length - 1); ((i >= 0) && (cx < 700)); i--) {
+let o = c.bills[i];
+if (((o.stage < ST_COMMITTEE) || (o.stage > ST_FLOOR2))) { continue; }
+let k = i;
+let w = Math.min(230, (strW(g, o.name, F_XSB) + 22));
+u.button$9(g, cx, 770, w, 28, o.name, ((o === b) ? B_TABON : B_TAB), () => (HillUI.sel = k), ((((o.ours ? "Your bill" : "Congress's bill")) + ": ") + STAGE[o.stage]));
+cx += (w + 6);
+}
+if (!(b.deals.length === 0)) {
+let s = new StringBuilder("Deals so far: ");
+for (let i = 0; (i < b.deals.length); i++) { s.append(((i > 0) ? "; " : "")).append(b.deals[i]); }
+wrap(g, s.toString(), 66, Math.min(y, 730), 720, F_XS, C_DIM);
+}
+let px = 824, pw = ((DW - 48) - px);
+u.panel(g, px, 160, pw, 652, "Working the votes");
+let yy = 196;
+let people = [];
+for (const m of c.members) { if (((m.role === RO_LEADER) && (m.chamber === ch))) { people.add(m); } }
+let chair = Hill.chairFor(game, b, ch);
+if ((chair != null)) { people.add(chair); }
+for (const m of c.members) { if (((m.role === RO_SWING) && (m.chamber === ch))) { people.add(m); } }
+for (const m of people) {
+let p = logistic((Legis.blocLogit(game, b, m.bloc, false) + (((m.rel - 50)) / 30)));
+Portrait.draw(g, m.face, (px + 14), (yy - 4), 34, 40, u.tsec, 0, true, true);
+text(g, (((m.title != null) && (m.role === RO_SWING)) ? m.title : m.name), (px + 56), (yy + 10), F_SB, Color.white);
+textFit(g, ((m.role === RO_SWING) ? ("wants " + PRICE[m.price]) : m.title), (px + 56), (yy + 26), 250, F_T, C_DIM);
+text(g, Legis.lean(p), (px + 300), (yy + 10), F_XSB, ((p > 0.6) ? C_GOOD : ((p > 0.4) ? C_GOLD : C_BAD)));
+if (((b.stage >= ST_COMMITTEE) && (b.stage <= ST_FLOOR2))) {
+let bx = (px + 300);
+let kinds = [Legis.DL_CALL, Legis.DL_PROJECT, Legis.DL_APPOINT, Legis.DL_ENDORSE, Legis.DL_THREAT];
+let ab = ["Call", "Project", "Appoint", "Endorse", "Threat"];
+for (let j = 0; (j < kinds.length); j++) {
+let kind = kinds[j];
+let mm = m;
+let ok = ((game.capital >= Legis.DEAL_COST[kind]) && (mm.lastDeal !== game.week));
+u.button$9(g, (bx + (j * 62)), (yy + 16), 58, 20, ab[j], (ok ? B_NORM : B_OFF), (ok ? () => (HillUI.msg = Legis.deal(game, bb, mm, kind)) : null), (((Legis.DEAL[kind] + " (") + Legis.DEAL_COST[kind]) + " capital)"));
+}
+}
+yy += 46;
+if ((yy > 700)) { break; }
+}
+if (((b.stage >= ST_COMMITTEE) && (b.stage <= ST_FLOOR2))) {
+u.button$9(g, (px + 14), 760, 220, 36, (b.publicPush ? "You've gone public" : "Go public (3 capital)"), ((!b.publicPush && (game.capital >= 3)) ? B_PRIMARY : B_OFF), ((!b.publicPush && (game.capital >= 3)) ? () => (HillUI.msg = Legis.deal(game, bb, null, Legis.DL_PUBLIC)) : null), "Make the case to the country. Moderates feel the pressure.");
+if (b.ours) { u.button$9(g, ((px + pw) - 180), 760, 166, 36, "Withdraw the bill", B_GHOST, () => {
+bb.stage = ST_DEAD;
+bb.stageWeek = game.week;
+if ((bb.recon && (game.cong.reconFy === Hill.fiscalYear(game)))) { game.cong.reconFy = -1; }
+HillUI.msg = (("You pulled " + bb.name) + ".");
+}, "Pull it before it fails."); }
+}
+}
+static budget(u, g, game) {
+let c = game.cong;
+u.panel(g, 48, 160, 760, 652, ("Your budget request" + ((c.budgetSent ? " (sent to Congress)" : ""))));
+let y = 200;
+let names = ["Defense", "Other agencies", "Taxes (revenue)", "Entitlements"];
+let tips = ["Change in defense spending, percent.", "Change in non-defense discretionary spending, percent.", "Revenue change, % of GDP. Positive raises taxes.", "Social Security, Medicare and other mandatory spending, % of GDP."];
+let lo = [-15, -25, -1.5, -1], hi = [15, 25, 1.5, 1];
+let val = [c.reqDefense, c.reqNondefense, c.reqTax, c.reqMandatory];
+for (let i = 0; (i < 4); i++) {
+let k = i;
+text(g, names[i], 66, (y + 12), F_S, C_TEXT);
+if (!c.budgetSent) { u.slider$9(g, 220, (y + 8), 420, (((val[i] - lo[i])) / ((hi[i] - lo[i]))), C_GOLD, (v) => (HillUI.setReq(c, k, (lo[k] + (v * ((hi[k] - lo[k])))))), tips[i], false); } else { bar(g, 220, (y + 4), 420, 8, (((val[i] - lo[i])) / ((hi[i] - lo[i]))), C_FAINT); }
+textR(g, (((i < 2) ? (signed1(val[i]) + "%") : (signed1(val[i]) + "% of GDP"))), 790, (y + 12), F_XSB, Color.white);
+y += 38;
+}
+let ch = Budget.deficitChange(c);
+text(g, (((("Your plan " + (((ch > 0.05) ? ("adds " + fmt1(ch)) : ((ch < -0.05) ? ("cuts " + fmt1(-ch)) : "changes about 0")))) + " % of GDP ") + (((ch < 0) ? "from" : "to"))) + " the yearly deficit"), 66, (y + 10), F_S, ((ch > 0.3) ? C_AMBER : C_TEXT));
+y += 30;
+let pr = Budget.projection(game);
+let ser = [];
+ser.add(pr[0]);
+chart(g, 110, y, 660, 160, ser, [C_BAD], ["Deficit, % of GDP, next ten years"], 0, Math.max(10, (Rooms.maxOf(pr[0]) + 1)), "%.0f%%", 11);
+y += 176;
+let ser2 = [];
+ser2.add(pr[1]);
+chart(g, 110, y, 660, 140, ser2, [C_AMBER], ["Debt held by the public, % of GDP"], (Math.floor((Rooms.minOf(pr[1]) / 10)) * 10), ((Math.ceil((Rooms.maxOf(pr[1]) / 10)) * 10) + 10), "%.0f%%", 11);
+y += 156;
+if (!c.budgetSent) { u.button$8(g, 66, Math.min(y, 760), 300, 38, "Send the budget to Congress", B_GOLD, () => {
+Budget.send(game);
+HillUI.msg = "Budget sent.";
+}); } else { text(g, "Congress writes the actual spending bills; your request sets the terms of the fight.", 66, Math.min((y + 20), 780), F_XS, C_DIM); }
+let px = 824, pw = ((DW - 48) - px);
+u.panel(g, px, 160, pw, 420, (("Fiscal year " + ((c.fy + (((dateOf(game.day())[1] >= 4) ? 1 : 0))))) + " spending bills"));
+let stn = ["not started", "passed one chamber", "passed both chambers", "law", "on a stopgap"];
+let stc = [C_FAINT, C_GOLD, C_ACCENT, C_GOOD, C_AMBER];
+let yy = 198;
+for (let i = 0; (i < 12); i++) {
+textFit(g, APPROPS[i], (px + 18), yy, 330, F_XS, C_TEXT);
+textR(g, stn[c.approps[i]], ((px + pw) - 18), yy, F_XSB, stc[c.approps[i]]);
+yy += 23;
+}
+yy += 10;
+if (c.shutdown) { text(g, ("THE GOVERNMENT IS SHUT DOWN: week " + c.shutdownWeeks), (px + 18), yy, F_BB, C_BAD); } else { if ((c.crUntil >= 0)) { text(g, ("Running on a stopgap until " + dateStr((c.crUntil * 7))), (px + 18), yy, F_S, C_AMBER); } else { text(g, "Deadline: September 30", (px + 18), yy, F_S, C_DIM); } }
+u.panel(g, px, 590, pw, 222, "The debt limit");
+let subj = Budget.debtSubject(game);
+text(g, (((("$" + fmt1(subj)) + " trillion owed, limit $") + fmt1(c.debtLimit)) + " trillion"), (px + 18), 630, F_S, C_TEXT);
+bar(g, (px + 18), 642, (pw - 36), 12, (subj / c.debtLimit), ((subj >= c.debtLimit) ? C_BAD : ((subj > (c.debtLimit * 0.97)) ? C_AMBER : C_ACCENT)));
+if ((c.xWeek >= 0)) { text(g, (("The Treasury runs out of room around " + dateStr((c.xWeek * 7))) + "."), (px + 18), 680, F_SB, C_AMBER); } else { text(g, (("Room to borrow for about " + Math.max(0, Math.round(((((c.debtLimit - subj)) / Math.max(0.01, (subj * ((game.econ.deficit / Math.max(1, game.econ.debt)))))) * 52)))) + " more weeks."), (px + 18), 680, F_S, C_DIM); }
+wrap(g, "When the debt reaches the limit, the Treasury uses accounting moves for a few months. Then Congress has to raise it, or the government starts missing payments.", (px + 18), 704, (pw - 36), F_XS, C_DIM);
+}
+static setReq(c, k, v) {
+v = (Math.round((v * 10)) / 10.0);
+if ((k === 0)) { c.reqDefense = v; } else { if ((k === 1)) { c.reqNondefense = v; } else { if ((k === 2)) { c.reqTax = v; } else { c.reqMandatory = v; } } }
+}
+static elections(u, g, game) {
+let c = game.cong;
+u.panel(g, 48, 160, 600, 652, ("The midterms, " + monthYear(Midterms.electionDay(game))));
+let y = 200;
+if (c.midDone) {
+wrap(g, ((c.midSummary == null) ? "The midterms are over." : c.midSummary), 66, y, 560, F_S, C_TEXT);
+return;
+}
+let mP = Midterms.nationalMargin(game, 0);
+let natD = ((game.party === DEM) ? mP : -mP);
+let house = Math.round((222 + (3.8 * natD)));
+let myHouse = ((game.party === DEM) ? house : (435 - house));
+text(g, "If the election were held today", 66, y, F_H3, Color.white);
+y += 30;
+text(g, (((("Your party " + (((mP >= 0) ? "wins" : "loses"))) + " the national House vote by about ") + fmt1(Math.abs(mP))) + " points"), 66, y, F_S, ((mP >= 0) ? C_GOOD : C_BAD));
+y += 24;
+text(g, (((((("That's about " + myHouse) + " House seats for ") + PARTIES[game.party]) + " (") + Midterms.signedInt((myHouse - game.myHouse()))) + "); 218 is a majority."), 66, y, F_S, C_TEXT);
+y += 36;
+wrap(g, ("The president's party usually loses ground in a midterm. Your approval and the economy matter most; campaigning and the money you raise for candidates can add a point or two. " + ((Midterms.season(game) ? "It's campaign season: schedule \"Campaign\" stops from your calendar." : (("Campaign season opens in late summer of " + ((game.era.year + 1))) + ".")))), 66, y, 560, F_XS, C_DIM);
+y += 70;
+text(g, (("Raised for your party: $" + fmt1(game.funds)) + " million"), 66, y, F_S, C_TEXT);
+let px = 664, pw = ((DW - 48) - px);
+u.panel(g, px, 160, pw, 652, "Senate seats up");
+let up = Midterms.seatsUp(game);
+let yy = 198;
+let col = 0;
+if (!(up.length === 0)) { for (const tok of $split(up, " ")) {
+let p = $split(tok, ":");
+let s = stateIdx(p[0]);
+if ((s < 0)) { continue; }
+let dHeld = $eq(p[1], "D");
+let m = (((Elect.lean[s] + natD) + ((dHeld ? 3 : -3))) + ((c.campaign[s] * 1.2) * (((game.party === DEM) ? 1 : -1))));
+let x = ((px + 18) + (col * (((pw / 3) - 6))));
+text(g, STATES[s].name, x, yy, F_XS, C_TEXT);
+text(g, p[1], (x + 140), yy, F_XSB, (dHeld ? C_DEM_L : C_REP_L));
+textR(g, margin(m), ((x + (pw / 3)) - 30), yy, F_XSB, ((m > 0) ? C_DEM_L : C_REP_L));
+col++;
+if ((col === 3)) {
+col = 0;
+yy += 22;
+}
+} }
+wrap(g, "Holder, then the projected margin. Campaign stops in a state help your party's candidate there.", (px + 18), Math.max((yy + 40), 700), (pw - 36), F_XS, C_DIM);
 }
 }
 class SaveGame {
@@ -4612,6 +6363,14 @@ SaveGame.resume(u, g);
 u.info("Could not load", (("The saved game could not be read (" + t.getClass().getSimpleName()) + ")."));
 }
 }
+static upgrade(g) {
+if ((g.inbox == null)) { g.inbox = []; }
+if ((g.era.midSeats == null)) { g.era.midSeats = era(g.era.year).midSeats; }
+if ((g.cong == null)) {
+Hill.setup(g);
+g.capital = 30;
+}
+}
 static resume(u, g) {
 if ((g.version < Game.VERSION)) {
 u.info("An older save", "This game was saved by an earlier version and can't be continued in this one.");
@@ -4622,6 +6381,7 @@ CAL_M = 0;
 CAL_D = 20;
 Elect.init();
 Groups.init();
+SaveGame.upgrade(g);
 g.dirty = true;
 u.game = g;
 u.setup = g.set;
@@ -4637,6 +6397,7 @@ Groups.init();
 USMap.load();
 console.log((("init " + ((Date.now() - t0))) + " ms"));
 let what = ((a.length > 1) ? a[1] : "sim");
+for (const x of a) { if ($eq(x, "trace")) { TRACE = true; } }
 if ($eq(what, "sim")) {
 let runs = ((a.length > 2) ? parseInt(a[2], 10) : 1);
 let year = ((a.length > 3) ? parseInt(a[3], 10) : 2029);
@@ -4646,6 +6407,7 @@ let weeks = ((a.length > 6) ? parseInt(a[6], 10) : 208);
 for (let r = 0; (r < runs); r++) { Test.sim((1000 + r), year, pres, scen, weeks); }
 }
 if ($eq(what, "ui")) { Test.ui(((a.length > 2) ? a[2] : "shots")); }
+if ($eq(what, "whip")) { Test.whip(((a.length > 2) ? parseInt(a[2], 10) : 2025), ((a.length > 3) ? a[3] : null), ((a.length > 4) ? parseInt(a[4], 10) : 0)); }
 }
 static newGame(seed, year, pres, scen) {
 let s = new Settings();
@@ -4664,14 +6426,34 @@ for (let w = 0; ((w < weeks) && !g.over); w++) {
 if (((w % 4) === 0)) { Week.routine(g); }
 if (((w % 8) === 3)) { Rooms.roadWeek(g); }
 if ((g.stamina < 35)) { Rooms.restWeek(g); }
+if (((w % 6) === 1)) { Decisions.autoAgenda(g); }
+Decisions.autoWhip(g);
 Week.resolve(g);
+Decisions.autoAll(g);
 if (((g.week % 26) === 0)) {
 let e = g.econ;
 b.append("  wk").append(g.week).append(" ").append(dateStr(g.day())).append(": approval ").append(fmt1(g.approval)).append(" gdp ").append(fmt1(e.gdp)).append(" u ").append(fmt1(e.unemp)).append(" infl ").append(fmt1(e.infl)).append(" fed ").append(fmt2(e.fed)).append(" 10y ").append(fmt2(e.tenYr)).append(" sp ").append(Math.round(e.stocks)).append(" gas ").append(fmt2(e.gas)).append(" def ").append(fmt1(e.deficit)).append(" debt ").append(fmt1(e.debt)).append(" sent ").append(fmt0(e.sentiment)).append(" stamina ").append(fmt0(g.stamina)).append(" stress ").append(fmt0(g.stress)).append(" PA ").append(fmt0(g.stateApp[stateIdx("PA")])).append(" Black ").append(fmt0(g.groupApp[10])).append(" WhiteNoDeg ").append(fmt0(g.groupApp[8])).append("\n");
 }
 }
+let c = g.cong;
+b.append("  congress: laws ").append(c.laws).append(" vetoes ").append(c.vetoes).append(" overrides ").append(c.overrides).append(" shutdowns ").append(c.shutdowns).append(" (").append(c.shutdownTotal).append(" wks) default ").append(c.defaulted).append(" capital ").append(fmt0(g.capital)).append(" House D ").append(g.houseD).append(" Senate D ").append(g.senateD).append("\n");
+for (const bl of c.bills) { b.append("    ").append((bl.ours ? "* " : "  ")).append(bl.name).append(": ").append(STAGE[bl.stage]).append(" wk").append(bl.introduced).append("-").append(bl.stageWeek).append((bl.recon ? " recon" : "")).append(" H ").append(bl.houseYes).append("-").append(bl.houseNo).append(" S ").append(bl.senYes).append("-").append(bl.senNo).append("\n"); }
+if ((c.midSummary != null)) { b.append("  midterms: ").append(c.midSummary).append("\n"); }
 b.append("  news ").append(g.news.length).append(", last: ").append(((g.news.length === 0) ? "" : g.news[(g.news.length - 1)].head));
 console.log(String(b));
+}
+static whip(year, pres, scen) {
+let g = Test.newGame(7, year, pres, scen);
+let s = new StringBuilder((((((((("=== whip " + g.pres.name()) + " House D ") + g.houseD) + " Senate D ") + g.senateD) + " approval ") + fmt1(g.approval)) + "\n"));
+for (const d of HillUI.agenda(g)) {
+let b = Legis.draft(g, d);
+b.recon = (d.budget && Legis.reconOk(g, b));
+s.append($fmt("%-34s econ %5.2f cult %5.2f sup %3.0f cost %5.0f %s  H %.0f (%.2f)  S %.0f (%.2f)  chair %.2f/%.2f%n", d.name, b.econ(), b.cult(), b.support(), b.netCost(), (b.recon ? "R" : " "), Legis.count(g, b, HOUSE, false)[0], Legis.chance(g, b, HOUSE, false), Legis.count(g, b, SENATE, false)[0], Legis.chance(g, b, SENATE, false), Legis.chairOk(g, b, HOUSE), Legis.chairOk(g, b, SENATE)));
+let bl = new StringBuilder("      ");
+for (let i = 0; (i < g.cong.blocs.length); i++) { bl.append($fmt("%.2f ", logistic(Legis.blocLogit(g, b, i, false)))); }
+s.append(bl).append("\n");
+}
+console.log(String(s));
 }
 static shot(u, dir, name) {
 let img = u.snapshot(1600, 900);
@@ -4706,7 +6488,10 @@ u.go(SC_OVAL);
 Test.shot(u, dir, "oval");
 for (let w = 0; (w < 30); w++) {
 if (((w % 8) === 3)) { Rooms.roadWeek(u.game); } else { Week.routine(u.game); }
+if ((u.game.stamina < 40)) { Rooms.restWeek(u.game); }
+if (((w % 6) === 1)) { Decisions.autoAgenda(u.game); }
 Week.resolve(u.game);
+Decisions.autoAll(u.game);
 }
 u.go(SC_PAPER);
 Test.shot(u, dir, "paper");
@@ -4724,6 +6509,31 @@ Rooms.mapMode = 1;
 Rooms.selState = stateIdx("MI");
 Rooms.open(u, R_COUNTRY);
 Test.shot(u, dir, "room_country_unemp");
+Rooms.open(u, R_CONGRESS);
+for (let t = 0; (t < HillUI.TABS.length); t++) {
+HillUI.tab = t;
+HillUI.sel = -1;
+Test.shot(u, dir, ("hill_" + t));
+}
+HillUI.tab = 1;
+HillUI.draftSel = 1;
+HillUI.draft = Legis.draft(u.game, HillUI.agenda(u.game)[1]);
+Test.shot(u, dir, "hill_draft");
+HillUI.tab = 0;
+HillUI.chairCh = 1;
+Test.shot(u, dir, "hill_senate_chairs");
+for (const b of u.game.cong.bills) { if ((b.stage === ST_LAW)) {
+Legis.toDesk(u.game, b);
+break;
+} }
+Decisions.show(u, u.game);
+Test.shot(u, dir, "decision_sign");
+u.modal = null;
+u.game.inbox.clear();
+u.game.cong.approps[0] = 1;
+Budget.deadline(u.game, true);
+Decisions.show(u, u.game);
+Test.shot(u, dir, "decision_cr");
 }
 }
 class ResoluteDesk extends JPanelBase {
@@ -4777,6 +6587,10 @@ this.lastNanos = $nano();
 }
 }
 toast(s, c) {
+for (const o of this.toasts) { if ($eq(o.text, s)) {
+o.t0 = this.tsec;
+return;
+} }
 let t = new Toast();
 t.text = s;
 t.col = ((c == null) ? C_ACCENT : c);
@@ -5640,7 +7454,7 @@ case 8: return this.slider$8(...a);
 case 9: return this.slider$9(...a);
 } }
 }
-const $CLASSES = {ResoluteDesk, Voice, Sfx, StateDef, Faction, Look, Cand, News, Settings, Econ, Game, Economy, Elect, Groups, Approval, Week, Era, Setup, Hit, Toast, Modal, Popup, Portrait, USMap, Screens, Creator, Oval, Rooms, Paper, SaveGame, Test};
+const $CLASSES = {ResoluteDesk, Voice, Sfx, StateDef, Faction, Look, Cand, News, Settings, Econ, Game, Economy, Elect, Groups, Approval, Week, Era, Setup, Bloc, Member, BillDef, Bill, Congress, Hill, Legis, Budget, Midterms, Leaders, Decision, Decisions, Hit, Toast, Modal, Popup, Portrait, USMap, Screens, Creator, Oval, Rooms, Paper, HillUI, SaveGame, Test};
 const $JDEF = {Voice: {d: null, pos: 0, rate: 0, vol: 0},
 Sfx: {lib: null, voices: null, rnd: null, running: false, enabled: false, volume: 0, line: null},
 StateDef: {ab: null, name: null, region: null, ev: 0, d24: 0, r24: 0, t24: 0, d20: 0, r20: 0, t20: 0, d16: 0, r16: 0, t16: 0, m22: 0, white: 0, black: 0, hisp: 0, other: 0, asian: 0, nativeAm: 0, u29: 0, o65: 0, nocol: 0, nocolW: 0, rural: 0, income: 0, cvap: 0, wev: 0, wca: 0, jew: 0, lds: 0, arab: 0, cuban: 0, pr: 0, union: 0, vet: 0, gun: 0, lgbt: 0, urban: 0, close: 0, countSpeed: 0, cx: 0, cy: 0},
@@ -5649,9 +7463,15 @@ Look: {female: false, skin: 0, hair: 0, style: 0, facial: 0, glasses: 0, suit: 0
 Cand: {id: null, first: null, last: null, role: null, homeAb: null, bio: null, pros: null, cons: null, spouse: null, party: 0, born: 0, faction: 0, home: 0, econ: 0, cult: 0, a: null, nameId: 0, poll: 0, cash: 0, list: 0, selfMax: 0, plat: null, record: null, recIssue: null, recCred: null, apG: null, apV: null, look: null, custom: false, fictional: false},
 News: {day: 0, kind: 0, head: null, body: null, weight: 0},
 Settings: {year: 0, scenario: 0, difficulty: 0, presId: null, vpId: null, custom: null, tutorial: false, cApproval: 0, cUnemp: 0, cInfl: 0, cGdp: 0, cHouse: 0, cSenate: 0, seed: 0, bgLine: null},
-Econ: {og: 0, potential: 0, nairu: 0, structural: 0, gdp: 0, unemp: 0, infl: 0, core: 0, expect: 0, fed: 0, fedTarget: 0, rNeutral: 0, tenYr: 0, mortgage: 0, stocks: 0, stocks0: 0, oil: 0, oilBase: 0, gas: 0, gas0: 0, groceries: 0, rent: 0, insurance: 0, sentiment: 0, debt: 0, deficit: 0, interest: 0, nominalGdp: 0, fiscal: 0, tariff: 0, demandShock: 0, supplyShock: 0, finShock: 0, aiShock: 0, finShockPrev: 0, ogPrev: 0, calm: 0, housing: 0, manufacturing: 0, aiInvest: 0, farm: 0, energyIdx: 0, tourism: 0, priceLevel: 0, fedChair: null, fedHawk: 0, fedCred: 0, nextFomc: 0, ogHist: null, ogPos: 0, jobsLast: 0, gdpReported: 0, cpiReported: 0, stUnemp: null, stGas: null},
-Game: {version: 0, set: null, rng: null, era: null, week: 0, termWeeks: 0, term: 0, pres: null, vp: null, party: 0, age: 0, act: null, arg: null, location: 0, stamina: 0, sleep: 0, stress: 0, health: 0, fitness: 0, sick: 0, approval: 0, approval0: 0, honeymoon: 0, rally: 0, perf: 0, scandal: 0, issueApp: null, issueAdj: null, issueSal: null, command: null, stateApp: null, stateBump: null, groupApp: null, groupAdj: null, offset: 0, warChest: 0, funds: 0, fundraisers: 0, hill: 0, houseD: 0, senateD: 0, econ: null, hist: null, news: null, paperWeek: 0, ticker: null, over: false, dirty: false},
-Era: {year: 0, name: null, blurb: null, predecessor: null, winnerId: null, fictional: false, houseD: 0, senateD: 0, approvalBase: 0, polarization: 0, unemp: 0, infl: 0, gdp: 0, fed: 0, tenYr: 0, stocks: 0, oil: 0, gas: 0, debt: 0, deficit: 0, nominalGdp: 0, potential: 0, nairu: 0, priceLevel: 0, tariff: 0, fedChair: null, speakerD: null, speakerR: null, leaderD: null, leaderR: null, houseLeaderD: null, houseLeaderR: null, issues: null, ai: false},
+Econ: {og: 0, potential: 0, nairu: 0, structural: 0, gdp: 0, unemp: 0, infl: 0, core: 0, expect: 0, fed: 0, fedTarget: 0, rNeutral: 0, tenYr: 0, mortgage: 0, stocks: 0, stocks0: 0, oil: 0, oilBase: 0, gas: 0, gas0: 0, groceries: 0, rent: 0, insurance: 0, sentiment: 0, debt: 0, deficit: 0, interest: 0, nominalGdp: 0, fiscal: 0, tariff: 0, demandShock: 0, supplyShock: 0, finShock: 0, aiShock: 0, finShockPrev: 0, ogPrev: 0, calm: 0, housing: 0, manufacturing: 0, aiInvest: 0, farm: 0, energyIdx: 0, tourism: 0, priceLevel: 0, fedChair: null, fedHawk: 0, fedCred: 0, nextFomc: 0, ogHist: null, ogPos: 0, jobsLast: 0, gdpReported: 0, cpiReported: 0, stUnemp: null, stGas: null, polGdp: 0, polUnemp: 0, polInfl: 0},
+Game: {version: 0, set: null, rng: null, era: null, week: 0, termWeeks: 0, term: 0, pres: null, vp: null, party: 0, age: 0, act: null, arg: null, location: 0, stamina: 0, sleep: 0, stress: 0, health: 0, fitness: 0, sick: 0, approval: 0, approval0: 0, honeymoon: 0, rally: 0, perf: 0, scandal: 0, issueApp: null, issueAdj: null, issueSal: null, command: null, stateApp: null, stateBump: null, groupApp: null, groupAdj: null, offset: 0, warChest: 0, funds: 0, fundraisers: 0, hill: 0, houseD: 0, senateD: 0, econ: null, cong: null, capital: 0, inbox: null, filibusterGone: false, hist: null, news: null, paperWeek: 0, ticker: null, over: false, dirty: false},
+Era: {year: 0, name: null, blurb: null, predecessor: null, winnerId: null, fictional: false, houseD: 0, senateD: 0, approvalBase: 0, polarization: 0, unemp: 0, infl: 0, gdp: 0, fed: 0, tenYr: 0, stocks: 0, oil: 0, gas: 0, debt: 0, deficit: 0, nominalGdp: 0, potential: 0, nairu: 0, priceLevel: 0, tariff: 0, fedChair: null, speakerD: null, speakerR: null, leaderD: null, leaderR: null, houseLeaderD: null, houseLeaderR: null, issues: null, ai: false, midSeats: null},
+Bloc: {name: null, party: 0, chamber: 0, seats: 0, econ: 0, cult: 0, loyalty: 0, hawk: 0, rel: 0},
+Member: {name: null, title: null, committee: null, party: 0, chamber: 0, bloc: 0, state: 0, role: 0, price: 0, rel: 0, econ: 0, cult: 0, face: null, lastDeal: 0, promised: false},
+BillDef: {id: null, name: null, desc: null, impact: null, area: 0, lean: 0, econ: 0, cult: 0, cost: 0, support: 0, gdp: 0, unemp: 0, infl: 0, base: 0, budget: false, origRevenue: false, fmt: 0},
+Bill: {defId: null, name: null, stage: 0, first: 0, stageWeek: 0, introduced: 0, lawWeek: 0, payFor: 0, size: 0, scope: 0, strength: 0, recon: false, ours: false, vetoed: false, bottled: false, publicPush: false, held: false, houseYes: 0, houseNo: 0, senYes: 0, senNo: 0, note: null, deals: null, sweet: null},
+Congress: {blocs: null, members: null, bills: null, reconFy: 0, fy: 0, floorUsed: null, budgetSent: false, reqDefense: 0, reqNondefense: 0, reqTax: 0, reqMandatory: 0, approps: null, crUntil: 0, xWeek: 0, shutdown: false, shutdownWeeks: 0, blame: 0, debtLimit: 0, xWarned: false, defaulted: false, crMinority: false, midDone: false, campaign: null, midMargin: 0, midSummary: null, overrides: 0, vetoes: 0, laws: 0, shutdowns: 0, shutdownTotal: 0},
+Decision: {kind: 0, a: 0, b: 0, title: null, body: null, opts: null, advice: null, bill: null},
 Hit: {x: 0, y: 0, w: 0, h: 0, act: null, dragX: null, dragX0: 0, dragW: 0, tip: null, lab: null, layer: 0},
 Toast: {text: null, col: null, t0: 0},
 Modal: {title: null, body: null, buttons: null, descs: null, actions: null, col: null, painter: null, w: 0, extraH: 0, stacked: false, face: null},
@@ -6010,6 +7830,9 @@ if ((k < want)) { lo = (mid + 1); } else { hi = mid; }
 }
 return lo;
 }
+function isTrip(a) {
+return ((a === AC_TRIP) || (a === AC_CAMPAIGN));
+}
 function stateTable(s) {
 let v = $arr(NS, 0);
 for (const t of $split(s, " ")) {
@@ -6057,6 +7880,54 @@ let d = ["shapiro", "kelly", "beshear", "whitmer", "moore", "warnock"];
 let r = ["rubio", "youngkin", "haley", "kemp", "sanders", "cruz"];
 for (const id of ((p.party === DEM) ? d : r)) { if (!$eq(id, p.id)) { return id; } }
 return null;
+}
+function billDef(id) {
+for (const b of BILLS) { if ($eq(b.id, id)) { return b; } }
+return null;
+}
+function committeeFor(d, chamber) {
+switch (d.area) {
+case PI_ECON:
+return (((d.cost < 0) || d.id.includes("tax")) ? 0 : ($eq(d.id, "farm_bill") ? 7 : 11));
+case PI_PRICES:
+return ($eq(d.id, "housing") ? 5 : 0);
+case PI_JOBS:
+return ($eq(d.id, "infrastructure") ? 8 : ((chamber === HOUSE) ? 6 : 2));
+case PI_HEALTH:
+return ((chamber === HOUSE) ? 2 : 0);
+case PI_IMMIG:
+case PI_CRIME:
+case PI_RIGHTS:
+case PI_ETHICS:
+return 3;
+case PI_ENERGY:
+return ((chamber === HOUSE) ? 2 : 8);
+case PI_TECH:
+return ((chamber === HOUSE) ? 2 : 6);
+case PI_TRADE:
+return 0;
+case PI_EDU:
+return ((chamber === HOUSE) ? 6 : 2);
+case PI_SECURITY:
+return 4;
+case PI_FOREIGN:
+return 10;
+default:
+return 11;
+}
+}
+function face(name, r, party) {
+let c = new Cand();
+let p = $split(name, " ", 2);
+c.first = p[0];
+c.last = ((p.length > 1) ? p[1] : "");
+c.party = party;
+c.id = ("m_" + $replace(name, String.fromCharCode(32), String.fromCharCode(95)));
+let l = null;
+for (const lk of LEADER_LOOKS) { if ($eq(lk[0], name)) { l = Look.parse(lk[1]); } }
+if ((l == null)) { l = Creator.randomLook(r); }
+c.look = l;
+return c;
 }
 function label(g, s, x, y, c) {
 g.setFont(F_TB);
@@ -6849,13 +8720,16 @@ var AC_CONGRESS = 9;
 var AC_CAMPDAVID = 10;
 var AC_WORKLATE = 11;
 var AC_TRAVEL = 12;
-var NAC = 13;
-var AC_NAME = ["Open time", "Rest", "Exercise", "Family time", "Policy time", "White House remarks", "Trip", "Fundraiser", "Ceremony", "Hill meetings", "Camp David", "Work late", "Travel"];
-var AC_DESC = ["Nothing scheduled. Staff fill it with calls and paperwork.", "Sleep in or nap. Restores stamina and lowers stress.", "A workout. Restores a little stamina, lowers stress and helps your health over time.", "Time with your family. Lowers stress a lot; the public likes seeing it.", "Meetings with your policy staff on one issue. Builds your command of it and your standing on it.", "A speech at the White House on one issue. Moves the news and your standing on that issue.", "Fly to a state for an event. Lifts your standing there and nationally, but long flights are tiring.", "Raise money for your party. Fills the war chest; too many look bad.", "Bill signings, medals, championship teams. A small, safe lift.", "Meet members of Congress. Improves your relationships on the Hill.", "A weekend at Camp David. Big stamina boost, but bad optics in a crisis.", "Stay at your desk into the night. Gets work done but costs sleep.", "In the air."];
-var AC_STAMINA = [0, 6, 2.5, 3, -2.5, -3, -5, -3.5, -1.5, -3, 8, -4.5, -2];
-var AC_STRESS = [0, -1.2, -1.2, -1.8, 0.6, 0.6, 0.8, 0.6, -0.3, 0.8, -2.5, 1.5, 0.5];
-var AC_ISSUE = [false, false, false, false, true, true, false, false, false, false, false, false, false];
-var AC_STATE = [false, false, false, false, false, false, true, false, false, false, false, false, false];
+var AC_CAMPAIGN = 13;
+var NAC = 14;
+var AC_NAME = ["Open time", "Rest", "Exercise", "Family time", "Policy time", "White House remarks", "Trip", "Fundraiser", "Ceremony", "Hill meetings", "Camp David", "Work late", "Travel", "Campaign stop"];
+var AC_DESC = ["Nothing scheduled. Staff fill it with calls and paperwork.", "Sleep in or nap. Restores stamina and lowers stress.", "A workout. Restores a little stamina, lowers stress and helps your health over time.", "Time with your family. Lowers stress a lot; the public likes seeing it.", "Meetings with your policy staff on one issue. Builds your command of it and your standing on it.", "A speech at the White House on one issue. Moves the news and your standing on that issue.", "Fly to a state for an event. Lifts your standing there and nationally, but long flights are tiring.", "Raise money for your party. Fills the war chest; too many look bad.", "Bill signings, medals, championship teams. A small, safe lift.", "Meet members of Congress. Improves your relationships on the Hill.", "A weekend at Camp David. Big stamina boost, but bad optics in a crisis.", "Stay at your desk into the night. Gets work done but costs sleep.", "In the air.", "Rally for your party's candidates in a state. Only in the weeks before the midterms."];
+var AC_STAMINA = [0, 6, 2.5, 3, -2.5, -3, -5, -3.5, -1.5, -3, 8, -4.5, -2, -5];
+var AC_STRESS = [0, -1.2, -1.2, -1.8, 0.6, 0.6, 0.8, 0.6, -0.3, 0.8, -2.5, 1.5, 0.5, 0.8];
+var TRACE = false;
+var PARTIES = ["Democrats", "Republicans", "Greens", "Libertarians", "Forward", "America Party", "Independents", "Your party"];
+var AC_ISSUE = [false, false, false, false, true, true, false, false, false, false, false, false, false, false];
+var AC_STATE = [false, false, false, false, false, false, true, false, false, false, false, false, false, true];
 var PI_ECON = 0;
 var PI_PRICES = 1;
 var PI_JOBS = 2;
@@ -6975,6 +8849,7 @@ e.leaderD = "Chuck Schumer";
 e.leaderR = "John Thune";
 e.houseLeaderD = "Hakeem Jeffries";
 e.houseLeaderR = "Mike Johnson";
+e.midSeats = "CO:D DE:D GA:D IL:D MA:D MI:D MN:D NH:D NJ:D NM:D OR:D RI:D VA:D AL:R AK:R AR:R ID:R IA:R KS:R KY:R LA:R ME:R MS:R MT:R NE:R NC:R OK:R SC:R SD:R TN:R TX:R WV:R WY:R OH:R FL:R";
 e.issues = "0=1.0 1=1.4 2=0.7 3=0.7 4=1.1 5=0.5 6=0.6 7=0.4 8=0.7 9=0.4 10=0.3 11=0.5 12=0.3 13=0.5";
 ERAS.add(e);
 e = new Era();
@@ -7005,6 +8880,7 @@ e.leaderD = "Chuck Schumer";
 e.leaderR = "John Thune";
 e.houseLeaderD = "Hakeem Jeffries";
 e.houseLeaderR = "Mike Johnson";
+e.midSeats = "AZ:D CA:D CT:D DE:D HI:D ME:D MD:D MA:D MI:D MN:D NV:D NJ:D NM:D NY:D RI:D VT:D VA:D WA:D WI:D FL:R IN:R MS:R MO:R MT:R NE:R ND:R OH:R PA:R TN:R TX:R UT:R WV:R WY:R";
 e.issues = "0=1.0 1=1.3 2=0.8 3=0.7 4=0.9 5=0.5 6=0.6 7=0.5 8=0.8 9=0.5 10=0.3 11=0.8 12=0.3 13=0.6";
 ERAS.add(e);
 }
@@ -7016,6 +8892,66 @@ bio(c, "Businessman and television host; president 2017-21, impeached twice, con
 c.home = stateIdx(c.homeAb);
 c.spouse = "Melania Trump";
 }
+var HOUSE = 0;
+var SENATE = 1;
+var CHAMBER = ["House", "Senate"];
+Bloc.serialVersionUID = 1;
+var RO_RANK = 0;
+var RO_CHAIR = 1;
+var RO_LEADER = 2;
+var RO_SWING = 3;
+var PRICE_PROJECT = 0;
+var PRICE_APPOINT = 1;
+var PRICE_ENDORSE = 2;
+var PRICE_POLICY = 3;
+var PRICE = ["a project back home", "a say in an appointment", "your endorsement", "a change to the bill"];
+Member.serialVersionUID = 1;
+var BILLS = [new BillDef("lower_costs", "Lower Costs Act", "Caps insulin at $35 a month and child care at 7% of income, and bans junk fees.", PI_PRICES, DEM, -0.4, -0.1, 80, true, 66, 0.05, 0, -0.15, "Families with young children save about $# a year on child care.", 3100, 0), new BillDef("public_option", "A public option", "A government health plan on the ACA marketplaces in every state.", PI_HEALTH, DEM, -0.6, -0.1, 60, true, 58, 0, 0, -0.05, "# million more Americans have health insurance.", 4.6, 1), new BillDef("restore_roe", "Restore Roe", "The Women's Health Protection Act: abortion rights written into federal law.", PI_RIGHTS, DEM, 0, -0.8, 0, false, 60, 0, 0, 0, "Abortion is legal through viability in every state; # states had banned it.", 13, 2), new BillDef("imm_reform", "Immigration reform", "Border security money plus a path to citizenship for Dreamers and long-time workers.", PI_IMMIG, DEM, -0.1, -0.3, 10, false, 61, 0.1, 0, 0, "# million Dreamers and long-time residents are on a path to citizenship.", 2.4, 1), new BillDef("billionaire_tax", "Billionaire minimum tax", "A 25% minimum tax on households worth more than $100 million.", PI_ECON, DEM, -0.7, -0.1, -50, true, 63, -0.03, 0, -0.05, "The minimum tax raises about $# billion a year.", 50, 0), new BillDef("housing", "Build 3 million homes", "Zoning incentives, a builders' tax credit and federal land for housing.", PI_PRICES, DEM, -0.2, 0, 40, true, 66, 0.12, -0.05, -0.08, "# million new homes are under construction.", 1.1, 1), new BillDef("ai_safety", "AI safety standards", "Safety testing for the most powerful AI models, and data centers pay their own power bills.", PI_TECH, DEM, -0.3, -0.1, 2, false, 63, -0.02, 0, 0, "# frontier AI labs submit their models for federal safety testing.", 9, 0), new BillDef("ss_protect", "Protect Social Security", "Lift the payroll-tax cap and raise benefits for the oldest retirees.", PI_ECON, DEM, -0.5, -0.1, -15, false, 68, 0, 0, 0, "Social Security's trust fund is solvent for # more years.", 30, 0), new BillDef("gun_safety", "Gun safety", "Universal background checks, red-flag laws and a minimum age of 21 for assault weapons.", PI_CRIME, DEM, -0.1, -0.6, 1, false, 58, 0, 0, 0, "Background checks cover # million more gun sales a year.", 6, 1), new BillDef("clean_energy", "Clean energy buildout", "New transmission lines, permitting reform and clean-power tax credits.", PI_ENERGY, DEM, -0.4, -0.2, 50, true, 55, 0.15, -0.05, 0.02, "# gigawatts of new clean power are on the grid.", 120, 0), new BillDef("voting_rights", "Voting rights", "The Freedom to Vote Act: national standards for early voting and mail ballots.", PI_RIGHTS, DEM, 0, -0.6, 2, false, 60, 0, 0, 0, "# states have had to expand early voting.", 19, 2), new BillDef("paid_leave", "Paid leave", "Twelve weeks of paid family and medical leave for every worker.", PI_JOBS, DEM, -0.6, -0.1, 70, true, 70, 0.02, 0, 0.03, "# million workers took paid leave in its first year.", 11, 1), new BillDef("child_credit", "Expanded child tax credit", "A $3,600 credit per young child, paid monthly.", PI_PRICES, DEM, -0.5, -0.1, 100, true, 62, 0.08, 0, 0.05, "Child poverty is down # percent.", 40, 0), new BillDef("min_wage", "A $17 minimum wage", "Raise the federal minimum wage to $17 over five years.", PI_JOBS, DEM, -0.6, 0, 0, false, 62, -0.02, 0.05, 0.05, "# million workers got a raise.", 22, 1), new BillDef("tax_cuts", "Make the tax cuts bigger", "Extend the 2025 tax cuts and cut the corporate rate to 15%.", PI_ECON, REP, 0.7, 0.2, 150, true, 45, 0.18, -0.05, 0.12, "The typical family pays about $# less in federal income tax.", 1500, 0), new BillDef("border_wall", "Finish the wall", "Money for the border wall, more ICE agents and faster deportations.", PI_IMMIG, REP, 0.2, 0.7, 25, true, 48, -0.05, 0, 0.05, "Border crossings are down #% from when you took office.", 40, 0), new BillDef("health_freedom", "Health freedom act", "Replace ACA subsidies with health savings accounts and state block grants.", PI_HEALTH, REP, 0.7, 0.2, -40, true, 39, 0.03, 0, 0, "# million fewer Americans have health insurance.", 5.2, 1), new BillDef("abortion_limit", "A 15-week abortion limit", "A national limit on abortion after 15 weeks, with exceptions.", PI_RIGHTS, REP, 0.1, 0.8, 0, false, 41, 0, 0, 0, "Abortion is limited after 15 weeks nationwide, including in # states that had allowed it.", 24, 2), new BillDef("tariffs", "Reciprocal tariffs", "Match every country's tariffs, with a 60% floor on Chinese goods.", PI_TRADE, REP, 0.3, 0.3, -150, true, 42, -0.15, 0.08, 0.35, "Tariffs bring in about $# billion a year, and prices on imported goods are up.", 150, 0), new BillDef("energy_dom", "Energy dominance", "Open federal lands and waters to drilling and speed up permits for pipelines.", PI_ENERGY, REP, 0.6, 0.3, -5, true, 53, 0.1, -0.03, -0.12, "US oil and gas output is up #%.", 9, 0), new BillDef("balance_budget", "Balance the budget", "Cap spending and cut federal agencies by a tenth.", PI_ECON, REP, 0.8, 0.2, -250, true, 51, -0.12, 0.08, -0.15, "Federal spending is $# billion a year lower than planned.", 250, 0), new BillDef("school_choice", "School choice", "A federal tax credit for private-school and home-school scholarships.", PI_EDU, REP, 0.5, 0.5, 10, true, 52, 0, 0, 0, "# million children use the new scholarships.", 1.8, 1), new BillDef("police", "Back the blue", "Money for 100,000 police officers and tougher sentences for fentanyl dealers.", PI_CRIME, REP, 0.3, 0.5, 8, false, 57, 0, 0, 0, "# thousand new police officers are on the street.", 60, 0), new BillDef("save_act", "The SAVE Act", "Proof of citizenship to register and photo ID to vote.", PI_RIGHTS, REP, 0.1, 0.7, 1, false, 63, 0, 0, 0, "Every state now requires photo ID to vote; # did not before.", 15, 2), new BillDef("no_tax_tips", "No tax on tips and overtime", "Make the tax break on tips and overtime permanent and wider.", PI_JOBS, REP, 0.3, 0.1, 40, true, 66, 0.05, 0, 0.05, "Workers keep about $# billion a year in tips and overtime pay.", 40, 0), new BillDef("infrastructure", "Infrastructure renewal", "Roads, bridges, water pipes, broadband and the power grid.", PI_JOBS, -1, -0.1, 0, 60, false, 70, 0.15, -0.08, 0.04, "# thousand bridges and roads are being rebuilt.", 22, 0), new BillDef("chips2", "Chips and China Act", "Chips, shipbuilding and export controls to compete with China.", PI_TRADE, -1, 0, 0.1, 15, false, 64, 0.1, -0.03, 0.03, "# new chip and shipbuilding plants are under way.", 14, 0), new BillDef("permitting", "Permitting reform", "Faster environmental reviews for power lines, pipelines and mines.", PI_ENERGY, -1, 0.2, 0, 0, false, 58, 0.06, -0.02, -0.02, "Permits for big projects now take # years less.", 2, 1), new BillDef("kids_online", "Kids Online Safety Act", "Platforms must protect minors from harmful content and addictive design.", PI_TECH, -1, 0, 0.1, 0, false, 72, 0, 0, 0, "# million teenagers are on safer default settings.", 18, 0), new BillDef("farm_bill", "The farm bill", "Five years of crop insurance, conservation and food assistance.", PI_ECON, -1, 0.1, 0.1, 5, false, 60, 0.02, 0, 0, "# million farms are covered by crop insurance.", 1.2, 1), new BillDef("stock_ban", "Ban stock trading by Congress", "Members of Congress and their spouses can't trade individual stocks.", PI_ETHICS, -1, 0, 0, 0, false, 80, 0, 0, 0, "# members of Congress have sold their individual stocks.", 535, 0), new BillDef("crypto", "Crypto market rules", "Clear rules for stablecoins and digital-asset exchanges.", PI_TECH, -1, 0.3, 0, 0, false, 50, 0.02, 0, 0, "Americans hold about $# billion in regulated stablecoins.", 400, 0), new BillDef("ss_fix", "A bipartisan Social Security fix", "A commission's mix of a higher payroll-tax cap and a slower rise in benefits for the well-off.", PI_ECON, -1, 0, 0, -20, false, 55, 0, 0, 0, "Social Security's trust fund is solvent for # more years.", 40, 0)];
+var ST_DRAFT = 0;
+var ST_COMMITTEE = 1;
+var ST_FLOOR = 2;
+var ST_COMMITTEE2 = 3;
+var ST_FLOOR2 = 4;
+var ST_CONFERENCE = 5;
+var ST_DESK = 6;
+var ST_LAW = 7;
+var ST_DEAD = 8;
+var ST_OVERRIDE = 9;
+var STAGE = ["Draft", "In committee", "Floor vote", "In committee (second chamber)", "Floor vote (second chamber)", "Conference", "On your desk", "Law", "Dead", "Veto override vote"];
+var PAYFOR = ["Borrow it", "Tax the wealthy and corporations", "Cut spending elsewhere"];
+Bill.serialVersionUID = 1;
+var CHAIR_H = ["Ways and Means", "Appropriations", "Energy and Commerce", "Judiciary", "Armed Services", "Financial Services", "Education and Workforce", "Agriculture", "Transportation and Infrastructure", "Homeland Security", "Foreign Affairs", "Budget"];
+var CHAIR_S = ["Finance", "Appropriations", "Health, Education, Labor and Pensions", "Judiciary", "Armed Services", "Banking", "Commerce", "Agriculture", "Environment and Public Works", "Homeland Security", "Foreign Relations", "Budget"];
+var FIRST_M = ["James", "Robert", "Michael", "David", "William", "Thomas", "Daniel", "Mark", "Steven", "Brian", "Kevin", "Jason", "Eric", "Greg", "Carlos", "Andre", "Luis", "Raj", "Tom", "Ben", "Sam", "Nick", "Paul", "Doug", "Wes", "Cole", "Ray", "Tim"];
+var FIRST_F = ["Mary", "Patricia", "Jennifer", "Linda", "Elizabeth", "Susan", "Karen", "Lisa", "Nancy", "Sandra", "Ashley", "Michelle", "Maria", "Rosa", "Diane", "Angela", "Priya", "Grace", "Hannah", "Claire", "Tasha", "Joy", "Erin", "Lauren"];
+var LASTS = ["Whitaker", "Calloway", "Brennan", "Okafor", "Delgado", "Hargrove", "Lindqvist", "Marsh", "Pruitt", "Vasquez", "Thornton", "Kowalski", "Ashby", "Mercer", "Haldane", "Ruiz", "Sutherland", "Pennington", "Castellano", "Whitfield", "Abernathy", "Fairbanks", "Nakamura", "Oyelaran", "Quinlan", "Rourke", "Stanton", "Talbot", "Underwood", "Vance-Hill", "Waller", "Yates", "Ellison", "Garrity", "Holloway", "Iverson", "Jardine", "Kilgore", "Langford", "Montague", "Norwood", "Ostrander", "Pemberton", "Radcliffe", "Sandoval", "Tillman", "Voss", "Winslow"];
+var LEADER_LOOKS = [["Mike Johnson", "M 1 2 2 0.1 0 1 0.95 0.5 0 1 0.45 0.6"], ["Hakeem Jeffries", "M 6 0 0 0 0 1 1.0 0.55 0 0 0.45 0.5"], ["John Thune", "M 1 6 2 0.8 0 0 0.95 0.6 0 2 0.65 0.55"], ["Chuck Schumer", "M 1 6 1 0.9 0 1 1.05 0.5 0 0 0.8 0.4"]];
+Congress.serialVersionUID = 1;
+var APPROPS = ["Agriculture", "Commerce, Justice, Science", "Defense", "Energy and Water", "Financial Services", "Homeland Security", "Interior and Environment", "Labor, Health and Human Services, Education", "Legislative Branch", "Military Construction and Veterans Affairs", "State and Foreign Operations", "Transportation and Housing"];
+Hill.TB_CH = [HOUSE, HOUSE, HOUSE, HOUSE, HOUSE, HOUSE, SENATE, SENATE, SENATE, SENATE, SENATE, SENATE];
+Hill.TB_PARTY = [DEM, DEM, DEM, REP, REP, REP, DEM, DEM, DEM, REP, REP, REP];
+Hill.TB_NAME = ["Progressive Caucus", "Mainstream Democrats", "New Dems and Blue Dogs", "Freedom Caucus", "Mainstream Republicans", "Problem Solvers Republicans", "Progressive senators", "Mainstream Democrats", "Moderate Democrats", "Hardliners", "Mainstream Republicans", "Moderate Republicans"];
+Hill.TB_SHARE = [0.45, 0.38, 0.17, 0.17, 0.70, 0.13, 0.25, 0.60, 0.15, 0.20, 0.68, 0.12];
+Hill.TB_ECON = [-0.65, -0.4, -0.1, 0.8, 0.55, 0.25, -0.7, -0.4, -0.1, 0.8, 0.55, 0.2];
+Hill.TB_CULT = [-0.7, -0.5, -0.25, 0.8, 0.55, 0.2, -0.7, -0.45, -0.2, 0.75, 0.5, 0.1];
+Hill.TB_LOY = [0.8, 0.9, 0.75, 0.55, 0.85, 0.75, 0.85, 0.9, 0.7, 0.6, 0.85, 0.7];
+Hill.TB_HAWK = [0.1, 0.3, 0.6, 0.9, 0.5, 0.4, 0.1, 0.3, 0.5, 0.85, 0.5, 0.4];
+Legis.DL_CALL = 0;
+Legis.DL_PROJECT = 1;
+Legis.DL_APPOINT = 2;
+Legis.DL_ENDORSE = 3;
+Legis.DL_THREAT = 4;
+Legis.DL_PUBLIC = 5;
+Legis.DEAL = ["Call", "Project back home", "Appointment", "Endorsement", "Threaten", "Go public"];
+Legis.DEAL_COST = [2, 5, 6, 4, 4, 3];
+var D_SIGN = 1;
+var D_CR = 2;
+var D_SHUTDOWN = 3;
+var D_DEBT = 4;
+var D_BUDGET = 5;
+var D_INFO = 6;
+var D_MUSTPASS = 7;
+Decision.serialVersionUID = 1;
 var SC_HOME = 0;
 var SC_SETUP = 1;
 var SC_PICK = 2;
@@ -7119,7 +9055,7 @@ var R_PRESS = 7;
 var NROOM = 8;
 var ROOM_NAME = ["The Resolute Desk", "The Country", "The Economy", "The Residence", "The West Wing", "The Roosevelt Room", "The Situation Room", "The Press Briefing Room"];
 var ROOM_SUB = ["Your week, slot by slot", "Approval, by issue, group and state", "Jobs, prices, markets and the budget", "Your health, your sleep and your family", "Your staff and your cabinet", "Congress: the leaders, the votes, the budget", "The world: allies, rivals and crises", "The press corps and the media"];
-var ROOM_OPEN = [true, true, true, true, false, false, false, false];
+var ROOM_OPEN = [true, true, true, true, false, true, false, false];
 var ROOM_LATER = ["", "", "", "", "Your chief of staff, national security adviser, press secretary and counsel, each with skills, traits and loyalty; all 15 departments and their secretaries; cabinet meetings; leaks and resignations; and your vice president's missions.", "Named leaders, committee chairs and swing votes; bills you negotiate provision by provision; the filibuster, reconciliation and the Byrd rule; your budget, the 12 spending bills, shutdowns, the debt ceiling and vetoes.", "About forty countries and their leaders; calls, summits, state visits, treaties, aid and sanctions; operations planned with the Pentagon; covert action; alliances; and the crises that start overseas.", "Daily briefings by your press secretary, press conferences with named reporters, interviews, your own social media, the State of the Union and addresses to the nation."];
 Oval.hot = -1;
 Oval.tick = 0;
@@ -7129,6 +9065,7 @@ Oval.SPOT_LABEL = ["The Resolute Desk: plan your week", "The windows: the countr
 var AC_COL = [rgb(0x34415a), rgb(0x2f8f5a), rgb(0x2f8f5a), rgb(0x2f8f5a), rgb(0x2f6fe0), rgb(0x7c4dff), rgb(0xd4a52a), rgb(0x1fbf6a), rgb(0x5aa0d8), rgb(0xc8323a), rgb(0x2f8f5a), rgb(0x8a6a1a), rgb(0x55607a)];
 Rooms.room = R_DESK;
 Rooms.pendingSlot = -1;
+Rooms.pendingAct = AC_TRIP;
 Rooms.mapMode = 0;
 Rooms.selState = -1;
 Rooms.chartSel = 0;
@@ -7137,6 +9074,14 @@ Rooms.ROOM_TAB = ["Desk", "Country", "Economy", "Residence", "West Wing", "Congr
 var C_PAPER = rgb(0xf4efe4);
 var C_INK = rgb(0x1c1a17);
 var C_INK2 = rgb(0x5a554c);
+var BLOC_COL = [rgb(0x1e4fb8), rgb(0x2f7bf6), rgb(0x79acff), rgb(0x8a1f26), rgb(0xe5484d), rgb(0xff8a8d), rgb(0x1e4fb8), rgb(0x2f7bf6), rgb(0x79acff), rgb(0x8a1f26), rgb(0xe5484d), rgb(0xff8a8d)];
+HillUI.tab = 0;
+HillUI.chairCh = 0;
+HillUI.sel = -1;
+HillUI.draftSel = -1;
+HillUI.draft = null;
+HillUI.msg = null;
+HillUI.TABS = ["The Hill", "Bills", "Whip count", "The budget", "Elections"];
 SaveGame.AUTO = "autosave";
 SaveGame.SLOT = "slot1";
 // ===================================================================================
@@ -7223,7 +9168,7 @@ function $boot() {
     });
     window.addEventListener('keyup', e => { if (code0(e) !== undefined) p.keyReleased(new KeyEventW(code0(e), 0)); });
     function code0(e) { return KEYS[e.key] !== undefined ? KEYS[e.key] : (e.key.length === 1 ? e.key.toUpperCase().charCodeAt(0) : undefined); }
-    window.__rd = { get app() { return APP; }, Screens, Creator, Oval, Rooms, Paper, Week, Setup, Settings, Economy, Approval, SaveGame, Game, candById, era, Test };
+    window.__rd = { get app() { return APP; }, Screens, Creator, Oval, Rooms, Paper, Week, Setup, Settings, Economy, Approval, SaveGame, Game, candById, era, Test, HillUI, Legis, Decisions, Budget, Hill, Midterms };
     canvas.focus();
     resize();
     requestAnimationFrame(frame);
