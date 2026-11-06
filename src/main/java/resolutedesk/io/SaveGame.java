@@ -33,6 +33,7 @@ import resolutedesk.model.Era;
 import resolutedesk.model.Game;
 import resolutedesk.opinion.Elect;
 import resolutedesk.opinion.Groups;
+import resolutedesk.policy.Policies;
 import resolutedesk.sim.Decision;
 import resolutedesk.world.Diplo;
 
@@ -101,6 +102,7 @@ public final class SaveGame {
         }
         if (g.world == null) Diplo.setup(g);
         if (g.home == null) HomeFront.setup(g);
+        Policies.upgrade(g);
         if (g.world.name == null) History.world(g, g.era.year, false);
         if (g.world.wars == null) History.setup(g);
         if (g.termWeeks <= 0 || g.term == 1 && g.termWeeks == 208 && g.era.inM != 0) g.termWeeks = termEnd(g);

@@ -1620,9 +1620,14 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
 
         BillDef(String id, String name, String desc, int area, int lean, double econ, double cult, double cost, boolean budget, double support,
                 double gdp, double unemp, double infl, String impact, double base, int fmt) {
+            this(id, name, desc, area, lean, econ, cult, cost, budget, support, gdp, unemp, infl, impact, base, fmt, cost < 0 || id.contains("tax") || id.equals("tariffs"));
+        }
+
+        BillDef(String id, String name, String desc, int area, int lean, double econ, double cult, double cost, boolean budget, double support,
+                double gdp, double unemp, double infl, String impact, double base, int fmt, boolean revenue) {
             this.id = id; this.name = name; this.desc = desc; this.area = area; this.lean = lean; this.econ = econ; this.cult = cult; this.cost = cost; this.budget = budget;
             this.support = support; this.gdp = gdp; this.unemp = unemp; this.infl = infl; this.impact = impact; this.base = base; this.fmt = fmt;
-            this.origRevenue = cost < 0 || id.contains("tax") || id.equals("tariffs");
+            this.origRevenue = revenue;
         }
     }
 
@@ -1660,7 +1665,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     /** The modern agenda. Cost is $ billions a year at full size (negative raises revenue). */
     public static BillDef[] BILLS;
 
-    public static final BillDef[] BILLS_MODERN = {
+    public static final BillDef[] BILLS_MODERN = dataBILLS_MODERN();
+
+    private static BillDef[] dataBILLS_MODERN() {
+        return new BillDef[]{
             new BillDef("lower_costs", "Lower Costs Act", "Caps insulin at $35 a month and child care at 7% of income, and bans junk fees.", PI_PRICES, DEM, -0.4, -0.1, 80, true, 66, 0.05, 0, -0.15, "Families with young children save about $# a year on child care.", 3100, 0),
             new BillDef("public_option", "A public option", "A government health plan on the ACA marketplaces in every state.", PI_HEALTH, DEM, -0.6, -0.1, 60, true, 58, 0, 0, -0.05, "# million more Americans have health insurance.", 4.6, 1),
             new BillDef("restore_roe", "Restore Roe", "The Women's Health Protection Act: abortion rights written into federal law.", PI_RIGHTS, DEM, 0, -0.8, 0, false, 60, 0, 0, 0, "Abortion is legal through viability in every state; # states had banned it.", 13, 2),
@@ -1694,13 +1702,26 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             new BillDef("stock_ban", "Ban stock trading by Congress", "Members of Congress and their spouses can't trade individual stocks.", PI_ETHICS, -1, 0, 0, 0, false, 80, 0, 0, 0, "# members of Congress have sold their individual stocks.", 535, 0),
             new BillDef("crypto", "Crypto market rules", "Clear rules for stablecoins and digital-asset exchanges.", PI_TECH, -1, 0.3, 0, 0, false, 50, 0.02, 0, 0, "Americans hold about $# billion in regulated stablecoins.", 400, 0),
             new BillDef("ss_fix", "A bipartisan Social Security fix", "A commission's mix of a higher payroll-tax cap and a slower rise in benefits for the well-off.", PI_ECON, -1, 0, 0, -20, false, 55, 0, 0, 0, "Social Security's trust fund is solvent for # more years.", 40, 0)};
+    }
 
-    public static BillDef billDef(String id) { for (BillDef b : BILLS) if (b.id.equals(id)) return b; return null; }
+    public static BillDef billDef(String id) {
+        if (Policies.isPolicyBill(id)) return Policies.billDef(id);
+        for (BillDef b : BILLS) if (b.id.equals(id)) return b;
+        return null;
+    }
+
+    /** The bill for a change to one policy. Its effects on the economy and the country come from the policy model, not the bill. */
+    public static BillDef policyBill(String id, String name, String desc, int area, int lean, double econ, double cult, double cost, boolean budget, double support, boolean revenue) {
+        return new BillDef(id, name, desc, area, lean, econ, cult, cost, budget, support, 0, 0, 0, null, 0, 0, revenue);
+    }
 
     //  Bills from the New Deal to the pandemic, each available in the years it was on the table.
     //  Costs are scaled to today's economy and shrink to the era's dollars when you play an earlier year.
     /** id|name|description|issue|lean (D, R or -)|econ|cult|cost|public support|growth|jobs|prices|impact|base|format|from|to */
-    public static final String[] HBILL_SPEC = {
+    public static final String[] HBILL_SPEC = dataHBILL_SPEC();
+
+    private static String[] dataHBILL_SPEC() {
+        return new String[]{
             // the New Deal
             "bank_act|Emergency Banking Act|Reopen sound banks under Treasury licenses, close the rest, and let the Fed back them with new currency.|0|-|-0.2|0|3|82|0.4|-0.3|0.2|# thousand banks reopened within a month.|12|2|1933|1933",
             "ccc|Civilian Conservation Corps|Put 250,000 young men to work planting forests, building parks and fighting erosion.|2|D|-0.5|0|60|75|0.1|-0.3|0.05|# million young men have served in the CCC.|3|1|1933|1941",
@@ -1808,6 +1829,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             "first_step|First Step Act|Shorter sentences for some drug crimes and more job training in federal prisons.|5|-|0|-0.3|1|70|0|0|0|# thousand federal prisoners have been released early.|3|2|2017|2020",
             "usmca|United States-Mexico-Canada Agreement|A rewritten NAFTA with tougher rules for cars and new labor protections.|8|-|0.1|0.1|0|60|0.02|0|0|Trade with Mexico and Canada is up #%.|10|2|2018|2020",
             "cares|CARES Act|$2.2 trillion in checks, loans to small businesses and bigger jobless benefits in the pandemic.|0|-|-0.2|0|900|75|0.8|-1.0|0.1|# million small businesses got loans.|5|1|2020|2020"};
+    }
 
     public static final BillDef[] BILLS_HIST = hbills();
 
@@ -2798,6 +2820,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             b.strength = b.size * (0.7 + 0.6 * b.scope) * (b.recon && b.scope > 0.6 ? 0.85 : 1);
             if (Implement.roll(g, b.name, d.area, 1)) b.strength *= 0.75;
             g.cong.laws++;
+            if (Policies.isPolicyBill(b.defId)) { enactPolicy(g, b, signed); return; }
             if (signed) HomeFront.act(g, b.econ(), b.cult(), 1.0 * Math.min(1.5, b.strength));
             Econ e = g.econ;
             double pctGdp = b.netCost() / (e.nominalGdp * 10);
@@ -2812,6 +2835,17 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 else { Member ch = Hill.chairFor(g, b, b.first); if (ch != null) Relations.earn(g, ch, "You signed their committee's bill, " + b.name); }
                 if (!mine) for (Bloc bl : g.cong.blocs) if (bl.party == g.party) bl.rel = Math.max(0, bl.rel - 3);
                 g.log(NK_BIG, "PRESIDENT " + g.pres.last.toUpperCase() + " SIGNS " + b.name.toUpperCase(), d.desc + (b.recon && b.scope > 0.6 ? " The parliamentarian struck several provisions under the Byrd rule." : ""), 3.0);
+                snd(Sfx.CHEER);
+            } else g.log(NK_INFO, b.name + " becomes law without the president's signature", null, 1.4);
+            Policies.law(g, b, signed);
+        }
+
+        /** A bill that moves one policy: the policy model applies its effects, on the economy and on voters. */
+        static void enactPolicy(Game g, Bill b, boolean signed) {
+            Policies.law(g, b, signed);
+            if (signed) {
+                if (b.ours) Relations.win(g, 2);
+                g.log(NK_BIG, "PRESIDENT " + g.pres.last.toUpperCase() + " SIGNS A LAW ON THE " + b.def().name.toUpperCase(), b.def().desc, 2.6);
                 snd(Sfx.CHEER);
             } else g.log(NK_INFO, b.name + " becomes law without the president's signature", null, 1.4);
         }
@@ -3501,7 +3535,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     public static final String[] ATTR_SHORT = {"CHA", "POD", "SPE", "DEB", "INT", "DIS", "RET", "SMD", "BIG", "SELF", "VOL", "VIR",
             "AUT", "STA", "SCA", "EXE", "FPC", "XOV", "EST", "HOM", "BASE"};
 
-    public static final String[] ATTR_DESC = {
+    public static final String[] ATTR_DESC = dataATTR_DESC();
+
+    private static String[] dataATTR_DESC() {
+        return new String[]{
             "Presence and likeability on stage and on screen.",
             "How well the candidate does in long, unscripted interviews and podcasts - where young men now get their news.",
             "Set-piece oratory: rallies, conventions, big moments.",
@@ -3523,6 +3560,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             "Ties to party leaders, donors and endorsers.",
             "Strength at home - matters most if the home state is competitive.",
             "How strongly the party's activist base sees the candidate as a fighter."};
+    }
 
     /** A politician who can be president or vice president: ratings, positions, biography and look. */
     static final class Cand implements Serializable {
@@ -3564,7 +3602,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     public static final int F_DSOC = 0, F_PROG = 1, F_LIB = 2, F_ABUN = 3, F_MOD = 4, F_OUTD = 5, F_MAGA = 6, F_NATCON = 7,
             F_TECHR = 8, F_HAWK = 9, F_GOV = 10, F_RESTR = 11, F_MAHA = 12, F_GREEN = 13, F_LIBT = 14, F_FWD = 15, F_AMP = 16, NF = 17;
 
-    public static final Faction[] FACTIONS = {
+    public static final Faction[] FACTIONS = dataFACTIONS();
+
+    private static Faction[] dataFACTIONS() {
+        return new Faction[]{
             new Faction("Democratic Socialist", DEM, -0.90, -0.85,
                     new double[]{-0.30, -0.70, -0.95, -0.90, 0.10, -0.80, -0.60, -0.70, -1.0, -1.0, -0.90, -0.70, -0.95, -0.90, -0.80, -0.95, -0.30, -0.95},
                     "Medicare for All, taxing billionaires, a Green New Deal and confronting 'the oligarchy'. Heir to the Sanders movement.",
@@ -3634,6 +3675,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                     "Billionaire-backed revolt against both parties: cut the deficit, build, AI dominance, end the uniparty.",
                     "Pulls from both sides - independents, young men and moderate suburbanites; scrambles the map."),
     };
+    }
 
     public static final double[] GENERIC_D = FACTIONS[F_LIB].pos;
 
@@ -3688,7 +3730,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     //  StateData (resolutedesk.data.StateData): The 50 states and DC: shapes, populations, districts and media markets.
     // ---------------------------------------------------------------------
     /** State outlines in Albers USA projection (us-atlas / Census cartographic boundaries), quarter-pixel encoded. */
-    public static final String[][] SHAPES = {
+    public static final String[][] SHAPES = dataSHAPES();
+
+    private static String[][] dataSHAPES() {
+        return new String[][]{
             {"AL", "#D9#;-_KPMSRLQ>P~#Cz#6=!#F*#6,!#F`#85TWRZ]cMXXTD]QZJ`Q]UUQYNdNQPWUVSX!#Dm#:=M[XYYUQSKZVVKQNUKRRP@U8SPLSQYLOLCELHQKNHLKJMKSKnKOOMILEQ!#C}#9K!#D(#6FJLKI"},
             {"AK", "#+p#>UQLRQOKXFNLTMMXQMSSQMNUKMPRINNRJRGM~#+X#>lRJVJSPQSNFRLVPMLURLLVPNQVLRUMNOUTNLVHLRSEVTPIQNRMLPKIZGSTHMORHGYKKOIJKOM~#*N#?YSGSPGV~#*D#?LRLVQNSLKNVMLMRNI~#*K#>>PKULKVLO~#):#?dSMRTHOOL~#)H#=UWQSKXNORSOPSPZHOKR@BNJ~#(o#?wYNWGSQOMIKRLWNNRRPRLQRHUWLOQFRJTHNESKL~#)c#;^r@bJWPL[PT]PSQSNSQSIVPNKJMJPPJGCSMRTNSTWSNIFPJSLLMFP@HNBB>@ATNQKQEYQ]OXJSJT@^AUPUM]DUMTRYLYC]SPRJSOSROVESSPUSQRKVNZRMVVPNSWPQMUPYKXQRS"
                     + "QMUSdNZTaGlZ!#-}#=SWPOLWRSIXLOXXSRSc[TYWESNNERNMK[EXURWTOYYWQYUNQomNSUOPUTOQUSMgTQRTMSUQYUXM[KXLLMQHDQKIALNTVP[DNJKNCO]JNMLO>LUQQKSLJKONLPJSNLKSOGKNLEIEMKCLNOLWQEKGIMHNRGPA?JEJLNQUT]jINMKGRMHKIMRJMMLNQKNOQ]STWHTMRJKLPFK@C3FPKROLBMVHUEPFLQKJQ;N:VJVQJTKKLENRMKNPKITGKLPRJITPRFSPH[JMKKSPKIRKMWKIQLJPJKUMJMUMQMLKTIPQFLPMYSOLXRKRSMVTTLTLOMINUDOKSPKMJOVJNPYJKQRHXNOMJNTMOKVJONMISKLQJUMWEGTIKU@QDMJ_DUTSLYQ@"
@@ -3755,8 +3800,12 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             {"WI", "#C|#+ePIVOKWKM~#A<#*BVJNTJPNN~#A4#*9VLRSRLPSGTIH~#A4#*OYFRQIRPRGSOL~#@B#*ZTQVNcHcDQQWJSJRPTLUUG]QTJXRPXIPKYWYQQRSMPRTPW_!#BH#+(eYQNWROLVNUSQMTRRNYRQTKTRQUNRRROVSQRLQSSNSMOQTK[RQTOSKRSK`TTTPMZCROUF`OYMSQRTOQJXHV=ZJQQOKV>PHWLOIRKTNOWLNO[KSKWQRLSPQIVGhLeR]GVKeRbKYInT`NVRTQXTTL_R[!#AS#.lICALGJKBLML;VCKJHJM<LLP@LIEBEL;@LCFJELFDBO=?R>LBRLN?UEOIGEHOPBTKSC[FRPQKTOSI!#@1#*_TPPIULTS"},
             {"WY", "#7p#,0!#7Q#03!#6:#0)!#4n#/u!#2;#/T!#2u#+S!#5c#+w!#7p#,0"},
     };
+    }
 
-    public static final StateDef[] STATES = {
+    public static final StateDef[] STATES = dataSTATES();
+
+    private static StateDef[] dataSTATES() {
+        return new StateDef[]{
             new StateDef("AL", "Alabama", "S", 9, new double[]{772412, 1462616, 2256352, 849648, 1441168, 2323304, 718084, 1306925, 2078165, -33}, new double[]{66.19, 26.35, 4.00, 3.46, 39.22, 15.34, 75.86, 72.12, 40.68, 45708.31, 3639505.00}, new double[]{32, 3, 0.2, 0.7, 0.3, 0.7, 1.7, 0.05, 0.15, 13, 9, 55, 6, 15}, 20.0, 1, 671.6, 432.1),
             new StateDef("AK", "Alaska", "W", 3, new double[]{139690, 184407, 324097, 153405, 189892, 391346, 116454, 163387, 318608, -10}, new double[]{61.20, 3.30, 7.00, 28.50, 42.50, 10.40, 71.00, 65.00, 34.00, 74000.00, 530000.00}, new double[]{18, 8, 0.6, 4.5, 0.3, 15, 7.5, 0.03, 0.12, 30, 11, 64, 7, 20}, 25.0, 3, 101.8, 520.9),
             new StateDef("AZ", "Arizona", "W", 11, new double[]{1582860, 1770242, 3389319, 1672143, 1661686, 3387326, 936250, 1021154, 2062810, 3}, new double[]{56.15, 4.01, 30.54, 9.30, 40.79, 15.90, 71.96, 65.64, 9.95, 51693.66, 4613575.00}, new double[]{13, 10, 1.6, 5, 0.6, 4.5, 4, 0.02, 0.04, 9, 9, 46, 8, 30}, 21.0, 3, 208.0, 382.3),
@@ -3809,6 +3858,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             new StateDef("WI", "Wisconsin", "MW", 10, new double[]{1668229, 1697626, 3415213, 1630673, 1610065, 3297352, 1380823, 1403694, 2937326, 2}, new double[]{82.15, 6.18, 6.45, 5.22, 38.61, 15.21, 71.46, 69.34, 29.61, 55672.93, 4313285.00}, new double[]{13, 22, 0.6, 0.4, 0.6, 1, 3.2, 0.02, 0.12, 13, 8, 44, 7, 20}, 21.0, 2, 594.7, 166.7),
             new StateDef("WY", "Wyoming", "W", 3, new double[]{69527, 192633, 266353, 73491, 193559, 276765, 55949, 174248, 248742, -45}, new double[]{84.36, 1.06, 9.67, 4.91, 40.59, 13.84, 73.91, 72.29, 34.93, 59863.70, 432375.00}, new double[]{17, 12, 0.2, 9, 0.2, 2.6, 1, 0.02, 0.04, 9, 10, 66, 6, 10}, 21.0, 1, 307.8, 195.1),
     };
+    }
 
     /** Maine and Nebraska award electoral votes by congressional district. {parent, ev, 2024 D margin, 2020 D margin, vote share of state} */
     public static final String[] CD_NAMES = {"ME-1", "ME-2", "NE-1", "NE-2", "NE-3"};
@@ -3843,7 +3893,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     }
 
     /** U.S. Senate seats up in 2028 (class III). {state, incumbent, party, 2022 D margin, note} */
-    public static final String[][] SENATE_2028 = {
+    public static final String[][] SENATE_2028 = dataSENATE_2028();
+
+    private static String[][] dataSENATE_2028() {
+        return new String[][]{
             {"AL", "Katie Britt", "R", "-36", ""},
             {"AK", "Lisa Murkowski", "R", "-10", "independent streak"},
             {"AZ", "Mark Kelly", "D", "5", ""},
@@ -3879,10 +3932,14 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             {"WA", "Patty Murray", "D", "15", ""},
             {"WI", "Ron Johnson", "R", "-1", "pledged two terms"},
     };
+    }
 
     /** Nielsen designated market areas (TV households in thousands, 2024-25, approximate) and the share of each market's
      *  households in each state. States not fully covered get a synthetic "rest of state" market at load. */
-    public static final String[] DMA_NAMES = {
+    public static final String[] DMA_NAMES = dataDMA_NAMES();
+
+    private static String[] dataDMA_NAMES() {
+        return new String[]{
             "New York",
             "Los Angeles",
             "Chicago",
@@ -3987,10 +4044,14 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             "Fargo-Grand Forks",
             "Montana markets",
     };
+    }
 
     public static final double[] DMA_HH = {7452, 5764, 3473, 3137, 3036, 2743, 2646, 2571, 2534, 2507, 2130, 2049, 2027, 1879, 1837, 1817, 1758, 1712, 1497, 1494, 1333, 1317, 1296, 1227, 1149, 1138, 1132, 1128, 1110, 1092, 1036, 1001, 996, 978, 953, 934, 917, 908, 862, 847, 757, 752, 734, 716, 711, 707, 702, 698, 683, 621, 614, 608, 601, 588, 586, 582, 568, 546, 545, 541, 525, 524, 506, 488, 482, 469, 435, 444, 431, 445, 428, 427, 433, 418, 416, 412, 409, 406, 404, 382, 370, 358, 330, 309, 330, 335, 297, 300, 300, 300, 260, 255, 250, 260, 235, 270, 210, 150, 135, 160, 270, 245, 420};
 
-    public static final String[] DMA_STATES = {
+    public static final String[] DMA_STATES = dataDMA_STATES();
+
+    private static String[] dataDMA_STATES() {
+        return new String[]{
             "NY:0.72 NJ:0.25 CT:0.03",
             "CA:1.00",
             "IL:0.88 IN:0.12",
@@ -4095,6 +4156,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             "ND:0.70 MN:0.30",
             "MT:1.00",
     };
+    }
 
     public static final double[] STATE_TVHH = {2000, 260, 2850, 1200, 13600, 2350, 1420, 400, 330, 8800, 4000, 470, 720, 4900, 2650, 1300, 1150, 1800, 1780, 580, 2350, 2750, 4000, 2300, 1110, 2500, 450, 780, 1200, 550, 3500, 830, 7600, 4200, 330, 4800, 1550, 1700, 5200, 420, 2000, 360, 2800, 10700, 1100, 270, 3300, 3000, 720, 2450, 240};
 
@@ -4589,7 +4651,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     // ---- the Electoral College, census by census ------------------------------------------------------------
     public static final int[] EV_FROM = {1932, 1944, 1952, 1960, 1964, 1972, 1984, 1992, 2004, 2012, 2024};
 
-    public static final String[] EV_TABLE = {
+    public static final String[] EV_TABLE = dataEV_TABLE();
+
+    private static String[] dataEV_TABLE() {
+        return new String[]{
             "AL:11 AZ:3 AR:9 CA:22 CO:6 CT:8 DE:3 FL:7 GA:12 ID:4 IL:29 IN:14 IA:11 KS:9 KY:11 LA:10 ME:5 MD:8 MA:17 MI:19 MN:11 MS:9 MO:15 MT:4 NE:7 NV:3 NH:4 NJ:16 NM:3 NY:47 NC:13 ND:4 OH:26 OK:11 OR:5 PA:36 RI:4 SC:8 SD:4 TN:11 TX:23 UT:4 VT:3 VA:11 WA:8 WV:8 WI:12 WY:3",
             "AL:11 AZ:4 AR:9 CA:25 CO:6 CT:8 DE:3 FL:8 GA:12 ID:4 IL:28 IN:13 IA:10 KS:8 KY:11 LA:10 ME:5 MD:8 MA:16 MI:19 MN:11 MS:9 MO:15 MT:4 NE:6 NV:3 NH:4 NJ:16 NM:4 NY:47 NC:14 ND:4 OH:25 OK:10 OR:6 PA:35 RI:4 SC:8 SD:4 TN:12 TX:23 UT:4 VT:3 VA:11 WA:8 WV:8 WI:12 WY:3",
             "AL:11 AZ:4 AR:8 CA:32 CO:6 CT:8 DE:3 FL:10 GA:12 ID:4 IL:27 IN:13 IA:10 KS:8 KY:10 LA:10 ME:5 MD:9 MA:16 MI:20 MN:11 MS:8 MO:13 MT:4 NE:6 NV:3 NH:4 NJ:16 NM:4 NY:45 NC:14 ND:4 OH:25 OK:8 OR:6 PA:32 RI:4 SC:8 SD:4 TN:11 TX:24 UT:4 VT:3 VA:12 WA:9 WV:8 WI:12 WY:3",
@@ -4601,6 +4666,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             "AL:9 AK:3 AZ:10 AR:6 CA:55 CO:9 CT:7 DE:3 DC:3 FL:27 GA:15 HI:4 ID:4 IL:21 IN:11 IA:7 KS:6 KY:8 LA:9 ME:4 MD:10 MA:12 MI:17 MN:10 MS:6 MO:11 MT:3 NE:5 NV:5 NH:4 NJ:15 NM:5 NY:31 NC:15 ND:3 OH:20 OK:7 OR:7 PA:21 RI:4 SC:8 SD:3 TN:11 TX:34 UT:5 VT:3 VA:13 WA:11 WV:5 WI:10 WY:3",
             "AL:9 AK:3 AZ:11 AR:6 CA:55 CO:9 CT:7 DE:3 DC:3 FL:29 GA:16 HI:4 ID:4 IL:20 IN:11 IA:6 KS:6 KY:8 LA:8 ME:4 MD:10 MA:11 MI:16 MN:10 MS:6 MO:10 MT:3 NE:5 NV:6 NH:4 NJ:14 NM:5 NY:29 NC:15 ND:3 OH:18 OK:7 OR:7 PA:20 RI:4 SC:9 SD:3 TN:11 TX:38 UT:6 VT:3 VA:13 WA:12 WV:5 WI:10 WY:3",
             null};
+    }
 
     public static int[] EV_NOW = new int[NS];
 
@@ -4632,12 +4698,16 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     // ---- how each state leaned: D-minus-R margin against the nation, in points, at anchor elections ------------
     public static final int[] LEAN_YEAR = {1936, 1960, 1976, 1992, 2008};
 
-    public static final String[] LEAN_TABLE = {
+    public static final String[] LEAN_TABLE = dataLEAN_TABLE();
+
+    private static String[] dataLEAN_TABLE() {
+        return new String[]{
             "AL:49 AK:-2 AZ:19 AR:40 CA:11 CO:-1 CT:-9 DE:-13 DC:60 FL:28 GA:50 HI:0 ID:7 IL:-6 IN:-10 IA:-12 KS:-16 KY:-5 LA:54 ME:-38 MD:1 MA:-15 MI:-6 MN:6 MS:70 MO:-2 MT:18 NE:-8 NV:21 NH:-22 NJ:-4 NM:2 NY:-5 NC:23 ND:9 OH:-4 OK:10 OR:14 PA:-8 RI:-11 SC:72 SD:-12 TN:14 TX:51 UT:16 VT:-37 VA:17 WA:13 WV:-3 WI:10 WY:-1",
             "AL:15 AK:-2 AZ:-11 AR:7 CA:-1 CO:-10 CT:7 DE:1 DC:60 FL:-3 GA:25 HI:0 ID:-8 IL:0 IN:-11 IA:-13 KS:-22 KY:-7 LA:22 ME:-14 MD:7 MA:20 MI:2 MN:1 MS:30 MO:0 MT:-3 NE:-24 NV:2 NH:-7 NJ:1 NM:1 NY:5 NC:4 ND:-11 OH:-7 OK:-18 OR:-5 PA:2 RI:27 SC:2 SD:-16 TN:-7 TX:2 UT:-10 VT:-17 VA:-6 WA:-3 WV:5 WI:-4 WY:-10",
             "AL:11 AK:-24 AZ:-19 AR:28 CA:-4 CO:-14 CT:-7 DE:3 DC:63 FL:3 GA:32 HI:1 ID:-25 IL:-4 IN:-10 IA:-3 KS:-10 KY:5 LA:4 ME:-3 MD:4 MA:14 MI:-8 MN:11 MS:0 MO:2 MT:-10 NE:-23 NV:-7 NH:-13 NJ:-4 NM:-5 NY:2 NC:9 ND:-8 OH:-2 OK:-3 OR:-2 PA:1 RI:9 SC:11 SD:-4 TN:11 TX:1 UT:-30 VT:-13 VA:-3 WA:-6 WV:14 WI:0 WY:-22",
             "AL:-12 AK:-15 AZ:-8 AR:12 CA:8 CO:-1 CT:1 DE:3 DC:70 FL:-7 GA:-5 HI:6 ID:-19 IL:9 IN:-12 IA:0 KS:-11 KY:-2 LA:-1 ME:3 MD:9 MA:13 MI:2 MN:6 MS:-15 MO:5 MT:-3 NE:-23 NV:-3 NH:-4 NJ:-3 NM:3 NY:10 NC:-6 ND:-18 OH:-4 OK:-14 OR:5 PA:3 RI:12 SC:-14 SD:-9 TN:-1 TX:-9 UT:-24 VT:10 VA:-10 WA:6 WV:7 WI:-1 WY:-11",
             "AL:-29 AK:-29 AZ:-16 AR:-27 CA:17 CO:2 CT:15 DE:18 DC:79 FL:-5 GA:-12 HI:38 ID:-33 IL:18 IN:-6 IA:2 KS:-22 KY:-23 LA:-26 ME:10 MD:18 MA:19 MI:9 MN:3 MS:-21 MO:-7 MT:-10 NE:-22 NV:5 NH:2 NJ:8 NM:8 NY:20 NC:-7 ND:-16 OH:-3 OK:-39 OR:9 PA:3 RI:21 SC:-16 SD:-16 TN:-22 TX:-19 UT:-35 VT:30 VA:-1 WA:10 WV:-20 WI:7 WY:-40"};
+    }
 
     public static double[][] LEANS;
 
@@ -4705,7 +4775,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
 
     /** year|month0|day|name|winner|termOf|predecessor|houseD|senateD|approval base|polarization|unemployment|inflation|growth|fed|10y|stocks|oil|gas|debt|deficit|
      *  nominal GDP ($T)|potential|nairu|price level (2025 = 1)|tariff|Fed chair|Fed credibility|slump|House D leader|House R leader|Senate D leader|Senate R leader|issues|labels|blurb */
-    public static final String[] ERA_SPEC = {
+    public static final String[] ERA_SPEC = dataERA_SPEC();
+
+    private static String[] dataERA_SPEC() {
+        return new String[]{
             "1933|2|4|The Great Depression|fdr|1|Herbert Hoover|313|61|64|0.3|24.9|-5.1|-1.5|2.5|3.3|7|0.67|0.18|35|4.5|0.057|3.0|5.0|0.041|19.8|Eugene Meyer|0.3|-30|Henry Rainey|Bertrand Snell|Joseph Robinson|Charles McNary"
                     + "|0=1.8 1=0.8 2=2.0 3=0.2 4=0.2 5=0.6 6=0.3 7=0.2 8=0.5 9=0.2 10=0.3 11=0.05 12=0.2 13=0.6|9=Energy & conservation 11=Science"
                     + "|March 4, 1933. A quarter of the workforce has no job, thousands of banks have failed and most states have closed the rest. Farm prices have collapsed and families are losing their homes. Democrats hold huge majorities in Congress. The country wants action, and fast.",
@@ -4775,6 +4848,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             "2021|0|20|The Pandemic|biden|1|Donald Trump|222|50|52|0.95|6.4|1.4|5.9|0.125|1.1|3850|52|2.38|99|12.0|22.0|2.0|4.3|0.847|3.0|Jerome Powell|0.85|-3|Nancy Pelosi|Kevin McCarthy|Chuck Schumer|Mitch McConnell"
                     + "|0=1.3 1=0.6 2=1.1 3=1.6 4=0.9 5=0.6 6=0.6 7=0.5 8=0.4 9=0.7 10=0.9 11=0.4 12=0.6 13=0.9|"
                     + "|January 20, 2021. Two weeks after a mob stormed the Capitol, the new president is sworn in behind fences and troops. The pandemic is killing 3,000 Americans a day, but vaccines are arriving. Democrats hold the House narrowly and the Senate only through the vice president's tie-breaking vote."};
+    }
 
     static {
         for (String spec : ERA_SPEC) {
@@ -4850,7 +4924,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             {"John Thune", "M 1 6 2 0.8 0 0 0.95 0.6 0 2 0.65 0.55"}, {"Chuck Schumer", "M 1 6 1 0.9 0 1 1.05 0.5 0 0 0.8 0.4"}};
 
     /** Deliberate stylised looks for the real people in the 2025 government and on the Supreme Court. */
-    public static final String[] REAL_LOOKS = {
+    public static final String[] REAL_LOOKS = dataREAL_LOOKS();
+
+    private static String[] dataREAL_LOOKS() {
+        return new String[]{
             "John Roberts|M 1 6 2 0.7 0 0 1.0 0.5 2 9 0.7 0.5", "Clarence Thomas|M 6 6 0 0.9 0 0 1.05 0.6 2 9 0.8 0.45", "Samuel Alito|M 1 6 1 0.8 0 1 1.0 0.5 2 9 0.75 0.4",
             "Sonia Sotomayor|F 2 2 6 0.1 0 0 1.02 0.5 2 9 0.72 0.65 E", "Elena Kagan|F 1 6 6 0.5 0 0 1.05 0.5 2 9 0.65 0.6", "Neil Gorsuch|M 0 6 2 0.85 0 0 1.0 0.5 2 9 0.6 0.55",
             "Brett Kavanaugh|M 1 2 2 0.3 0 0 1.0 0.5 2 9 0.6 0.55", "Amy Coney Barrett|F 0 1 7 0 0 0 0.98 0.45 2 9 0.5 0.6 E", "Ketanji Brown Jackson|F 6 0 7 0 0 0 1.0 0.5 2 9 0.55 0.7 E",
@@ -4864,6 +4941,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             "Karoline Leavitt|F 0 5 7 0 0 0 0.96 0.42 0 1 0.25 0.7 E L", "David Warrington|M 1 2 2 0.2 0 1 1.0 0.5 0 2 0.5 0.5", "Kevin Hassett|M 1 6 4 0.6 0 1 1.05 0.5 0 0 0.6 0.55",
             "Vince Haley|M 1 2 2 0.3 0 0 1.0 0.5 0 2 0.5 0.5", "James Braid|M 1 2 1 0.2 0 0 1.0 0.5 0 0 0.45 0.55", "James Blair|M 1 1 1 0 0 0 1.0 0.5 0 1 0.35 0.55",
             "Steven Cheung|M 2 0 1 0 0 0 1.0 0.5 0 1 0.4 0.55"};
+    }
 
     public static String realLook(String name) {
         for (String s : REAL_LOOKS) { int i = s.indexOf('|'); if (s.substring(0, i).equals(name)) return s.substring(i + 1); }
@@ -4890,7 +4968,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     public static final List<Cand> HIST = new ArrayList<Cand>();
 
     /** id|first|last|party|role|home|born|econ|cult|CHA SPE DEB INT DIS EXE FPC XOV EST STA SCA|look|bio */
-    public static final String[] HSPEC = {
+    public static final String[] HSPEC = dataHSPEC();
+
+    private static String[] dataHSPEC() {
+        return new String[]{
             "fdr|Franklin D.|Roosevelt|D|Governor of New York|NY|1882|-0.7|-0.2|95 96 80 80 80 82 80 82 80 60 30|M 0 6 2 0.5 0 1 1.05 0.55 2 3 0.72 0.75|Governor of New York and a former assistant secretary of the Navy, elected in 1932 promising a New Deal for the forgotten man. A patrician with a gift for talking to ordinary people.",
             "garner|John Nance|Garner|D|Speaker of the House|TX|1868|-0.1|0.5|55 50 55 70 70 60 40 55 90 55 30|M 0 7 0 0.9 0 0 1.05 0.6 0 1 0.85 0.5|Texas congressman for thirty years and Speaker of the House; a conservative Southern Democrat who knows every deal in the Capitol.",
             "wallace|Henry A.|Wallace|D|Secretary of Agriculture|IA|1888|-0.8|-0.4|55 55 50 88 65 70 60 45 45 70 30|M 0 3 2 0.3 0 0 1.0 0.5 0 2 0.5 0.55|Iowa farm editor and plant geneticist who founded a seed company, then ran the New Deal's farm program; the left wing's favorite.",
@@ -4946,6 +5027,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             "ryan|Paul|Ryan|R|Chairman, House Budget Committee|WI|1970|0.75|0.55|65 65 65 82 75 45 45 45 75 80 15|M 0 1 2 0 0 0 0.98 0.55 0 1 0.3 0.65|Wisconsin congressman and the party's budget expert.",
             "pence|Mike|Pence|R|Governor of Indiana|IN|1959|0.6|0.85|55 65 60 60 80 65 40 40 70 75 15|M 0 7 2 0.95 0 0 1.0 0.55 0 1 0.55 0.5|Governor of Indiana, former talk-radio host and congressman; a conservative evangelical.",
             "kaine|Tim|Kaine|D|U.S. Senator, Virginia|VA|1958|-0.3|-0.3|60 55 55 72 70 70 55 55 65 70 10|M 0 2 2 0.4 0 0 1.0 0.55 0 1 0.5 0.65|Virginia senator and former governor and mayor of Richmond."};
+    }
 
     static {
         for (String spec : HSPEC) {
@@ -4969,7 +5051,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     }
 
     /** Who you can play in each era: "year|D: pres>vp ...|R: ...", winner first; then role overrides "id=role;id=role". */
-    public static final String[] ERA_ROSTER = {
+    public static final String[] ERA_ROSTER = dataERA_ROSTER();
+
+    private static String[] dataERA_ROSTER() {
+        return new String[]{
             "1933|fdr>garner garner|hoover>knox landon>knox knox|",
             "1937|fdr>garner garner wallace|landon>knox knox|",
             "1941|fdr>wallace wallace truman|willkie>mcnary mcnary dewey>bricker|wallace=Vice President-elect;truman=U.S. Senator, Missouri",
@@ -4993,6 +5078,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             "2013|obama>biden biden|romney>ryan ryan|obama=President;biden=Vice President",
             "2017|hclinton>kaine kaine|trump>pence pence|trump=President-elect",
             "2021|biden>harris harris|trump>pence pence|biden=Former Vice President;trump=President;pence=Vice President;harris=U.S. Senator, California"};
+    }
 
     public static String rosterRow(int year) { for (String r : ERA_ROSTER) if (r.startsWith(year + "|")) return r; return null; }
 
@@ -5045,7 +5131,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     public static final String[] MID_LASTS = {"Callahan", "Delgado", "Hollister", "Whitcomb", "Vasquez", "Rutledge", "Carrington", "Sandoval", "Vance"};
 
     /** Surnames that fit any decade. None belongs to a president or a recent cabinet member. */
-    public static final String[] MORE_LASTS = {"Aldridge", "Ambrose", "Archer", "Atwood", "Bancroft", "Barlow", "Beckett", "Bellamy", "Bingham", "Blackwell", "Bradshaw", "Brandt",
+    public static final String[] MORE_LASTS = dataMORE_LASTS();
+
+    private static String[] dataMORE_LASTS() {
+        return new String[]{"Aldridge", "Ambrose", "Archer", "Atwood", "Bancroft", "Barlow", "Beckett", "Bellamy", "Bingham", "Blackwell", "Bradshaw", "Brandt",
             "Bristow", "Burgess", "Carver", "Chadwick", "Channing", "Chatfield", "Cobb", "Conley", "Corcoran", "Crandall", "Crowley", "Dalton", "Davenport", "Delaney", "Dempsey",
             "Donnelly", "Doyle", "Draper", "Driscoll", "Dunbar", "Eastman", "Eckert", "Emerson", "Everett", "Farrell", "Fenwick", "Finch", "Fitzgerald", "Fleming", "Forsythe",
             "Galloway", "Gilmore", "Goodwin", "Grady", "Hale", "Halloran", "Harlow", "Hartley", "Haskell", "Hawthorne", "Hendricks", "Hewitt", "Hollis", "Horton", "Hutchins",
@@ -5055,6 +5144,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             "Stafford", "Stratton", "Tate", "Thayer", "Tolliver", "Truitt", "Van Dorn", "Wakefield", "Warrick", "Webber", "Wendell", "Westbrook", "Whitlock", "Wilcox", "Winthrop",
             "Wyatt", "Yardley", "Zeller", "Holmgren", "Lindahl", "Novak", "Petrakis", "Rossi", "Moretti", "Bianchi", "Russo", "Ferrante", "DeLuca", "Kaminski", "Nowak", "Zielinski",
             "Brodsky", "Lindgren", "Halvorsen", "Engstrom", "Becker", "Hoffmann", "Krueger", "Schmitt", "Vogel", "Dekker"};
+    }
 
     /** Surnames of today's wider Washington, used from 1990 on. */
     public static final String[] WIDER_LASTS = {"Nguyen", "Patel", "Chen", "Park", "Okonkwo", "Adeyemi", "Mensah", "Haddad", "Khalil", "Farouk", "Rahman", "Siddiqui", "Mehta",
@@ -5092,7 +5182,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     //  RealCabinets (resolutedesk.data.RealCabinets): The real cabinet of 2025 and other real figures who can be named to posts.
     // ---------------------------------------------------------------------
     /** The real 2025 slate: post (or staff role as 100+role), name, background, female, skill, loyalty, ideology, trait, roster id. */
-    public static final String[] SLATE25 = {
+    public static final String[] SLATE25 = dataSLATE25();
+
+    private static String[] dataSLATE25() {
+        return new String[]{
             "0|Marco Rubio|Senator|M|78|72|0.55|0|rubio", "1|Scott Bessent|Investor|M|80|70|0.45|1|", "2|Pete Hegseth|Television host and veteran|M|55|85|0.75|2|",
             "3|Pam Bondi|State attorney general|F|68|88|0.6|2|", "4|Doug Burgum|Former governor|M|74|72|0.45|0|", "5|Brooke Rollins|Think-tank leader|F|70|80|0.6|3|",
             "6|Howard Lutnick|Business executive|M|66|80|0.5|5|", "7|Lori Chavez-DeRemer|House member|F|64|65|0.2|4|", "8|Robert F. Kennedy Jr.|Activist and lawyer|M|58|70|0.3|5|rfk",
@@ -5103,6 +5196,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             "100|Susie Wiles|Campaign veteran|F|84|90|0.45|0|", "101|Mike Waltz|House member|M|64|75|0.6|5|", "102|Karoline Leavitt|Campaign veteran|F|66|90|0.6|5|",
             "103|David Warrington|Campaign lawyer|M|66|85|0.55|2|", "104|Kevin Hassett|Economist|M|74|80|0.5|1|", "105|Vince Haley|Policy adviser|M|66|85|0.7|3|",
             "106|James Braid|Hill veteran|M|70|78|0.5|4|", "107|James Blair|Campaign veteran|M|72|82|0.55|3|", "108|Steven Cheung|Campaign veteran|M|64|90|0.55|5|"};
+    }
 
     /** Who from the roster might take each job, by party: "post:id,id". */
     public static final String[] BIGNAMES_D = {"0:emanuel,murphy", "1:raimondo", "2:kelly", "3:klobuchar", "5:walz", "6:raimondo,cuban", "7:brown", "8:cooper,beshear",
@@ -5131,6 +5225,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 for (int r = 0; r < runs; r++) sim(1000 + r, year, pres, scen, weeks);
             }
             if (what.equals("ui")) ui(a.length > 2 ? a[2] : "shots");
+            if (what.equals("policies")) policySim(a.length > 2 ? Integer.parseInt(a[2]) : 2025, a.length > 3 ? Integer.parseInt(a[3]) : 104);
             if (what.equals("transition")) transitionSim(a.length > 2 ? Integer.parseInt(a[2]) : 2025, a.length > 3 ? Integer.parseInt(a[3]) : 52);
             if (what.equals("check")) check();
             if (what.equals("impeach")) for (int r = 0; r < (a.length > 2 ? Integer.parseInt(a[2]) : 5); r++) impeach(2000 + r, a.length > 3 ? Double.parseDouble(a[3]) : 9);
@@ -5333,6 +5428,32 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             System.out.println("shot " + name);
         }
 
+        /** Policy changes through every channel (a bill, an order, a rule and the budget), then the outcomes over the weeks that follow. */
+        static void policySim(int year, int weeks) {
+            Game g = newGame(31, year, null, 0);
+            StringBuilder b = new StringBuilder("=== policies " + year + " " + g.pres.name() + "\n");
+            String[][] plan = {{"medicaid", "1", "0"}, {"drilling", "1", "1"}, {"overtime", "1", "2"}, {"nih", "1", "3"}, {"police_money", "1", "0"}, {"fuel_economy", "1", "2"}};
+            for (String[] p : plan) {
+                int k = Policies.index(p[0]);
+                if (k < 0 || !Policies.available(g, k)) continue;
+                int to = g.pol.level[k] + Integer.parseInt(p[1]);
+                if (to >= Policies.def(k).levels.length) to = g.pol.level[k] - 1;
+                b.append("  ").append(p[0]).append(" via ").append(CH_NAME[Integer.parseInt(p[2])]).append(": ").append(Policies.propose(g, k, to, Integer.parseInt(p[2]))).append("\n");
+            }
+            for (int w = 0; w < weeks && !g.over; w++) {
+                Auto.week(g);
+                Week.resolve(g);
+                Decisions.autoAll(g);
+                if (w % 13 == 12) {
+                    b.append("  week ").append(g.week).append(" approval ").append(fmt1(g.approval));
+                    for (int o = 0; o < NOUT; o++) b.append(" ").append(OC_KEY[o]).append(" ").append(fmt2(g.pol.out[o]));
+                    b.append("\n");
+                }
+            }
+            for (int k = 0; k < Policies.count(); k++) if (g.pol.level[k] != g.pol.base[k]) b.append("  ").append(Policies.def(k).id).append(" ").append(g.pol.base[k]).append(" -> ").append(g.pol.level[k]).append("\n");
+            System.out.print(b);
+        }
+
         /**
          * A transition played by a simple script (interview and check the top jobs, float and announce the best, meet
          * senators), then a year of the presidency. The equivalence check runs it in both versions.
@@ -5374,6 +5495,21 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             }
             for (int k = 0; k < NPOST; k++) if (g.ex.post[k] != null) b.append("  ").append(POST_SHORT[k]).append(": ").append(g.ex.post[k].name).append(" ").append(g.ex.post[k].voteYes).append("-").append(g.ex.post[k].voteNo).append("\n");
             System.out.print(b);
+        }
+
+        /** The Cabinet Room: a policy and its impacts, the outcomes, and the system map. */
+        static void policyShots(ResoluteDesk u, String dir) {
+            Game g = u.game;
+            int mw = Policies.index("min_wage"), md = Policies.index("medicaid");
+            Rooms.open(u, R_POLICY);
+            PolicyUI.tab = 0; PolicyUI.area = A_JOBS; PolicyUI.sel = mw; PolicyUI.target = 3; shot(u, dir, "policy_minwage");
+            PolicyUI.area = A_HEALTH; PolicyUI.sel = md; PolicyUI.target = -1; shot(u, dir, "policy_medicaid");
+            Policies.propose(g, Policies.index("drilling"), g.pol.level[Policies.index("drilling")] + 1, CH_ORDER);
+            Policies.propose(g, md, g.pol.level[md] + 1, CH_BILL);
+            for (int w = 0; w < 30; w++) { Week.routine(g); Week.resolve(g); Decisions.autoAll(g); }
+            PolicyUI.tab = 1; shot(u, dir, "policy_outcomes");
+            PolicyUI.tab = 2; PolicyUI.area = A_ENERGY; PolicyUI.sel = Policies.index("drilling"); shot(u, dir, "policy_map");
+            PolicyUI.tab = 0;
         }
 
         /** The transition: a fresh shortlist, then a few weeks of the team's work. */
@@ -5422,6 +5558,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             Rooms.mapMode = 1; Rooms.selState = stateIdx("MI"); Rooms.open(u, R_COUNTRY); shot(u, dir, "room_country_unemp");
             Rooms.open(u, R_CONGRESS);
             for (int t = 0; t < HillUI.TABS.length; t++) { HillUI.tab = t; HillUI.sel = -1; shot(u, dir, "hill_" + t); }
+            policyShots(u, dir);
             HillUI.tab = 1; HillUI.draftSel = 1; HillUI.draft = Legis.draft(u.game, HillUI.agenda(u.game).get(1)); shot(u, dir, "hill_draft");
             HillUI.tab = 0; HillUI.chairCh = 1; shot(u, dir, "hill_senate_chairs");
             for (Bill b : u.game.cong.bills) if (b.stage == ST_LAW) { Legis.toDesk(u.game, b); break; }
@@ -5794,6 +5931,8 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         public String name;
         public double support, legal, scope = 1;
         public boolean custom, failed, sued, applied;
+        public int policy = -1, polFrom, polTo;                    // an order or rule that moves a policy (see policy.Policies)
+        public boolean reacted;                                    // the public has already reacted to it
         double aGdp, aUnemp, aInfl, aTariff, aOil, aDef;           // what it applied, so it can be undone
     }
 
@@ -5833,7 +5972,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             2020, 2016, 2009, 2012, 2014, 2022, 2020, 2023, 1960, 2003, 2012, 1973, 1977, 2023, 2025,
             2009, 1938, 2010, 2023, 2023, 2022, 2010, 2017, 2017, 1996, 2010, 2018, 1990, 2019, 2022};
 
-    public static final String[] AD_NAME = {
+    public static final String[] AD_NAME = dataAD_NAME();
+
+    private static String[] dataAD_NAME() {
+        return new String[]{
             "Declare an emergency at the border", "Declare an economic emergency over trade", "Declare an energy emergency", "Declare a climate emergency", "Declare a crime emergency",
             "Send troops to the border", "End birthright citizenship", "Emergency tariffs on imports", "Freeze federal hiring", "Schedule F", "Federal workers back to the office",
             "Open federal waters to drilling", "End DEI programs", "Ten old rules out for every new one", "Leave the Paris climate agreement", "Deport gang members as alien enemies",
@@ -5845,8 +5987,12 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             "Carbon limits for power plants", "Overtime pay for four million more workers", "Cap credit-card late fees at $8", "Ban non-compete agreements", "Minimum staffing in nursing homes",
             "All-in pricing: ban junk fees", "Restore net neutrality", "Repeal the car emissions rules", "Repeal the power-plant rules", "Work requirements for food aid",
             "Loosen bank capital rules", "Restrict asylum at the border", "Speed up mining permits", "Hospital price transparency", "Tighter export controls on AI chips"};
+    }
 
-    public static final String[] AD_DESC = {
+    public static final String[] AD_DESC = dataAD_DESC();
+
+    private static String[] dataAD_DESC() {
+        return new String[]{
             "Unlocks military construction money and troop deployments at the border.", "Unlocks tariffs under the International Emergency Economic Powers Act.",
             "Unlocks waivers to speed up drilling, refining and power plants.", "Unlocks a pause on fossil-fuel leasing and money for clean power.", "Unlocks federal deployments to cities.",
             "National Guard and active-duty troops help patrol the border.", "Children born to parents here illegally or temporarily no longer get citizenship.",
@@ -5868,6 +6014,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             "Treat broadband as a utility: no blocking or throttling.", "Roll back tailpipe rules that push electric cars.", "Roll back limits on power-plant emissions.",
             "Adults without children must work or train to get food aid.", "Lower capital requirements for big banks.", "Bar most asylum claims from people who cross between ports.",
             "Cut the wait for permits to mine critical minerals.", "Hospitals must post their real prices.", "Stop the most advanced AI chips from reaching China."};
+    }
 
     public static final int[] AD_AREA = {PI_IMMIG, PI_TRADE, PI_ENERGY, PI_ENERGY, PI_CRIME,
             PI_IMMIG, PI_IMMIG, PI_TRADE, PI_ETHICS, PI_ETHICS, PI_ETHICS, PI_ENERGY, PI_RIGHTS, PI_ECON, PI_ENERGY, PI_IMMIG, PI_CRIME, PI_ETHICS, PI_CRIME,
@@ -5968,6 +6115,23 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             return a;
         }
 
+        /** An order or rule that moves a policy; the policy model decides its effects and the public's reaction. */
+        public static void issuePolicy(Game g, Action a, boolean rule) {
+            a.def = -1; a.kind = rule ? K_RULE : K_ORDER; a.issued = g.week; a.statusWeek = g.week;
+            g.ex.actions.add(a);
+            if (rule) {
+                a.status = A_COMMENT;
+                a.finalWeek = g.week + (int) Math.round(14 - 6 * Cabinet.pq(g, P_OMB));
+                g.log(NK_INFO, "The administration proposes a rule: " + a.name.toLowerCase(), "Public comments are open until " + dateStr(a.finalWeek * 7) + ".", 1.0);
+                react(g, a, 0.4);
+                return;
+            }
+            a.status = A_LIVE;
+            g.log(NK_INFO, "President " + g.pres.last + " signs an executive order: " + a.name.toLowerCase(), null, 1.4);
+            react(g, a, 1);
+            takeEffect(g, a);
+        }
+
         /** A custom order: issue, direction, how far it reaches and on what legal footing. */
         public static Action custom(Game g, int area, int dir, double scope, int basis) {
             Action a = new Action();
@@ -6009,6 +6173,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         public static void apply(Game g, Action a, boolean on) {
             if (on == a.applied) return;
             a.applied = on;
+            if (a.policy >= 0) { Policies.fromAction(g, a, on); return; }
             Econ e = g.econ;
             double s = on ? a.scope : -a.scope;
             if (on) {
@@ -6495,7 +6660,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     // ---------------------------------------------------------------------
     // ---- the Supreme Court: every justice since 1930, with the years they served ------------------------------
     /** name|born|appointing party|ideology|from|to */
-    public static final String[] JUSTICES = {
+    public static final String[] JUSTICES = dataJUSTICES();
+
+    private static String[] dataJUSTICES() {
+        return new String[]{
             "Charles Evans Hughes|1862|R|0.1|1930.1|1941.5", "Willis Van Devanter|1859|R|0.8|1911|1937.4", "James McReynolds|1862|D|0.9|1914.7|1941.08", "Louis Brandeis|1856|D|-0.7|1916.4|1939.1",
             "George Sutherland|1862|R|0.8|1922.7|1938.05", "Pierce Butler|1866|D|0.85|1923.0|1939.9", "Harlan Fiske Stone|1872|R|-0.3|1925.2|1946.3", "Owen Roberts|1875|R|0.2|1930.4|1945.6",
             "Benjamin Cardozo|1870|R|-0.6|1932.2|1938.5", "Hugo Black|1886|D|-0.6|1937.6|1971.7", "Stanley Reed|1884|D|-0.2|1938.08|1957.15", "Felix Frankfurter|1882|D|0.0|1939.08|1962.7",
@@ -6509,6 +6677,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             "Ruth Bader Ginsburg|1933|D|-0.8|1993.6|2020.7", "Stephen Breyer|1938|D|-0.6|1994.6|2022.5", "John Roberts|1955|R|0.55|2005.7|2100", "Samuel Alito|1950|R|0.85|2006.08|2100",
             "Sonia Sotomayor|1954|D|-0.85|2009.6|2100", "Elena Kagan|1960|D|-0.7|2010.6|2100", "Neil Gorsuch|1967|R|0.75|2017.3|2100", "Brett Kavanaugh|1965|R|0.6|2018.8|2100",
             "Amy Coney Barrett|1972|R|0.7|2020.8|2100", "Ketanji Brown Jackson|1970|D|-0.8|2022.5|2100"};
+    }
 
     public static final String[] FEMALE_JUSTICES = {"Sandra Day O'Connor", "Ruth Bader Ginsburg", "Sonia Sotomayor", "Elena Kagan", "Amy Coney Barrett", "Ketanji Brown Jackson"};
 
@@ -6746,6 +6915,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 a.status = A_REVOKED; a.statusWeek = g.week;
                 Action b = new Action();
                 b.def = a.def; b.kind = a.kind; b.custom = a.custom; b.area = a.area; b.lean = a.lean; b.scope = a.scope * 0.7;
+                b.policy = a.policy; b.polFrom = a.polFrom; b.polTo = a.polTo; b.reacted = true;
                 b.name = a.name + " (revised)"; b.support = a.support + 2; b.legal = a.legal * 0.55; b.issued = g.week; b.statusWeek = g.week; b.status = A_LIVE;
                 g.ex.actions.add(b);
                 g.log(NK_INFO, "The White House issues a narrower version of " + a.name.toLowerCase(), null, 1.0);
@@ -7764,7 +7934,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     //  HistoryData (resolutedesk.history.HistoryData): Turning points of history and the world of each era.
     // ---------------------------------------------------------------------
     /** The world on each inauguration day: "year|CC=name;leader;title;rel;align;power^...", blank fields keep today's value, "CC=-" means not a country then. */
-    public static final String[] WORLD_ERA = {
+    public static final String[] WORLD_ERA = dataWORLD_ERA();
+
+    private static String[] dataWORLD_ERA() {
+        return new String[]{
             "1933|CN=China;Chiang Kai-shek;Chairman;30;0;3^RU=Soviet Union;Joseph Stalin;General Secretary;-35;0;7^DE=Germany;Adolf Hitler;Chancellor;-15;0;8^IT=Italy;Benito Mussolini;Prime Minister;10;0;6^JP=Japan;Makoto Saito;Prime Minister;-15;0;7"
                     + "^GB=;Ramsay MacDonald;Prime Minister;50;1;9^FR=;Edouard Daladier;Prime Minister;45;1;8^CA=;R. B. Bennett;Prime Minister;60;1;4^MX=;Abelardo Rodriguez;President;15;0;3^IR=Persia;Reza Shah;Shah;5;0;2^SA=;Ibn Saud;King;5;0;1"
                     + "^TR=;Mustafa Kemal Ataturk;President;10;0;3^EG=;King Fuad;King;5;0;2^IQ=;King Faisal I;King;0;0;1^BR=;Getulio Vargas;President;30;1;3^CU=;Gerardo Machado;President;10;0;1^AU=;Joseph Lyons;Prime Minister;45;1;3^ZA=;J. B. M. Hertzog;Prime Minister;30;0;2"
@@ -7873,6 +8046,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                     + "^EG=;Abdel Fattah el-Sisi;President;30;1;4^IQ=;Mustafa al-Kadhimi;Prime Minister;40;1;2^SY=;Bashar al-Assad;President;-75;3;2^JO=;King Abdullah II;King;55;1;2^IL=;Benjamin Netanyahu;Prime Minister;65;1;5^IN=;Narendra Modi;Prime Minister;45;1;7^PK=;Imran Khan;Prime Minister;0;0;4"
                     + "^KR=;Moon Jae-in;President;60;2;5^KP=;Kim Jong Un;Supreme Leader;-85;3;4^VN=Vietnam;Nguyen Phu Trong;General Secretary;25;0;3^BR=;Jair Bolsonaro;President;35;0;5^AR=;Alberto Fernandez;President;35;1;3^AU=;Scott Morrison;Prime Minister;65;2;5^ZA=;Cyril Ramaphosa;President;20;0;3^CU=;Miguel Diaz-Canel;President;-50;3;1"
                     + "^PL=;Mateusz Morawiecki;Prime Minister;60;2;4^HU=;Viktor Orban;Prime Minister;30;2;2^DK=;Mette Frederiksen;Prime Minister;55;2;3^FI=;Sauli Niinisto;President;55;1;3^PH=;Rodrigo Duterte;President;35;2;3^ID=;Joko Widodo;President;30;0;4^VE=;Nicolas Maduro;President;-60;3;2^NG=;Muhammadu Buhari;President;20;0;3^AE=;Mohamed bin Zayed;Crown Prince;45;1;3^QA=;Tamim bin Hamad Al Thani;Emir;40;1;3^PA=;Laurentino Cortizo;President;35;1;1"};
+    }
 
     /** Who had the bomb, and from when. */
     public static final String NUKES = "RU:1949 GB:1952 FR:1960 CN:1964 IL:1967 IN:1974 PK:1998 KP:2006";
@@ -7881,7 +8055,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     public static final String BORN = "UA:1992 KR:1948 KP:1948 TW:1949 IN:1947 PK:1947 IL:1948 JO:1946 SY:1946 QA:1971 AE:1971 PH:1946 ID:1949 VN:1954 NG:1960";
 
     /** The turning points: "yyyy-mm-dd|weeks|condition|title|body|effects on arrival|options". */
-    public static final String[] FLASH = {
+    public static final String[] FLASH = dataFLASH();
+
+    private static String[] dataFLASH() {
+        return new String[]{
             // ---- the Depression and the coming of war
             "1933-03-05|1||The banks are closing|On your first full day, governors in most states have shut their banks, and depositors are pulling cash from the rest. The financial system is days from collapse. What do you do first?||"
                     + "Declare a national bank holiday and call Congress back|Treasury secretary|s|0.85|perf=3 fin=4 econ=0.4 demand=2|perf=-1 fin=-2|The holiday stops the run. When the banks reopen, Americans line up to put money back in.|Too many banks reopen too weak; the panic flares again.;;"
@@ -8207,6 +8384,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             "2023-10-07|1|year<2025|Hamas attacks Israel|Hamas fighters have killed about 1,200 people in southern Israel and taken some 250 hostages. Israel is preparing a massive response in Gaza.|gaza=45 rel:IL=10|"
                     + "Stand with Israel and press for humanitarian aid|Secretary of State|d|0.7|rel:IL=10 gaza=-5|gaza=10 protest=10|Aid convoys enter Gaza; hostage talks begin.|The war in Gaza grows bloodier; protests spread at home.;;"
                     + "Urge restraint from the start|National security adviser|d|0.5|rel:IL=-10 gaza=-10|rel:IL=-15|Israel scales back its plans.|Israel ignores you."};
+    }
 
     // ---------------------------------------------------------------------
     //  DisasterData (resolutedesk.home.DisasterData): Natural disasters and where they strike.
@@ -8250,7 +8428,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             "Overdose deaths are climbing again", "Violent crime is rising in big cities", "A national rail strike looms", "Grocery prices jump", "A new virus is spreading abroad",
             "The virus is spreading in American cities", "A vaccine is ready", "Data centers strain the power grid", "A giant chip plant opens"};
 
-    public static final String[] EV_BODY = {
+    public static final String[] EV_BODY = dataEV_BODY();
+
+    private static String[] dataEV_BODY() {
+        return new String[]{
             "Banks, insurers and consulting firms have announced tens of thousands of layoffs, saying AI agents can do the work. Young college graduates are hit hardest.",
             "A fake video of you saying things you never said has been viewed tens of millions of times. Many people believe it.",
             "One of the big AI labs has told the government its newest model can give real help to someone trying to make a biological weapon.",
@@ -8279,8 +8460,12 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             "Researchers have a vaccine that works. The question is how to get it out.",
             "Electricity demand from AI data centers is growing faster than power plants can be built. Utilities warn of shortages and higher bills.",
             "One of the world's largest chipmakers has opened a giant new plant in Arizona."};
+    }
 
-    public static final String[] EV_OPTS = {
+    public static final String[] EV_OPTS = dataEV_OPTS();
+
+    private static String[] dataEV_OPTS() {
+        return new String[]{
             "A national retraining program|Labor secretary|s|0.7|def=0.03 jobs=0.25 tech=0.1|def=0.03 jobs=0.05|Hundreds of thousands sign up for retraining.|The program is slow to get off the ground.;;"
                     + "Tax companies that replace workers with AI|Economic adviser|s|0.6|jobs=0.2 base=3 fin=-0.4 tech=-0.1|fin=-0.8 tech=-0.2|Workers cheer; tech stocks wobble.|Investors flee tech stocks.;;"
                     + "Let the market adjust|Treasury secretary|s|1|jobs=-0.25 tech=0.1|jobs=-0.25|Critics say you're ignoring the jobs crisis.|Critics say you're ignoring the jobs crisis.",
@@ -8365,6 +8550,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             "Fly out for the opening|Chief of staff|c|0.9|jobs=0.2 st:AZ=1.5 tech=0.1|jobs=0.1|You cut the ribbon to cheers.|You cut the ribbon to cheers.;;"
                     + "Claim credit from the White House|Communications director|c|0.8|jobs=0.1 tech=0.05|perf=0|The press notes the credit-taking.|The press notes the credit-taking.;;"
                     + "Let the company have its day|Chief of staff|s|1|perf=0|perf=0|The plant opens quietly.|The plant opens quietly."};
+    }
 
     /** The state of the home front in a game: crime, drugs, protests, the grid, disasters, a pandemic, the parties. */
     static final class Home implements Serializable {
@@ -9061,6 +9247,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             }
             if (g.world == null) Diplo.setup(g);
             if (g.home == null) HomeFront.setup(g);
+            Policies.upgrade(g);
             if (g.world.name == null) History.world(g, g.era.year, false);
             if (g.world.wars == null) History.setup(g);
             if (g.termWeeks <= 0 || g.term == 1 && g.termWeeks == 208 && g.era.inM != 0) g.termWeeks = termEnd(g);
@@ -9689,7 +9876,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     public static final String[] MEASURE = {"Public persuasion", "Crisis leadership", "Economic management", "Moral authority", "International relations", "Administrative skills",
             "Relations with Congress", "Vision and agenda", "Pursued equal justice for all", "Performance within the times"};
 
-    public static final String[][] ACH = {
+    public static final String[][] ACH = dataACH();
+
+    private static String[][] dataACH() {
+        return new String[][]{
             {"twoterms", "Eight years", "Serve two full terms."}, {"thirdterm", "Breaking tradition", "Win a third term (possible before 1951)."}, {"fourth", "Four times", "Win a fourth term."},
             {"landslide", "Landslide", "Win re-election with 400 or more electoral votes."}, {"squeaker", "By a whisker", "Win re-election with no more than 15 electoral votes to spare."},
             {"whatif", "What if?", "Win re-election as a president history didn't choose."}, {"lawmaker", "Lawmaker", "Sign 10 laws."}, {"newdeal", "A new deal", "Sign 20 laws."},
@@ -9702,6 +9892,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             {"lincoln", "Above Lincoln", "Historians rank you first."}, {"hard", "The hard way", "Finish a term on Hard."}, {"stepdown", "Cincinnatus", "Step aside when you could have run again."},
             {"import", "From the campaign trail", "Take office from Battleground 2028."}, {"eras", "A student of history", "Finish presidencies in five different eras."}, {"moon", "Moonshot", "Commit the country to the Moon, and get there."},
             {"tour", "Globetrotter", "Make ten trips abroad."}};
+    }
 
     /** The state of the economy in a game: growth, jobs, prices, rates, markets, the budget and the debt. */
     static final class Econ implements Serializable {
@@ -9767,6 +9958,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         public int ending;                         // how the presidency ended (END_*)
         public Reelect re;                         // the campaign for another term
         public Transition trans;                   // the weeks before the inauguration, if they were played
+        public PolicyState pol;                    // where every policy stands, and the outcomes
         public int tut = -1;                       // the tutorial's step (-1: off)
         public boolean watch;                      // watch mode: the game plays itself
         public int watchSpeed = 1;
@@ -9869,7 +10061,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
      */
     static final class Approval {
         /** How much each kind of event moves the target, and how fast the effects fade each week. */
-        static final double PERF_WEIGHT = 1.6, SCANDAL_WEIGHT = 1.2, RALLY_WEIGHT = 1.6;
+        public static final double PERF_WEIGHT = 1.6, SCANDAL_WEIGHT = 1.2, RALLY_WEIGHT = 1.6;
         static final double HONEYMOON_FADE = 0.975, RALLY_FADE = 0.965, PERF_FADE = 0.96, SCANDAL_FADE = 0.975;
         /** The public mood: a slow random drift, about two points either way. */
         static final double MOOD_FADE = 0.97, MOOD_STEP = 0.45;
@@ -9906,7 +10098,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
 
         static double issueWeighted(Game g) {
             double v = 0, w = 0;
-            for (int i = 0; i < NPI; i++) { v += g.issueSal[i] * g.issueAdj[i]; w += g.issueSal[i]; }
+            for (int i = 0; i < NPI; i++) { v += g.issueSal[i] * (g.issueAdj[i] + Policies.result(g, i)); w += g.issueSal[i]; }
             return w > 0 ? v / w : 0;
         }
 
@@ -10005,7 +10197,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             Econ e = g.econ;
             double a = g.approval;
             for (int i = 0; i < NPI; i++) {
-                double v = a + 4 * g.issueAdj[i] + (g.command[i] - 50) * 0.04;
+                double v = a + 4 * (g.issueAdj[i] + Policies.result(g, i)) + (g.command[i] - 50) * 0.04;
                 if (i == PI_ECON) v += 1.6 * (e.gdp - 2) - 1.5 * (e.unemp - e.uRef) + 0.08 * (e.sentiment - 80);
                 if (i == PI_PRICES) v += -2.5 * (Economy.piEff(e.infl) - e.piRef) - 5 * (e.gas / e.priceLevel - e.gasRef) - 0.6 * (e.groceries - 2.5) - 0.4 * (e.rent - 3.5) - 4;
                 if (i == PI_JOBS) v += -2.2 * (e.unemp - e.uRef) + 0.01 * (e.jobsLast - 150);
@@ -10380,6 +10572,891 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             }
             ready = true;
         }
+    }
+
+    // ---------------------------------------------------------------------
+    //  Outcomes (resolutedesk.policy.Outcomes): The measurable results of policy: the numbers a government is judged by.
+    // ---------------------------------------------------------------------
+    public static final int O_UNEMP = 0, O_INFL = 1, O_GROWTH = 2, O_DEFICIT = 3, O_GAS = 4, O_UNINS = 5, O_POV = 6, O_CRIME = 7, O_OD = 8, O_BORDER = 9,
+            O_EMIS = 10, O_SCORES = 11, NOUT = 12;
+    public static final String[] OC_NAME = {"Unemployment", "Inflation", "Growth", "Deficit", "Gas", "Uninsured", "Poverty", "Violent crime", "Overdose deaths",
+            "Border crossings", "Carbon emissions", "Test scores"};
+    public static final String[] OC_UNIT = {"%", "%", "%", "% of GDP", "a gallon", "%", "%", "per 100,000", "a year", "a month", "tons a year", "index"};
+    public static final String[] OC_DESC = {"Share of the workforce looking for work.", "Prices, over the past year.", "Real GDP growth, a year's pace.",
+            "Federal borrowing as a share of the economy.", "Average price of regular gasoline.", "Share of Americans without health insurance.",
+            "Share of Americans below the poverty line.", "Violent crimes per 100,000 people.", "Deaths from drug overdoses a year.",
+            "Crossings and apprehensions at the southern border a month.", "Carbon dioxide from burning fuel.", "Student achievement: 100 is the level of 2019."};
+    /** The key each outcome goes by in the policy table (the deficit moves through each policy's cost). */
+    public static final String[] OC_KEY = {"unemp", "infl", "gdp", "def", "gas", "unins", "pov", "crime", "od", "border", "emis", "scores"};
+    /** Whether higher is better (1) or worse (-1). */
+    public static final int[] OC_GOOD = {-1, -1, 1, -1, -1, -1, -1, -1, -1, -1, -1, 1};
+    /** Outcomes whose effects in the table are in percent of their level. */
+    public static final boolean[] OC_PCT = {false, false, false, false, false, false, false, true, true, true, true, false};
+    /** Outcomes the economy model owns. */
+    public static boolean outFromEconomy(int o) { return o <= O_GAS; }
+
+    /** An outcome's real value in a year, between the nearest data points. */
+    public static double outHistorical(int o, int year) {
+        double[] h = PolicyTable.HISTORY[o];
+        if (h == null) return 0;
+        if (year <= h[0]) return h[1];
+        for (int i = 2; i < h.length; i += 2) {
+            if (year <= h[i]) {
+                double t = (year - h[i - 2]) / (h[i] - h[i - 2]);
+                return h[i - 1] + t * (h[i + 1] - h[i - 1]);
+            }
+        }
+        return h[h.length - 1];
+    }
+
+    /** An outcome written for the screen, with its unit. */
+    public static String outShow(int o, double v) {
+        switch (o) {
+            case O_GAS: return "$" + fmt2(v);
+            case O_CRIME: return String.valueOf(Math.round(v));
+            case O_OD: return Math.round(v) + ",000";
+            case O_BORDER: return v >= 10 ? Math.round(v) + ",000" : fmt1(v) + " thousand";
+            case O_EMIS: return fmt2(v) + " billion";
+            case O_SCORES: return fmt1(v);
+            default: return fmt1(v) + "%";
+        }
+    }
+
+    /**
+     * Policies and what they do. Every policy has a level; a change made by law, order, rule or budget moves it, and
+     * the change works through over the policy's lag into the economy and the measurable outcomes. Voters react
+     * twice: when a change is made (the announcement), and as its results show up.
+     */
+    static final class Policies {
+        private static List<PolicyDef> defs;
+        private static final Map<String, BillDef> BILL_DEFS = new HashMap<String, BillDef>();
+
+        private Policies() {
+        }
+
+        // ---- the table ----
+
+        public static List<PolicyDef> all() {
+            if (defs == null) {
+                List<PolicyDef> l = new ArrayList<PolicyDef>();
+                for (String row : PolicyTable.ROWS) l.add(new PolicyDef(row));
+                defs = l;
+            }
+            return defs;
+        }
+
+        public static int count() { return all().size(); }
+
+        public static PolicyDef def(int k) { return all().get(k); }
+
+        public static int index(String id) {
+            List<PolicyDef> l = all();
+            for (int k = 0; k < l.size(); k++) if (l.get(k).id.equals(id)) return k;
+            return -1;
+        }
+
+        /** Whether a policy is on the table yet in this game's year. */
+        public static boolean available(Game g, int k) { return yearNow(g) >= def(k).from; }
+
+        /** The policies of an area that are on the table this year. */
+        public static int[] inArea(Game g, int area) {
+            int n = 0;
+            for (int k = 0; k < count(); k++) if (def(k).area == area && available(g, k)) n++;
+            int[] l = new int[n];
+            n = 0;
+            for (int k = 0; k < count(); k++) if (def(k).area == area && available(g, k)) l[n++] = k;
+            return l;
+        }
+
+        // ---- the start of a game ----
+
+        public static void setup(Game g) {
+            PolicyState s = new PolicyState();
+            g.pol = s;
+            grow(s, count(), g.era.year);
+            Econ e = g.econ;
+            s.out0 = new double[NOUT];
+            for (int o = O_UNINS; o < NOUT; o++) s.out0[o] = outHistorical(o, g.era.year);
+            s.out0[O_UNEMP] = e.unemp; s.out0[O_INFL] = e.infl; s.out0[O_GROWTH] = e.gdp; s.out0[O_DEFICIT] = e.deficit; s.out0[O_GAS] = e.gas;
+            s.out = s.out0.clone();
+            s.unemp0 = e.unemp;
+            if (g.home != null) { s.homeCrime0 = Math.max(1, g.home.crime); s.homeOd0 = Math.max(1, g.home.od); }
+            s.result = new double[NPI];
+            s.fy = Hill.fiscalYear(g);
+            record(g);
+        }
+
+        /** Makes room for every policy in the table, at its level in the given year (older saves know fewer policies). */
+        static void grow(PolicyState s, int n, int year) {
+            int had = s.level == null ? 0 : s.level.length;
+            if (had >= n) return;
+            s.level = growI(s.level, n); s.base = growI(s.base, n); s.levelEcon = growI(s.levelEcon, n); s.changed = growI(s.changed, n); s.via = growI(s.via, n);
+            s.eff = growD(s.eff, n); s.effEcon = growD(s.effEcon, n); s.strength = growD(s.strength, n);
+            s.aGdp = growD(s.aGdp, n); s.aUnemp = growD(s.aUnemp, n); s.aInfl = growD(s.aInfl, n); s.aOil = growD(s.aOil, n); s.aFiscal = growD(s.aFiscal, n);
+            for (int k = had; k < n; k++) {
+                int l = def(k).levelIn(year);
+                s.level[k] = l; s.base[k] = l; s.levelEcon[k] = l; s.eff[k] = l; s.effEcon[k] = l; s.strength[k] = 1; s.changed[k] = -999; s.via[k] = -1;
+            }
+        }
+
+        static int[] growI(int[] a, int n) { int[] b = new int[n]; if (a != null) System.arraycopy(a, 0, b, 0, a.length); return b; }
+
+        static double[] growD(double[] a, int n) { double[] b = new double[n]; if (a != null) System.arraycopy(a, 0, b, 0, a.length); return b; }
+
+        /** For a save from before policies existed, or from a version with fewer of them. */
+        public static void upgrade(Game g) {
+            if (g.pol == null) setup(g);
+            else grow(g.pol, count(), g.era.year);
+        }
+
+        // ---- the week ----
+
+        public static void week(Game g) {
+            PolicyState s = g.pol;
+            if (s == null) return;
+            Econ e = g.econ;
+            double[] sum = new double[NOUT];
+            for (int k = 0; k < count(); k++) {
+                PolicyDef d = def(k);
+                double rate = Math.min(1, 2.3 / Math.max(1, d.lag));
+                s.eff[k] += (s.level[k] - s.eff[k]) * rate;
+                s.effEcon[k] += (s.levelEcon[k] - s.effEcon[k]) * rate;
+                // the economy: growth, jobs, prices, oil and the budget
+                double dk = (s.effEcon[k] - s.base[k]) * s.strength[k];
+                double gdp = dk * d.fx[O_GROWTH], un = dk * d.fx[O_UNEMP], inf = dk * d.fx[O_INFL], oil = dk * d.fx[O_GAS] * 42 * e.priceLevel;
+                double fis = (s.effEcon[k] - s.base[k]) * s.strength[k] * d.cost * COST_SCALE / (e.nominalGdp * 10);
+                e.polGdp += gdp - s.aGdp[k]; e.polUnemp += un - s.aUnemp[k]; e.polInfl += inf - s.aInfl[k]; e.oilBase += oil - s.aOil[k]; e.fiscal += fis - s.aFiscal[k];
+                s.aGdp[k] = gdp; s.aUnemp[k] = un; s.aInfl[k] = inf; s.aOil[k] = oil; s.aFiscal[k] = fis;
+                // everything else
+                double dl = (s.eff[k] - s.base[k]) * s.strength[k];
+                if (dl != 0) for (int o = O_UNINS; o < NOUT; o++) sum[o] += dl * d.fx[o];
+            }
+            outcomes(g, sum);
+            results(g, sum);
+            budget(g);
+            if (g.week % 4 == 0) record(g);
+        }
+
+        static void outcomes(Game g, double[] sum) {
+            PolicyState s = g.pol;
+            Econ e = g.econ;
+            double[] o0 = s.out0, out = s.out;
+            s.growthIdx *= 1 + e.gdp / 100 / 52;
+            double du = e.unemp - s.unemp0;
+            out[O_UNEMP] = e.unemp; out[O_INFL] = e.infl; out[O_GROWTH] = e.gdp; out[O_DEFICIT] = e.deficit; out[O_GAS] = e.gas;
+            out[O_UNINS] = clamp(o0[O_UNINS] + sum[O_UNINS] + 0.35 * du, 1, 95);
+            out[O_POV] = clamp(o0[O_POV] + sum[O_POV] + 0.45 * du, 2, 60);
+            double hc = g.home != null ? g.home.crime / s.homeCrime0 : 1, ho = g.home != null ? g.home.od / s.homeOd0 : 1;
+            out[O_CRIME] = Math.max(10, o0[O_CRIME] * (1 + sum[O_CRIME] / 100) * hc);
+            out[O_OD] = Math.max(0.5, o0[O_OD] * (1 + sum[O_OD] / 100) * ho);
+            out[O_BORDER] = Math.max(0.3, o0[O_BORDER] * (1 + sum[O_BORDER] / 100) * (1 - 0.04 * du));
+            out[O_EMIS] = Math.max(0.2, o0[O_EMIS] * (1 + sum[O_EMIS] / 100) * Math.sqrt(s.growthIdx));
+            out[O_SCORES] = clamp(o0[O_SCORES] + sum[O_SCORES], 60, 130);
+        }
+
+        /** Voters judge results: what your policies have done, by now, to coverage, crime, the border, emissions, schools and poverty. */
+        static void results(Game g, double[] sum) {
+            double[] r = g.pol.result;
+            r[PI_HEALTH] = clamp(-0.12 * sum[O_UNINS], -1.2, 1.2);
+            r[PI_CRIME] = clamp(-0.015 * sum[O_CRIME] - 0.004 * sum[O_OD], -1.2, 1.2);
+            r[PI_IMMIG] = clamp(-0.005 * sum[O_BORDER], -1.2, 1.2);
+            r[PI_ENERGY] = clamp(-0.008 * sum[O_EMIS], -0.8, 0.8);
+            r[PI_EDU] = clamp(0.06 * sum[O_SCORES], -1.2, 1.2);
+            r[PI_PRICES] = clamp(-0.05 * sum[O_POV], -0.8, 0.8);
+        }
+
+        /** The approval effect of policy results on an issue, in the same units as an issue's adjustment. */
+        public static double result(Game g, int issue) { return g.pol == null || g.pol.result == null ? 0 : g.pol.result[issue]; }
+
+        static void record(Game g) {
+            PolicyState s = g.pol;
+            double[] row = new double[NOUT + 1];
+            row[0] = g.week;
+            System.arraycopy(s.out, 0, row, 1, NOUT);
+            s.hist.add(row);
+            if (s.hist.size() > 200) s.hist.remove(0);
+        }
+
+        // ---- making changes ----
+
+        /** Something already under way for a policy, or null. */
+        public static String inMotion(Game g, int k) {
+            String id = def(k).id;
+            if (g.cong != null) for (Bill b : g.cong.bills) if (b.defId.startsWith("pol:" + id + ":") && b.stage < ST_DESK && b.stage != ST_DEAD) return "A bill on this is already in Congress.";
+            if (g.ex != null) for (Action a : g.ex.actions) if (a.policy == k && a.status == A_COMMENT) return "A rule on this is open for public comment.";
+            for (int[] b : g.pol.budget) if (b[0] == k) return "It's already in your budget request.";
+            return null;
+        }
+
+        /** Why a change can't be made this way now, or null if it can. */
+        public static String cannot(Game g, int k, int to, int ch) {
+            PolicyDef d = def(k);
+            int from = g.pol.level[k];
+            if (!available(g, k)) return "This isn't on the table until " + d.from + ".";
+            if (to < 0 || to >= d.levels.length || to == from) return "Choose a different level.";
+            if (!d.can(ch)) return "This can't be done by " + CH_NAME[ch].toLowerCase().replace("a bill in congress", "a bill") + ".";
+            int steps = Math.abs(to - from);
+            if (ch != CH_BILL && steps > 1) return "Orders, rules and budgets move a policy one step at a time.";
+            if (steps > 2) return "One bill can move a policy two steps at most.";
+            return inMotion(g, k);
+        }
+
+        /** Starts a change through the chosen channel, and says what happens next. */
+        public static String propose(Game g, int k, int to, int ch) {
+            String no = cannot(g, k, to, ch);
+            if (no != null) return no;
+            PolicyDef d = def(k);
+            int from = g.pol.level[k];
+            String what = d.name + ": " + d.levels[to].toLowerCase();
+            switch (ch) {
+                case CH_BILL: {
+                    Bill b = bill(g, k, to);
+                    Legis.introduce(g, b);
+                    return "You send Congress a bill. Follow it in the Roosevelt Room.";
+                }
+                case CH_ORDER: case CH_RULE: {
+                    Action a = new Action();
+                    a.policy = k; a.polFrom = from; a.polTo = to;
+                    a.name = what; a.area = AREA_ISSUE[d.area]; a.lean = d.leanFor(to - from);
+                    a.support = 50;                                  // the policy model handles the public's reaction
+                    a.legal = Actions.legal(g, d.legal);
+                    Actions.issuePolicy(g, a, ch == CH_RULE);
+                    return ch == CH_RULE ? "The agency proposes the rule. It takes effect after public comment." : "You sign the order. It takes effect today.";
+                }
+                default:
+                    g.pol.budget.add(new int[]{k, to});
+                    g.log(NK_INFO, "The president's budget will ask for a change: " + what, null, 0.6);
+                    return "It goes in your budget request, and takes effect when the fiscal year begins on October 1 if Congress goes along.";
+            }
+        }
+
+        /** A bill to move a policy, ready to introduce. */
+        public static Bill bill(Game g, int k, int to) {
+            Bill b = Legis.draft(g, ResoluteDesk.billDef(billId(k, g.pol.level[k], to)));
+            b.payFor = 0;
+            return b;
+        }
+
+        static String billId(int k, int from, int to) { return "pol:" + def(k).id + ":" + from + ":" + to; }
+
+        public static boolean isPolicyBill(String defId) { return defId.startsWith("pol:"); }
+
+        /** For a policy bill: {policy, level it would set}; otherwise null. */
+        public static int[] target(String defId) {
+            if (!isPolicyBill(defId)) return null;
+            String[] t = defId.split(":");
+            int k = index(t[1]);
+            return k < 0 ? null : new int[]{k, Integer.parseInt(t[3])};
+        }
+
+        /** The bill a policy change becomes: what Congress votes on. */
+        public static BillDef billDef(String id) {
+            BillDef b = BILL_DEFS.get(id);
+            if (b != null) return b;
+            String[] t = id.split(":");
+            int k = index(t[1]);
+            if (k < 0) return null;
+            PolicyDef d = def(k);
+            int from = Integer.parseInt(t[2]), to = Integer.parseInt(t[3]), steps = to - from;
+            String desc = "Changes the " + lower(d.name) + " from " + lower(d.levels[from]) + " to " + lower(d.levels[to]) + ".";
+            b = ResoluteDesk.policyBill(id, d.name + ": " + lower(d.levels[to]), desc, AREA_ISSUE[d.area], d.leanFor(steps), clamp(d.econ * steps, -1, 1), clamp(d.cult * steps, -1, 1),
+                    d.cost * steps, d.can(CH_BUDGET), d.supportFor(steps), d.area == A_TAX);
+            BILL_DEFS.put(id, b);
+            return b;
+        }
+
+        static String lower(String s) { return s.isEmpty() ? s : Character.toLowerCase(s.charAt(0)) + s.substring(1); }
+
+        /** A bill becomes law: a policy bill moves its policy; a named bill moves the policies it changed in history. */
+        public static void law(Game g, Bill b, boolean signed) {
+            if (g.pol == null) return;
+            if (isPolicyBill(b.defId)) {
+                String[] t = b.defId.split(":");
+                int k = index(t[1]);
+                if (k >= 0) set(g, k, Integer.parseInt(t[3]), CH_BILL, clamp(b.strength, 0.6, 1.2), true, signed ? 2 : 1);
+                return;
+            }
+            for (String row : PolicyTable.BILL_POLICY) {
+                String[] t = row.split(" ");
+                if (!t[0].equals(b.defId)) continue;
+                for (int i = 1; i < t.length; i++) {
+                    String[] kv = t[i].split("=");
+                    int k = index(kv[0]);
+                    if (k >= 0) set(g, k, Integer.parseInt(kv[1]), CH_BILL, 1, false, 1);
+                }
+            }
+        }
+
+        /** An order or rule takes effect, or is struck down, revoked or overturned. */
+        public static void fromAction(Game g, Action a, boolean on) {
+            if (g.pol == null || a.policy < 0) return;
+            int ch = a.kind == K_RULE ? CH_RULE : CH_ORDER;
+            if (on) {
+                set(g, a.policy, a.polTo, ch, CH_STRENGTH[ch] * Math.min(1, a.scope), true, a.reacted ? 0 : 2);
+                a.reacted = true;
+            } else if (g.pol.level[a.policy] == a.polTo) set(g, a.policy, a.polFrom, ch, g.pol.strength[a.policy], true, 0);
+        }
+
+        /**
+         * Moves a policy. econ: whether this model applies its economic effects (a named bill applies its own).
+         * react: 0 quietly (a court's ruling), 1 the voter groups only, 2 the groups and the country.
+         */
+        static void set(Game g, int k, int to, int ch, double str, boolean econ, int react) {
+            PolicyState s = g.pol;
+            int from = s.level[k];
+            if (to == from || to < 0 || to >= def(k).levels.length) return;
+            s.level[k] = to;
+            if (econ) s.levelEcon[k] += to - from;
+            s.strength[k] = str;
+            s.changed[k] = g.week;
+            s.via[k] = ch;
+            s.changes++;
+            if (react > 0) react(g, def(k), to - from, str, react == 2);
+        }
+
+        /** Approval points across the country when a change is made: up to five for a signature policy the public wants. */
+        public static double national(PolicyDef d, int steps, double str) {
+            double sup = d.supportFor(steps);
+            return clamp((sup - 50) * (d.signature ? 0.2 : 0.06) * Math.min(2, Math.abs(steps)) * str, -5, 5);
+        }
+
+        /** Points of approval in a voter group when a change is made. */
+        public static double groupEffect(PolicyDef d, int gr, int steps, double str) {
+            return d.groups[gr] * steps * str * (d.signature ? 1.5 : 1);
+        }
+
+        static void react(Game g, PolicyDef d, int steps, double str, boolean country) {
+            if (country) {
+                double n = national(d, steps, str);
+                g.perf += n / Approval.PERF_WEIGHT;
+                int issue = AREA_ISSUE[d.area];
+                g.issueAdj[issue] = clamp(g.issueAdj[issue] + n * 0.03, -1.5, 1.5);
+                g.issueSal[issue] = Math.min(2, g.issueSal[issue] + 0.1);
+            }
+            for (int gr = 0; gr < d.groups.length; gr++) if (d.groups[gr] != 0) groupBump(g, gr, groupEffect(d, gr, steps, str));
+            HomeFront.act(g, d.econ * steps, d.cult * steps, 0.5 * Math.abs(steps));
+        }
+
+        /** At the start of each fiscal year, the changes in your budget take effect if Congress funded them. */
+        static void budget(Game g) {
+            PolicyState s = g.pol;
+            int fy = Hill.fiscalYear(g);
+            if (fy == s.fy) return;
+            s.fy = fy;
+            if (s.budget.isEmpty() || g.cong == null) return;
+            double p = g.cong.shutdown ? 0 : g.cong.crUntil >= g.week ? 0.5 : Hill.majority(g, HOUSE, g.party) ? 0.9 : 0.55;
+            for (int[] b : s.budget) {
+                PolicyDef d = def(b[0]);
+                String what = d.name + ": " + lower(d.levels[b[1]]);
+                if (g.rng.nextDouble() < p) {
+                    set(g, b[0], b[1], CH_BUDGET, CH_STRENGTH[CH_BUDGET], true, 2);
+                    g.log(NK_GOOD, "The new budget takes effect: " + what, null, 1.0);
+                } else g.log(NK_BAD, "Congress leaves out of the budget: " + what, null, 0.9);
+            }
+            s.budget.clear();
+        }
+
+        // ---- what a change would do ----
+
+        /** The estimated effect of a move on an outcome once it has worked through: {low, middle, high}. */
+        public static double[] range(PolicyDef d, int steps, int o, double str) {
+            double mid = d.fx[o] * steps * str;
+            double sp = EV_SPREAD[d.evidence] * Math.abs(mid);
+            return new double[]{mid - sp, mid, mid + sp};
+        }
+
+        /** The change in the deficit, $ billions a year in the era's dollars: {low, middle, high}. */
+        public static double[] costRange(PolicyDef d, int steps, double str) {
+            double mid = d.cost * steps * str * COST_SCALE;
+            double sp = 0.25 * Math.abs(mid);
+            return new double[]{mid - sp, mid, mid + sp};
+        }
+
+        /** What a policy adds to an outcome right now (for the system map and the outcome cards). */
+        public static double contribution(Game g, int k, int o) {
+            PolicyState s = g.pol;
+            if (outFromEconomy(o)) return (s.effEcon[k] - s.base[k]) * s.strength[k] * def(k).fx[o];
+            return (s.eff[k] - s.base[k]) * s.strength[k] * def(k).fx[o];
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    //  PolicyData (resolutedesk.policy.PolicyData): The policies of the United States government, in 12 areas.
+    // ---------------------------------------------------------------------
+    public static final int A_TAX = 0, A_NET = 1, A_JOBS = 2, A_HEALTH = 3, A_HOUSING = 4, A_ENERGY = 5, A_IMMIG = 6, A_CRIME = 7, A_EDU = 8, A_RIGHTS = 9,
+            A_TECH = 10, A_DEFENSE = 11, NAREA = 12;
+    public static final String[] AREA_NAME = {"Taxes and the budget", "The safety net", "Jobs and work", "Health care", "Housing and transportation",
+            "Energy and the environment", "Immigration", "Crime and justice", "Education", "Rights and democracy", "Technology and business", "Defense and trade"};
+    /** The issue voters judge each area by. */
+    public static final int[] AREA_ISSUE = {PI_ECON, PI_PRICES, PI_JOBS, PI_HEALTH, PI_PRICES, PI_ENERGY, PI_IMMIG, PI_CRIME, PI_EDU, PI_RIGHTS, PI_TECH, PI_SECURITY};
+
+    /** How a change can be made: a law, an executive order, an agency rule or the annual budget. */
+    public static final int CH_BILL = 0, CH_ORDER = 1, CH_RULE = 2, CH_BUDGET = 3, NCH = 4;
+    public static final String[] CH_NAME = {"A bill in Congress", "An executive order", "An agency rule", "The budget"};
+    /** How much of a change's effect each channel delivers: an order is the easiest to undo and the weakest. */
+    public static final double[] CH_STRENGTH = {1, 0.6, 0.85, 1};
+
+    /** How sure the evidence is. */
+    public static final String[] EV_NAME = {"Strong", "Moderate", "Weak", "Contested"};
+    public static final String[] EV_DESC = {"Most studies agree on the size and direction.", "Studies agree on the direction more than the size.",
+            "Little hard evidence; this is closer to a judgment call.", "Economists and researchers disagree, sometimes on the direction."};
+    /** How wide the range around each estimate is, as a share of it, by evidence rating. */
+    public static final double[] EV_SPREAD = {0.25, 0.5, 0.8, 1.0};
+
+
+    /** One policy, read from its row in PolicyData: its levels, the law in each era, its channels, effects and politics. */
+    static final class PolicyDef {
+        public final String id, name;
+        public final int area;
+        public final String[] levels;
+        final int[] defYear, defLevel;
+        final boolean[] channel = new boolean[NCH];
+        public final int from;
+        /** Legal risk of making the change by order or rule, before the counsel's work. */
+        public final double legal;
+        /** Per step up: cost ($ billions a year, today's dollars), economic and cultural shift, and effects on each outcome. */
+        public final double cost, econ, cult;
+        public final double[] fx = new double[NOUT];
+        /** Approval among each voter group, in points, per step up. */
+        public final double[] groups = new double[NG];
+        /** Public support for a step up (%), and the party that wants it higher (or -1). */
+        public final double support;
+        public final int lean;
+        public final boolean signature;
+        public final int lag, evidence;
+        public final String winners, losers, precedent;
+
+        PolicyDef(String row) {
+            String[] t = row.split("\\|");
+            id = t[0];
+            area = Integer.parseInt(t[1]);
+            name = t[2];
+            levels = t[3].split(";");
+            String[] dl = t[4].split(" ");
+            defYear = new int[dl.length];
+            defLevel = new int[dl.length];
+            for (int i = 0; i < dl.length; i++) { String[] kv = dl[i].split(":"); defYear[i] = Integer.parseInt(kv[0]); defLevel[i] = Integer.parseInt(kv[1]); }
+            channel[CH_BILL] = t[5].contains("B");
+            channel[CH_ORDER] = t[5].contains("O");
+            channel[CH_RULE] = t[5].contains("R");
+            channel[CH_BUDGET] = t[5].contains("$");
+            from = Integer.parseInt(t[6]);
+            legal = Double.parseDouble(t[7]);
+            cost = Double.parseDouble(t[8]);
+            econ = Double.parseDouble(t[9]);
+            cult = Double.parseDouble(t[10]);
+            support = Double.parseDouble(t[11]);
+            lean = t[12].equals("D") ? DEM : t[12].equals("R") ? REP : -1;
+            signature = t[13].equals("1");
+            if (!t[14].equals("-")) for (String kv : t[14].split(" ")) fx[outcome(kv.split("=")[0])] = Double.parseDouble(kv.split("=")[1]);
+            if (!t[15].equals("-")) for (String kv : t[15].split(" ")) groups[group(kv.split("=")[0])] = Double.parseDouble(kv.split("=")[1]);
+            lag = Integer.parseInt(t[16]);
+            evidence = "SMWC".indexOf(t[17].charAt(0));
+            winners = t[18];
+            losers = t[19];
+            precedent = t[20];
+        }
+
+        static int outcome(String key) {
+            for (int o = 0; o < NOUT; o++) if (OC_KEY[o].equals(key)) return o;
+            throw new IllegalArgumentException("no outcome " + key);
+        }
+
+        static int group(String code) {
+            for (int i = 0; i < PolicyTable.GROUP_CODE.length; i++) if (PolicyTable.GROUP_CODE[i].equals(code)) return i;
+            throw new IllegalArgumentException("no voter group " + code);
+        }
+
+        /** The level in force at the start of a year. */
+        public int levelIn(int year) {
+            int l = defLevel[0];
+            for (int i = 0; i < defYear.length; i++) if (year >= defYear[i]) l = defLevel[i];
+            return l;
+        }
+
+        public boolean can(int ch) { return channel[ch]; }
+
+        /** The party that wants a move in this direction, or -1. */
+        public int leanFor(int steps) {
+            if (lean < 0) return -1;
+            return steps > 0 ? lean : lean == DEM ? REP : DEM;
+        }
+
+        /** Public support for a move in this direction. */
+        public double supportFor(int steps) { return steps > 0 ? support : 100 - support; }
+    }
+
+    /** Where every policy stands in a game, how far each change has worked through, and the outcomes it has produced. */
+    static final class PolicyState implements Serializable {
+        private static final long serialVersionUID = 1L;
+        public int[] level, base;                  // the law now, and on the first day
+        public double[] eff;                       // how far each policy's effect has come (it moves toward the level over the policy's lag)
+        public int[] levelEcon;                    // the level counting only changes whose economic effects this model applies
+        public double[] effEcon;
+        public double[] strength;                  // how firmly the change was made: 1 a law, 0.85 a rule, 0.6 an order
+        public int[] changed, via;                 // the week and the channel of each policy's last change
+        public double[] aGdp, aUnemp, aInfl, aOil, aFiscal;   // what each policy has added to the economy
+        public double[] out, out0;                 // the outcomes now, and on the first day
+        public double unemp0, growthIdx = 1, homeCrime0 = 100, homeOd0 = 80;
+        public double[] result;                    // what the outcomes do to approval, by issue
+        public List<double[]> hist = new ArrayList<double[]>();  // the outcomes every four weeks
+        public List<int[]> budget = new ArrayList<int[]>();      // changes in your budget request: {policy, level}
+        public int fy, changes;
+    }
+
+    /**
+     * The rows of the policy table, which named bills changed which policies, and the real history of the outcomes.
+     * Policies reads them once and keeps the parsed definitions.
+     */
+    static final class PolicyTable {
+        private PolicyTable() {
+        }
+
+        /**
+         * The policies. id|area|name|levels|level by year|channels (B bill, O order, R rule, $ budget)|first year|legal risk of an order or rule
+         * |cost per step up ($ billions a year, today's dollars)|economic left-right shift per step|cultural shift|public support for a step up (%)
+         * |the party that wants it higher (D, R or -)|signature (1: a national issue)|effects per step (gdp, unemp and infl in points; unins and pov
+         * in points; crime, emis, border and od in percent; scores in index points; gas in dollars)|voter groups per step (points)|weeks to full
+         * effect|evidence (S, M, W, C)|who wins|who loses|precedent
+         */
+        static final String[] ROWS = {
+                // ---- taxes and the budget ----
+                "top_rate|0|Top income tax rate|Under 30%;About 37%;About 50%;About 70%;Over 90%|1933:3 1944:4 1964:3 1982:2 1987:0 1991:1|B$|1933|0|-60|-0.3|0|58|D|1|gdp=-0.03|wcol=-1 union=1 blk=1|52|C"
+                        + "|The Treasury, and the programs the money pays for|The highest earners, and some investment|Top rates were 70% or more from 1936 to 1981; the 1986 tax reform brought the top rate down to 28%.",
+                "corp_rate|0|Corporate tax rate|15%;21%;28%;35%;Over 45%|1933:0 1942:3 1951:4 1987:3 2018:1|B$|1933|0|-40|-0.3|0|62|D|0|gdp=-0.04 unemp=0.02|union=1 wcol=-1|104|C"
+                        + "|The Treasury|Shareholders, and some workers through lower wages and investment|The rate was 52% in the 1950s, 35% from 1993 and 21% after 2017.",
+                "cap_gains|0|Capital gains tax|15% or less;About 20%;About 28%;Taxed like wages|1933:2 1979:1 1987:3 1991:2 1997:1 2003:0 2013:1|B$|1933|0|-15|-0.3|0|55|D|0|gdp=-0.02|wcol=-1 genz=1|52|C"
+                        + "|The Treasury|Investors and business owners, most of them well off|Capital gains were taxed like wages from 1987 to 1990; the rate fell to 15% in 2003.",
+                "estate_tax|0|Estate tax|None;Only the richest estates;Most large estates|1933:2 2002:1|B$|1933|0|-10|-0.3|0|45|D|0|-|rural=-2 wcol=-1|52|M"
+                        + "|The Treasury|Heirs to large fortunes, and some family farms and businesses|The tax was repealed for one year, 2010; today it reaches only estates of about $14 million or more.",
+                "wealth_tax|0|Tax on great wealth|None;2% a year over $50 million|1933:0|B$|1990|0|-80|-0.6|0|60|D|1|gdp=-0.02|wcol=-1 genz=2|104|C"
+                        + "|The Treasury; voters who think the rich don't pay their share|The 100,000 richest households|No country taxes wealth this way today; several in Europe tried and repealed it. Its constitutionality is untested.",
+                "payroll_cap|0|Social Security payroll tax cap|Wages under the cap only;Taxed again above $400,000;No cap|1937:0|B|1937|0|-60|-0.3|0|65|D|1|-|sen=2 wcol=-1|52|S"
+                        + "|Social Security's trust fund|High earners|The cap has risen with wages since the 1970s; the 1983 reform set today's payroll tax rates.",
+                "child_credit|0|Child tax credit|None;$500;$2,000;$3,600, paid monthly|1933:0 1998:1 2018:2|B$|1990|0|90|-0.3|0|62|D|1|pov=-0.8 infl=0.03 gdp=0.01|par=5 hisp=2 blk=2 yw=2|26|S"
+                        + "|Families with children, the poorest most|Taxpayers without children; deficit hawks|The 2021 expansion cut child poverty nearly in half; it expired after a year.",
+                "eitc|0|Earned income tax credit|None;Modest;Expanded;Large, for workers without children too|1933:0 1975:1 1993:2|B$|1975|0|20|-0.2|0|60|-|0|pov=-0.4 unemp=-0.02|blk=1 hisp=1 par=1|52|S"
+                        + "|Low-wage workers, most of all parents|The Treasury|Created in 1975 and expanded by Reagan and Clinton; it has backers in both parties.",
+                "mid_rates|0|Middle-class income tax rates|Higher;Today's;Lower;Much lower|1933:1|B$|1933|0|120|0.3|0|60|R|1|gdp=0.06 infl=0.05 unemp=-0.03|sub=2 wnc=2|26|M"
+                        + "|Middle-income families|Future taxpayers, through a bigger debt|Cut in 1964, 1981, 2001 and 2017.",
+                "tips_tax|0|Taxes on tips and overtime|Taxed;Not taxed|1933:0|B$|2024|0|40|0.2|0|60|R|0|unemp=-0.01|hisp=2 wnc=1 ym=1|26|W"
+                        + "|Restaurant, hotel and hourly workers|The Treasury; workers on salary see nothing|A 2025 law exempted part of tips and overtime from income tax.",
+                "irs|0|IRS enforcement|Cut back;Steady;Expanded;Doubled|1933:1|$B|1933|0|-12|-0.15|0.1|52|D|0|-|wcol=-1 rural=-1|52|M"
+                        + "|The Treasury: each enforcement dollar brings back several|People who underpay their taxes|The 2022 Inflation Reduction Act gave the IRS $80 billion; much of it was cut back later.",
+                "caps|0|Caps on federal spending|None;Pay-as-you-go;Hard caps;A balanced-budget rule|1933:0 1990:1 2011:2 2021:1|B|1985|0|-80|0.3|0|55|R|0|gdp=-0.04 unemp=0.03|-|26|M"
+                        + "|Future taxpayers|Programs that get squeezed, and growth in a downturn|Gramm-Rudman in 1985, pay-as-you-go in 1990 and the caps of 2011 all tried to hold down deficits.",
+                "carried|0|Carried interest loophole|Open;Closed|1933:0|B$|1990|0|-2|-0.2|0|65|D|0|-|wcol=1|52|S"
+                        + "|The Treasury|Private-equity and hedge-fund managers|Both parties' nominees promised to close it in 2016; it is still open.",
+                // ---- the safety net ----
+                "ss_benefits|1|Social Security benefits|None;Modest;Today's;Larger|1933:0 1937:1 1972:2|B|1933|0|70|-0.3|0|70|D|1|pov=-1.5|sen=6 union=1|26|S"
+                        + "|Retirees and the disabled; the families who would otherwise support them|Workers, through payroll taxes|Created in 1935; benefits rose by a fifth in 1972 and have kept up with prices since.",
+                "ret_age|1|Social Security retirement age|65;67;70|1937:0 1983:1|B|1937|0|-40|0.2|0|30|R|1|-|sen=-4 wnc=-2 union=-2|104|S"
+                        + "|Social Security's trust fund|Workers in physical jobs, who can't easily work longer|The 1983 reform raised the full retirement age from 65 to 67, phased in over decades.",
+                "snap|1|Food stamps (SNAP)|None;Pilot programs;Nationwide;Generous|1933:0 1961:1 1964:2|B$|1933|0|30|-0.2|0|60|D|0|pov=-0.4|blk=1 hisp=1 par=1 rural=1|26|S"
+                        + "|About 40 million people, many of them children|The Treasury|A pilot ran from 1939 to 1943; Kennedy revived it and Johnson made it national in 1964.",
+                "work_reqs|1|Work requirements for aid|None;For adults without children;For most adults|1933:0 1996:1|BR|1933|0.3|-8|0.2|0.2|62|R|0|pov=0.15 unemp=-0.02|wnc=1 blk=-1|52|M"
+                        + "|Taxpayers; employers who need workers|People who can't find steady work, and their children|The 1996 welfare reform added time limits and work rules.",
+                "cash_aid|1|Cash aid for poor families|None;Block grants to states;A national entitlement|1933:0 1936:2 1996:1|B|1933|0|15|-0.3|-0.1|45|D|0|pov=-0.3|blk=1 par=1|26|M"
+                        + "|The poorest families with children|Taxpayers|Aid to Dependent Children began in 1935; the 1996 reform turned it into block grants.",
+                "unemp_ins|1|Unemployment insurance|None;Short and thin;Standard;Generous|1933:0 1937:1 1958:2|B$|1933|0|20|-0.2|0|60|D|0|pov=-0.2 unemp=0.03|union=2|13|S"
+                        + "|Workers who lose their jobs|Employers, through payroll taxes; a slightly slower return to work|Created by the Social Security Act of 1935; Congress extends it in every recession.",
+                "disability|1|Disability benefits|None;Strict;Today's;Broad|1933:0 1957:2|B|1933|0|15|-0.2|0|60|D|0|pov=-0.15|sen=1|52|M"
+                        + "|Workers who can no longer work|Payroll taxpayers|Social Security disability insurance began in 1956.",
+                "ssi|1|Income support for the elderly poor|None;Today's;Raised|1933:0 1974:1|B|1933|0|10|-0.2|0|60|D|0|pov=-0.15|sen=2|26|S"
+                        + "|The poorest older and disabled Americans|The Treasury|Supplemental Security Income replaced state programs in 1974.",
+                "wic|1|Food aid for mothers and babies (WIC)|None;Today's;Expanded|1933:0 1974:1|$B|1972|0|3|-0.1|0|70|-|0|pov=-0.05|par=2 yw=1|26|S"
+                        + "|About six million mothers and young children|The Treasury|Began as a pilot in 1972; it has wide support in both parties.",
+                "school_meals|1|Free school meals|None;For poor children;For every child|1933:0 1946:1|B$|1933|0|15|-0.2|0|65|D|0|pov=-0.1 scores=0.2|par=3|26|M"
+                        + "|Children and their parents|The Treasury|The National School Lunch Act of 1946; some states now feed every child.",
+                "basic_income|1|Guaranteed income|None;Pilot programs;A national minimum income|1933:0|B|1965|0|300|-0.6|0|40|D|1|pov=-2.5 unemp=0.2 infl=0.1|genz=3 sen=-1|52|W"
+                        + "|The poor and the unemployed|Taxpayers; some fear it would keep people out of work|Nixon's Family Assistance Plan passed the House in 1970 and died in the Senate.",
+                // ---- jobs and work ----
+                "min_wage|2|Federal minimum wage|None;About a third of the typical wage;About 45%;About 55%;About two-thirds|1933:0 1939:1 1950:2 1967:3 1981:2 1991:1|B|1933|0|0|-0.3|0|62|D|1|unemp=0.05 pov=-0.3 infl=0.03|union=3 hisp=2 blk=2 yw=2 genz=2|52|C"
+                        + "|Low-wage workers, most of them adults|Some low-wage jobs; small businesses; customers, through prices|Set at 25 cents in 1938; at its peak in 1968 it was more than half the typical wage. $7.25 since 2009.",
+                "unions|2|Union organizing rights|Weak;Today's;Strong (card check)|1933:0 1936:1|BR|1933|0.2|0|-0.4|0|55|D|1|unemp=0.02 pov=-0.1|union=6 wnc=1|104|M"
+                        + "|Workers who want a union|Employers; workers who would rather not join|The Wagner Act of 1935 protected organizing; Taft-Hartley in 1947 let states ban union-security clauses.",
+                "overtime|2|Overtime pay threshold|Low;Today's;Raised|1933:0 1939:1|RB|1938|0.4|0|-0.2|0|62|D|0|unemp=0.01|union=1 yw=1|26|M"
+                        + "|Salaried workers on modest pay|Employers|Courts struck down raised thresholds in 2017 and 2024.",
+                "paid_leave|2|Paid family leave|None;Unpaid leave only;12 weeks paid|1933:0 1993:1|B$|1933|0|50|-0.3|-0.1|70|D|1|unemp=0.01 pov=-0.1|par=4 yw=3 wom=2|52|M"
+                        + "|New parents and people caring for the sick|Employers and the Treasury|The Family and Medical Leave Act of 1993 guaranteed unpaid leave; the US is one of the few rich countries without paid leave.",
+                "child_labor|2|Child labor|Allowed;Restricted;Banned under 16|1933:1 1939:2|B|1933|0|0|-0.1|-0.1|75|D|0|pov=-0.1 scores=0.3|par=2|52|S"
+                        + "|Children|Employers who relied on them; poor families who needed the wages|The Fair Labor Standards Act of 1938 banned most child labor.",
+                "jobs_program|2|Public jobs programs|None;Targeted;A jobs guarantee|1933:0 1937:1 1943:0 1974:1 1983:0|B$|1933|0|50|-0.4|0|55|D|1|unemp=-0.4 infl=0.05 pov=-0.3|union=2 blk=2 genz=1|26|M"
+                        + "|The jobless|Taxpayers; private employers competing for workers|The WPA employed millions from 1935 to 1943; CETA ran public jobs from 1973 to 1982.",
+                "training|2|Job training|Cut;Today's;Doubled|1933:1|$B|1933|0|10|-0.1|0|65|-|0|unemp=-0.03|wnc=1|104|W"
+                        + "|Workers changing careers|The Treasury|Federal job training has been tried in many forms since 1962, with mixed results.",
+                "apprentice|2|Apprenticeships|Few;Expanded;A national system|1933:0|$B|1937|0|5|0|0|70|-|0|unemp=-0.02|ym=2 wnc=1|156|W"
+                        + "|Young people who skip college|The Treasury|Germany's apprenticeship system is the model both parties point to.",
+                "noncompete|2|Noncompete agreements|Allowed;Banned for most workers|1933:0|RB|1990|0.5|0|-0.2|0|60|D|0|gdp=0.01|genz=1|104|M"
+                        + "|Workers who want to change jobs; new companies|Employers who invest in training|A 2024 ban by the Federal Trade Commission was blocked in court.",
+                "gig|2|Gig workers' status|Contractors;A middle category;Employees|1933:0|RB|2012|0.3|0|-0.3|0|48|D|0|unemp=0.02|union=2 ym=-1|52|C"
+                        + "|Drivers and delivery workers who want benefits|App companies, and workers who value flexibility|California's 2019 law made gig workers employees; voters partly reversed it in 2020.",
+                "safety|2|Workplace safety rules|Few;OSHA standards;Strict|1933:0 1971:1|RB|1933|0.2|0|-0.2|0|65|D|0|gdp=-0.01|union=2|104|M"
+                        + "|Workers in dangerous jobs|Employers|The Occupational Safety and Health Act of 1970; deaths on the job have fallen by two-thirds since.",
+                "boards|2|Workers on corporate boards|None;A third of the seats|1933:0|B|2018|0|0|-0.4|0|50|D|0|-|union=2|156|W"
+                        + "|Workers|Shareholders and managers|Germany has required it since 1976.",
+                // ---- health care ----
+                "medicare|3|Medicare|None;For seniors;From age 60;For everyone|1933:0 1966:1|B$|1933|0|150|-0.5|0|60|D|1|unins=-3 pov=-0.3|sen=6|52|S"
+                        + "|Older Americans and their families|Taxpayers; doctors and hospitals paid less than by private insurers|Signed in 1965 after twenty years of trying; Medicare for All has been proposed since 2017.",
+                "medicaid|3|Medicaid|None;For the poorest;For the near-poor too;Expanded further|1933:0 1966:1 2014:2|B$|1933|0|80|-0.4|0|62|D|1|unins=-2.5 pov=-0.3|blk=2 hisp=2 rural=1|52|S"
+                        + "|Low-income adults and children, and rural hospitals|Federal and state taxpayers|Created with Medicare in 1965; the Affordable Care Act expanded it in 2014.",
+                "aca_aid|3|Help buying insurance|None;Standard;Enhanced|1933:0 2014:1 2025:2|B$|2010|0|30|-0.3|0|60|D|1|unins=-1.2|sub=1 hisp=1|26|S"
+                        + "|People who buy their own insurance|The Treasury|The Affordable Care Act's credits began in 2014; Congress enlarged them in 2021.",
+                "drug_prices|3|Medicare drug price negotiation|None;10 drugs a year;50 drugs a year;All drugs|1933:0 2023:1|B$|1990|0|-15|-0.3|0|80|D|1|infl=-0.01|sen=4|104|M"
+                        + "|Seniors and Medicare's budget|Drug makers; some new drugs might not be developed|The Inflation Reduction Act of 2022 allowed negotiation for the first time.",
+                "insulin|3|Insulin price cap|None;$35 for Medicare;$35 for everyone|1933:0 2023:1|BR|2020|0.3|3|-0.1|0|85|D|0|-|sen=2|26|S"
+                        + "|People with diabetes|Drug makers|Capped for Medicare patients in 2023.",
+                "drug_imports|3|Importing cheaper drugs|Banned;From Canada;From approved countries|1933:0|RB|2000|0.2|0|-0.1|0|75|-|0|infl=-0.01|sen=2|52|W"
+                        + "|Patients paying full price|Drug makers|Florida won approval to import drugs from Canada in 2024.",
+                "public_option|3|Public health insurance|None;A public option;Single payer|1933:0|B$|1945|0|50|-0.6|0|58|D|1|unins=-2 infl=-0.02|genz=2 union=-1|104|C"
+                        + "|The uninsured, and people who want a choice|Insurers; hospitals paid less; taxpayers|Truman proposed national health insurance in 1945; a public option passed the House in 2009 and died in the Senate.",
+                "hsa|3|Health savings accounts|Limited;Expanded;In place of subsidies|1933:0 2004:1|B$|2004|0|10|0.4|0|45|R|0|unins=0.4|wcol=1|52|M"
+                        + "|Healthy people with good incomes|Sicker and poorer patients|Created in 2003 alongside the Medicare drug benefit.",
+                "dental|3|Dental and hearing care in Medicare|None;Covered|1933:0|B$|1966|0|30|-0.2|0|84|D|0|-|sen=4|52|M"
+                        + "|Seniors|Taxpayers|Dropped from the 2021 Build Back Better bill.",
+                "nih|3|Medical research (NIH)|Cut;Today's;Doubled|1933:1|$B|1933|0|25|-0.1|0|70|-|0|gdp=0.01|wcol=1 sen=1|260|M"
+                        + "|Patients, scientists and universities|The Treasury|The NIH budget doubled between 1998 and 2003, with support from both parties.",
+                "public_health|3|Public health and the CDC|Cut;Today's;Expanded|1933:1|$B|1946|0|8|-0.1|0|60|D|0|od=-2|-|104|M"
+                        + "|Everyone, in the next epidemic|The Treasury|The CDC was founded in 1946 to fight malaria.",
+                "treatment|3|Addiction treatment|Little;Today's;A national push|1933:0 1971:1|$B|1970|0|10|-0.1|0|70|-|0|od=-8 crime=-1|rural=2 wnc=1|104|S"
+                        + "|People with addiction and their families|The Treasury|The 2018 SUPPORT Act passed with near-unanimous votes.",
+                "med_debt|3|Medical debt protections|None;Off credit reports;Canceled for the poor|1933:0|RB|2010|0.3|2|-0.1|0|75|D|0|-|blk=1 hisp=1|26|W"
+                        + "|People with medical debt|Hospitals and debt collectors|A 2025 rule to drop medical debt from credit reports was struck down in court.",
+                // ---- housing and transportation ----
+                "zoning|4|Housing construction incentives|None;Grants for building;Strings on highway money|1933:0|B$|1970|0|10|-0.1|0|58|-|0|infl=-0.03 gdp=0.02|genz=3 urban=2 sub=-1|156|M"
+                        + "|Renters and young buyers|Homeowners who like their neighborhoods as they are|Several states have overridden local zoning since 2019.",
+                "vouchers|4|Housing vouchers|None;For a quarter of those eligible;For everyone eligible|1933:0 1975:1|B$|1937|0|40|-0.4|0|55|D|0|pov=-0.4|blk=2 urban=2|52|S"
+                        + "|Low-income renters|The Treasury|Section 8 vouchers began in 1974; only one family in four who qualifies gets one.",
+                "mortgage_ded|4|Mortgage interest deduction|None;Capped;Full|1933:2 2018:1|B$|1933|0|20|0.1|0|50|R|0|-|sub=2|52|M"
+                        + "|Homeowners with big mortgages|The Treasury; renters|The 2017 tax law capped it and doubled the standard deduction.",
+                "lihtc|4|Affordable housing tax credit|None;Today's;Doubled|1933:0 1987:1|B$|1987|0|10|-0.1|0|60|-|0|pov=-0.05|urban=1|156|M"
+                        + "|Low-income renters; builders|The Treasury|Created by the 1986 tax reform; it finances most new affordable housing.",
+                "first_home|4|Help for first-time buyers|None;A tax credit;$25,000 down-payment aid|1933:0|B$|2008|0|15|-0.2|0|62|D|0|infl=0.01|genz=3 hisp=1 blk=1|52|W"
+                        + "|Young buyers|Taxpayers; buyers when prices rise to match|A credit for first-time buyers helped after the 2008 crash.",
+                "rent_caps|4|Rent caps on corporate landlords|None;A 5% yearly cap|1933:0|RB|2020|0.5|0|-0.4|0|55|D|0|infl=-0.01 gdp=-0.01|genz=2 urban=2|52|C"
+                        + "|Renters in big buildings|Landlords; new building, economists warn|Rent control has a long, disputed record in New York and California.",
+                "homeless|4|Homelessness programs|Cut;Today's;Housing First, expanded|1933:1|$B|1987|0|5|-0.1|0|60|D|0|pov=-0.05|urban=2|104|M"
+                        + "|People without homes|The Treasury|Housing First became federal policy in 2013.",
+                "highways|4|Highways and bridges|Cut;Today's;Doubled|1933:1|$B|1933|0|40|-0.1|0|72|-|0|gdp=0.03 unemp=-0.04 emis=1|rural=2 union=2|104|M"
+                        + "|Drivers, truckers and construction workers|The Treasury|The interstate highways were built from 1956; the 2021 infrastructure law was the largest boost in decades.",
+                "transit|4|Mass transit and rail|Cut;Today's;Doubled|1933:1|$B|1933|0|15|-0.2|0|60|D|0|emis=-0.5 gdp=0.01|urban=3|156|M"
+                        + "|City riders|Taxpayers in places without transit|Federal transit money dates to 1964.",
+                "fast_rail|4|High-speed rail|None;A few corridors;A national network|1933:0|B$|1965|0|25|-0.2|0|58|D|0|emis=-0.5|urban=1 genz=1|260|W"
+                        + "|Travelers between big cities|Taxpayers, if costs run over as California's did|Japan's bullet train opened in 1964.",
+                "fuel_economy|4|Fuel economy standards|None;Today's;Strict|1933:0 1978:1|RB|1975|0.3|0|-0.2|-0.1|55|D|0|emis=-2.5 infl=0.01|rural=-1 urban=1|208|S"
+                        + "|Drivers at the pump; the climate|Buyers of big vehicles; carmakers|First set in 1975 after the oil embargo.",
+                "ev_chargers|4|EV chargers on highways|None;A network every 50 miles|1933:0 2022:1|$B|2015|0|2|-0.1|0|60|D|0|emis=-0.3|-|156|W"
+                        + "|Electric car drivers|The Treasury|The 2021 infrastructure law set aside $7.5 billion; few stations had opened by 2024.",
+                "lead_pipes|4|Lead pipes and water systems|Today's;Replace every lead pipe|1933:0|$B|1975|0|5|-0.1|0|80|-|0|scores=0.2|urban=2 blk=1|260|S"
+                        + "|Families in older cities|The Treasury|Lead in Flint's water in 2014 made it a national issue.",
+                // ---- energy and the environment ----
+                "drilling|5|Drilling on federal land and waters|Closed;Limited;Open;Wide open|1933:2 1970:1 2008:2 2021:1 2025:2|ORB|1933|0.2|-5|0.3|0.2|50|R|1|gas=-0.1 emis=1 gdp=0.02|rural=2 union=1 genz=-2|104|M"
+                        + "|Oil and gas workers and states; drivers, a little|The climate; coastal and tourist towns|Offshore drilling was largely banned from 1982 to 2008.",
+                "clean_credits|5|Clean energy tax credits|None;Modest;Large|1933:0 1979:1 2023:2|B$|1978|0|40|-0.3|-0.1|60|D|1|emis=-4 gdp=0.02|genz=2 union=1|156|M"
+                        + "|Clean-energy workers and buyers; the climate|The Treasury; fossil-fuel producers|The Inflation Reduction Act of 2022 made them the largest climate law in US history; much of it was repealed in 2025.",
+                "carbon_price|5|A price on carbon|None;$25 a ton, paid back to households;$75 a ton, paid back|1933:0|B$|1990|0|0|-0.4|-0.2|45|D|1|emis=-8 gas=0.25 infl=0.15 gdp=-0.03|genz=3 rural=-3 wnc=-2|104|S"
+                        + "|The climate; low-income households, who get back more than they pay|Coal, oil and gas; drivers and rural households|A cap-and-trade bill passed the House in 2009 and died in the Senate.",
+                "power_plants|5|Power plant emission rules|None;Today's;Strict|1933:0 1971:1|RB|1970|0.5|0|-0.2|0|58|D|0|emis=-3 infl=0.02|rural=-1|208|M"
+                        + "|The climate; people who live near plants|Coal communities; electricity customers|The Supreme Court limited the EPA's power over plants in 2022.",
+                "nuclear|5|Nuclear power|Phased out;Today's;New reactors fast-tracked|1933:1|BR$|1955|0.1|5|0.1|0|55|-|0|emis=-2 gdp=0.01|-|260|M"
+                        + "|The climate; reactor towns|Ratepayers if costs run over|Almost no reactors were ordered between 1979 and 2008.",
+                "lng|5|Natural gas exports|Paused;Allowed;Fast-tracked|1933:1|OR|2010|0.2|0|0.2|0|52|R|0|gdp=0.02 gas=0.02 emis=0.5|union=1|104|M"
+                        + "|Gas producers; allies in Europe and Asia|Some industries that use gas; the climate|New export approvals were paused in 2024 and resumed in 2025.",
+                "pipelines|5|Pipeline permits|Slow;Standard;Fast-tracked|1933:1|ORB|1933|0.2|0|0.2|0.1|55|R|0|gas=-0.03 emis=0.5 gdp=0.01|union=1 native=-3|52|M"
+                        + "|Energy producers and pipeline workers|Landowners and tribes along the route|Keystone XL was rejected in 2015, approved in 2017 and cancelled in 2021.",
+                "grid|5|The power grid and transmission|Today's;Expanded;Rebuilt|1933:0|$B|1990|0|15|-0.1|0|70|-|0|emis=-1.5 gdp=0.02|-|208|M"
+                        + "|Everyone who uses power; clean energy|The Treasury|New transmission lines take a decade or more to approve and build.",
+                "clean_water|5|Clean water rules|None;Narrow;Broad|1933:0 1973:1|RB|1972|0.5|0|-0.2|-0.1|62|D|0|gdp=-0.01|rural=-2|104|M"
+                        + "|People downstream; fishing and tourism|Farmers, builders and miners|Which waters the 1972 Clean Water Act covers has changed with every president since 2015.",
+                "public_lands|5|Protected public lands|Fewer;Today's;30% of land and water by 2030|1933:1|OB|1933|0.3|0|-0.1|-0.1|60|D|0|gas=0.01|rural=-1 native=2 genz=1|156|W"
+                        + "|Hikers, hunters and tribes|Miners, ranchers and drillers|Presidents have created national monuments under the 1906 Antiquities Act; some have shrunk them.",
+                "ev_rules|5|Electric car rules|None;Credits for buyers;Most new cars electric by 2032|1933:0 2010:1 2024:2|RB$|2010|0.4|0|-0.3|-0.2|42|D|1|emis=-3 gas=-0.02 infl=0.02|rural=-3 ym=-2 genz=1|208|M"
+                        + "|The climate; EV makers and their workers|Buyers who want gas cars; dealers|EPA rules of 2024 would have made most new cars electric by 2032; the next administration moved to undo them in 2025.",
+                "methane|5|Methane fee on oil and gas|None;A fee on leaks|1933:0 2024:1|BR|2022|0.3|-1|-0.2|0|55|D|0|emis=-1|rural=-1|104|M"
+                        + "|The climate|Oil and gas producers|Passed in 2022, repealed by Congress in 2025.",
+                // ---- immigration ----
+                "border|6|Border security spending|Cut;Today's;Doubled;A wall and a surge|1933:1|$B|1933|0|15|0.1|0.4|58|R|1|border=-15|hisp=-1 rural=2|52|M"
+                        + "|Border towns; voters worried about crossings|The Treasury; migrants and the families of migrants|Border Patrol has grown from 4,000 agents in 1992 to about 20,000.",
+                "asylum|6|Asylum rules|Open;Standard;Restricted;Closed at the border|1933:1 2024:2|ORB|1933|0.6|0|0|0.5|55|R|1|border=-25|hisp=-3 rural=2 arab=-1|8|M"
+                        + "|Voters worried about crossings|People fleeing danger|Closing the border to asylum by proclamation has been tried several times since 2018; courts have blocked several of those orders.",
+                "deport|6|Deportations|Few;Today's;Mass deportations|1933:1|O$B|1933|0.3|20|0.1|0.6|50|R|1|border=-10 gdp=-0.05 infl=0.05|hisp=-5 rural=2 wnc=2|52|C"
+                        + "|Voters who want the law enforced|Immigrant families; farms, builders and hotels that employ them|Deportations peaked at about 400,000 a year under Obama; Operation Wetback in 1954 deported far more.",
+                "dreamers|6|Protection for Dreamers|None;Deferred action;A path to citizenship|1933:0 2012:1|OB|2001|0.5|0|-0.1|-0.4|70|D|1|gdp=0.02|hisp=4 asian=1 genz=2|26|M"
+                        + "|About 2 million people brought here as children|Voters who see it as amnesty|DACA began by executive action in 2012 and has been in court ever since.",
+                "legal_imm|6|Legal immigration levels|Cut by half;Today's;Raised by half|1933:0 1966:1|B|1933|0|0|-0.1|-0.3|40|D|0|gdp=0.04 unemp=0.01 infl=-0.02|asian=2 hisp=2 wnc=-2|104|M"
+                        + "|Employers; immigrants' families|Workers competing for the same jobs, some say|The 1924 quotas held until 1965, when Congress ended the national-origins system.",
+                "skilled_visas|6|Visas for skilled workers|Cut;Today's;Doubled|1933:1|BR|1990|0.2|0|0.1|-0.1|45|-|0|gdp=0.02|asian=2 wcol=1 genz=-1|104|M"
+                        + "|Tech companies and universities|Some American graduates in the same fields|The H-1B visa was created in 1990.",
+                "guest_workers|6|Guest workers for farms|Few;Today's;Expanded|1933:0 1943:2 1965:0 1987:1|BR|1933|0.2|0|0.2|-0.1|55|-|0|border=-6 infl=-0.02|rural=1 hisp=1 union=-1|52|M"
+                        + "|Farmers; workers who would otherwise cross illegally|Farm workers already here|The Bracero program brought 4.6 million contracts from Mexico between 1942 and 1964.",
+                "e_verify|6|E-Verify for employers|Voluntary;Required|1933:0|BR|1997|0.2|0|0.1|0.3|68|R|0|border=-8 unemp=0.01|hisp=-2 wnc=1|104|W"
+                        + "|Workers competing with unauthorized labor|Employers, who face more paperwork; unauthorized workers|Required in a few states; Congress has never made it national.",
+                "refugees|6|Refugee admissions|Near zero;Low;Today's;High|1933:1 1981:3 2018:1 2022:2 2024:3|O|1980|0.1|0|0|-0.3|45|D|0|-|arab=2 asian=1|26|W"
+                        + "|Refugees and the churches that sponsor them|Voters who want fewer arrivals|The ceiling was 200,000 in 1980 and 18,000 in 2020.",
+                "sanctuary|6|Money for sanctuary cities|Cut off;Allowed|1933:1|OB|1990|0.6|0|0|-0.3|50|D|0|-|urban=1 hisp=1|52|W"
+                        + "|Cities that limit cooperation with immigration agents|Voters who want local police to help deport|Courts have blocked several attempts to cut off federal grants.",
+                "legalization|6|Legal status for long-time workers|None;A path to citizenship|1933:0|B|1986|0|0|-0.1|-0.4|55|D|1|gdp=0.03 border=8|hisp=5 asian=1 rural=-1|52|M"
+                        + "|About 8 million long-time residents|Voters who see it as amnesty; some worry it invites more crossings|The 1986 law gave legal status to 2.7 million people.",
+                "imm_courts|6|Immigration courts|Today's;Doubled|1933:0|$B|1990|0|1|0|0.1|70|-|0|border=-4|-|104|M"
+                        + "|Everyone stuck in a backlog of 3 million cases|The Treasury|The backlog has grown nearly every year since 2008.",
+                // ---- crime and justice ----
+                "police_money|7|Money for local police|Cut;Today's;100,000 more officers|1933:1|$B|1933|0|8|0.05|0.3|62|-|0|crime=-3|sub=2 blk=-1|52|M"
+                        + "|Neighborhoods with high crime|The Treasury|The 1994 crime law paid for 100,000 officers.",
+                "sentencing|7|Federal sentences|Lighter;Today's;Tougher|1933:1|B|1933|0|1|0|0.4|50|R|0|crime=-1 pov=0.05|blk=-3 sub=1 rural=1|104|C"
+                        + "|Victims and voters worried about crime|Prisoners and their families; taxpayers who pay for prisons|Tougher in 1984 and 1994; lighter for some drug crimes with the First Step Act in 2018.",
+                "police_reform|7|Police accountability|None;Use-of-force standards;Qualified immunity ended|1933:0|BO|1990|0.2|0|0|-0.4|55|D|1|crime=0.5|blk=5 urban=2 sub=-1|52|C"
+                        + "|People harmed by police misconduct|Police officers, who face more lawsuits|The George Floyd Justice in Policing Act passed the House in 2021 and stalled in the Senate.",
+                "bg_checks|7|Background checks for gun sales|None;Licensed dealers;Universal|1933:0 1994:1|BO|1933|0.3|0|0|-0.4|85|D|1|crime=-1.5|gun=-4 sub=2 wom=2|52|M"
+                        + "|Potential victims of gun violence|Gun owners who sell privately|The Brady Act of 1993 required checks at licensed dealers.",
+                "assault|7|Assault weapons|Legal;Banned for under-21s;Banned|1933:0 1995:2 2005:0|B|1933|0|0|0|-0.6|55|D|1|crime=-0.5|gun=-6 rural=-2 sub=2 wom=2 par=2|104|W"
+                        + "|People in public places|Gun owners and gun makers|A ban ran from 1994 to 2004; its effect on gun deaths is disputed.",
+                "red_flag|7|Red-flag laws|None;Grants to states;National|1933:0 2022:1|B|2018|0|1|0|-0.3|75|D|0|crime=-0.5|gun=-2 sub=1|52|M"
+                        + "|People at risk of violence or suicide|Gun owners, who worry about due process|The 2022 Bipartisan Safer Communities Act funded state programs.",
+                "marijuana|7|Marijuana|Illegal;Medical use allowed;Legal|1933:2 1938:0|ORB|1933|0.2|0|-0.1|-0.5|68|D|1|crime=-0.3|genz=5 blk=2 sen=-2 evan=-3|52|M"
+                        + "|Users, patients and people with records|Voters who worry about addiction and impaired driving|Banned in 1937; Schedule I since 1970; legal in about half the states.",
+                "fentanyl|7|Enforcement against fentanyl trafficking|Today's;Stepped up;Military force against cartels|1933:0|O$B|2015|0.3|5|0|0.3|70|R|0|od=-5 border=-2|rural=1|52|W"
+                        + "|Communities hit by overdoses|Mexico, whose cooperation matters|Fentanyl deaths peaked at about 75,000 a year in 2022.",
+                "death_penalty|7|Federal death penalty|Abolished;Rare;Used|1933:2 1972:0 1988:1|OB|1933|0.1|0|0|0.5|52|R|0|-|evan=1 blk=-2|52|C"
+                        + "|Victims' families who want it|The wrongly convicted|The Supreme Court halted executions from 1972 to 1976; federal executions resumed in 2001 and in 2020.",
+                "violence_prev|7|Community violence programs|None;Pilot grants;A national program|1933:0 2022:1|$B|2000|0|2|-0.1|0|60|D|0|crime=-1|blk=2 urban=2|104|M"
+                        + "|Neighborhoods with the most shootings|The Treasury|Programs that send outreach workers into neighborhoods spread after 2020.",
+                "cyber|7|Cybersecurity rules for critical infrastructure|Voluntary;Required|1933:0|RB|2010|0.2|0|-0.1|0|70|-|0|gdp=-0.005|-|104|W"
+                        + "|Everyone who relies on the power grid, pipelines and hospitals|Utilities and companies that pay to comply|A 2021 ransomware attack shut down the largest fuel pipeline on the East Coast.",
+                // ---- education ----
+                "title_i|8|Money for schools in poor areas|Cut;Today's;Tripled|1933:0 1966:1|$B|1965|0|20|-0.1|0|65|D|0|scores=0.6 pov=-0.05|par=2 blk=1|208|M"
+                        + "|Students in poor districts|The Treasury|Title I of the 1965 education law.",
+                "pre_k|8|Universal pre-K|None;Head Start;Universal|1933:0 1966:1|B$|1933|0|40|-0.3|0|70|D|1|scores=0.8 unemp=-0.02 pov=-0.1|par=5 yw=2|260|M"
+                        + "|Young children and their parents|The Treasury; private preschools|Head Start began in 1965; Oklahoma and Georgia have offered pre-K to every four-year-old since the 1990s.",
+                "child_care|8|Child care costs|No help;A tax credit;Capped at 7% of income|1933:0 1977:1|B$|1970|0|50|-0.3|0|68|D|1|pov=-0.2 unemp=-0.05|par=6 yw=3 wom=2|52|M"
+                        + "|Parents of young children, most of all mothers|The Treasury|Nixon vetoed universal child care in 1971.",
+                "pell|8|Pell grants|Cut;Today's;Doubled|1933:0 1973:1|$B|1972|0|25|-0.2|0|65|D|0|-|stud=4 genz=2|52|M"
+                        + "|Low-income college students|The Treasury|Created in 1972; the grant now covers about a third of a public college's cost.",
+                "free_college|8|Tuition-free public college|None;Free community college;Free four-year college|1933:0|B$|2010|0|40|-0.4|0|60|D|1|-|stud=5 genz=4 wnc=-1|104|W"
+                        + "|Students and their parents|Taxpayers; private colleges|Tennessee made community college free in 2014.",
+                "student_debt|8|Student loan relief|None;Income-driven repayment;Broad cancellation|1933:0 1994:1|OB|1980|0.7|30|-0.3|-0.1|50|D|1|infl=0.02|stud=5 genz=4 wnc=-2|26|W"
+                        + "|About 40 million borrowers|Taxpayers, and people who paid off their loans or never went|The Supreme Court struck down broad cancellation in 2023.",
+                "school_choice|8|School choice|None;Charter school grants;A national scholarship tax credit|1933:0 1995:1|B$|1990|0|10|0.3|0.3|52|R|0|scores=0.1|par=2 evan=2 hisp=1 union=-2|156|C"
+                        + "|Families who want other schools|Public schools that lose students and money|A national scholarship credit passed as part of the 2025 tax law.",
+                "ed_dept|8|The Education Department|Abolished;Today's|1933:0 1980:1|BO|1980|0.4|0|-0.1|-0.2|60|D|0|scores=0.2|union=2 par=1 evan=-1|52|W"
+                        + "|Students who depend on its grants and civil-rights offices|Voters who want schools run locally|Created in 1979; Reagan promised to abolish it.",
+                "teacher_pay|8|Teacher pay|Today's;A federal raise to a $60,000 minimum|1933:0|$B|1960|0|20|-0.2|0|60|D|0|scores=0.3|union=3 wom=1|156|W"
+                        + "|Teachers; schools that can't hire|The Treasury|Teacher pay has barely risen after inflation since 1990.",
+                "research_univ|8|Research at universities|Cut;Today's;Doubled|1933:1|$B|1933|0|20|-0.1|0|60|-|0|gdp=0.02 scores=0.1|wcol=1 stud=1|260|M"
+                        + "|Scientists, students and the industries their discoveries feed|The Treasury|Federal research money after 1945 built the modern American university.",
+                "testing|8|Federal testing and standards|None;Annual tests;Strict standards with penalties|1933:0 2002:2 2016:1|B|1965|0|0|0|0.2|45|R|0|scores=0.3|par=-1|156|C"
+                        + "|Students in schools that would otherwise be ignored|Teachers; schools labeled as failing|No Child Left Behind in 2002; the Every Student Succeeds Act loosened it in 2015.",
+                "school_safety|8|School safety money|Little;Today's;Armed officers in every school|1933:1|$B|1999|0|5|0|0.2|55|R|0|crime=-0.1|par=2|52|W"
+                        + "|Students and parents|The Treasury; some worry about students treated as suspects|Money for school security has grown since Columbine in 1999.",
+                // ---- rights and democracy ----
+                "abortion|9|Abortion|Banned nationwide;A national 15-week limit;Left to the states;Legal through viability nationwide|1933:2 1973:3 2022:2|B|1933|0|0|0|-0.8|58|D|1|-|wom=4 yw=6 genz=4 evan=-6 cath=-2|8|W"
+                        + "|Women who want the choice|Voters who believe life begins at conception|Roe v. Wade made abortion a right in 1973; the Supreme Court overturned it in 2022.",
+                "abortion_pills|9|Abortion pills by mail|Banned;Prescribed in person;By mail|1933:0 2001:1 2022:2|RO|2000|0.5|0|0|-0.5|55|D|0|-|yw=3 evan=-3|8|W"
+                        + "|Women in states with bans|Voters who oppose abortion|The FDA approved mifepristone in 2000 and allowed it by mail in 2021.",
+                "voting_access|9|Voting access|Restrictive;Today's;National early voting and mail ballots|1933:0 1966:1|B|1933|0|1|0|-0.4|58|D|1|-|blk=4 hisp=2 genz=2 rural=-1|26|W"
+                        + "|Voters who struggle to get to the polls|Voters who worry about fraud, and the party that does worse with high turnout|The Voting Rights Act of 1965; the Freedom to Vote Act stalled in 2022.",
+                "voter_id|9|Voter ID|None;Up to the states;Required nationwide|1933:1|B|1990|0|0|0|0.4|76|R|1|-|rural=2 blk=-2|26|W"
+                        + "|Voters worried about fraud|Voters without ID, more often poor, old or Black|Most states now ask for some form of ID.",
+                "civil_rights|9|Civil rights enforcement|Weak;Today's;Strong|1933:0 1965:1|OR$B|1933|0.1|1|0|-0.4|60|D|0|-|blk=4 hisp=2 lgbt=2 rural=-1|52|M"
+                        + "|People facing discrimination|Employers and schools facing investigations|The Civil Rights Act of 1964 and the agencies that enforce it.",
+                "lgbtq|9|LGBTQ rights|No protections;Some protections;Full equality law|1933:0 2015:1|BO|1970|0.2|0|0|-0.5|60|D|0|-|lgbt=6 genz=3 evan=-4|26|W"
+                        + "|LGBTQ Americans and their families|Religious conservatives who fear for their liberty|Same-sex marriage became law nationwide in 2015.",
+                "affirmative|9|Affirmative action|Banned;Allowed;Required for contractors|1933:0 1966:2 2023:0|OB|1961|0.3|0|0|-0.4|40|D|0|-|blk=3 asian=-2 wnc=-2|26|C"
+                        + "|Black and Hispanic applicants|Applicants passed over, often white and Asian|The Supreme Court ended race in college admissions in 2023.",
+                "gerrymander|9|Partisan gerrymandering|Allowed;Banned, with independent commissions|1933:0|B|1962|0|0|0|-0.2|65|D|0|-|sub=1|104|W"
+                        + "|Voters in states drawn to lock in one party|The party that draws the lines|The Supreme Court left partisan maps to the states in 2019.",
+                "campaign_money|9|Campaign finance limits|Few;Today's;Strict, with public financing|1933:0 1975:1 2010:0|B|1933|0|1|-0.2|-0.1|70|D|0|-|-|104|W"
+                        + "|Candidates without rich backers|Big donors and outside groups|The 1974 limits after Watergate; Citizens United lifted the limits on outside spending in 2010.",
+                "dc_state|9|Statehood for Washington, DC|No;Yes|1933:0|B|1993|0|0|0|-0.3|45|D|0|-|blk=2 rural=-2|26|W"
+                        + "|DC's 700,000 residents|The party that would lose two Senate seats|Passed the House in 2020 and 2021.",
+                "surveillance|9|Domestic surveillance powers|Narrow;Today's;Broad|1933:1 2002:2 2016:1|BO|1933|0.3|0|0|0.3|45|R|0|crime=-0.2|arab=-3 genz=-1|26|W"
+                        + "|Investigators chasing terrorists and spies|Anyone whose communications are swept up|The Patriot Act of 2001; the USA Freedom Act narrowed it in 2015.",
+                "religious|9|Religious exemptions|Narrow;Today's;Broad|1933:1|ORB|1933|0.3|0|0|0.4|50|R|0|-|evan=3 lds=2 lgbt=-3|26|W"
+                        + "|Religious believers and institutions|People denied service or coverage on religious grounds|The Religious Freedom Restoration Act passed almost unanimously in 1993.",
+                // ---- technology and business ----
+                "ai_safety|10|Safety testing for advanced AI|None;Voluntary;Required|1933:0 2024:1|BOR|2023|0.2|0|-0.3|0|63|D|0|gdp=-0.01|wcol=1|52|W"
+                        + "|Everyone, if powerful AI goes wrong|AI companies, which say it slows them down|An executive order required reports from AI labs in 2023; it was revoked in 2025.",
+                "ai_preempt|10|Federal override of state AI laws|None;Partial;Total|1933:0|BO|2024|0.5|0|0.3|0|35|R|0|gdp=0.01|-|26|W"
+                        + "|AI companies working in fifty states|States with their own rules|The Senate voted 99 to 1 in 2025 to drop a ten-year ban on state AI laws.",
+                "chips|10|Chip-plant subsidies|None;CHIPS Act scale;Doubled|1933:0 2022:1|$B|2021|0|10|-0.1|0|65|-|0|gdp=0.02 unemp=-0.01|union=1|208|M"
+                        + "|Chip workers and the towns with new plants|The Treasury|The CHIPS Act of 2022 set aside $52 billion.",
+                "antitrust|10|Antitrust enforcement|Lax;Today's;Aggressive|1933:1 1981:0 2022:2 2025:1|OR$B|1933|0.2|0|-0.3|0|55|D|0|infl=-0.01 gdp=-0.01|-|104|C"
+                        + "|Consumers and small rivals|Big companies and their shareholders|AT&T was broken up in 1982; Google lost a monopoly case in 2024.",
+                "privacy|10|Online privacy law|None;Children only;Comprehensive|1933:0 1999:1|BR|1995|0.2|0|-0.2|0|72|-|0|-|par=2|52|W"
+                        + "|Internet users|Tech and data companies|Europe passed a broad privacy law in 2016; the US has only state laws.",
+                "kids_online|10|Social media age limits|None;Parental consent under 16;Banned under 16|1933:0|B|2015|0|0|0|0.2|65|-|0|-|par=3 genz=-2|52|W"
+                        + "|Parents|Teenagers; platforms|Australia banned social media under 16 in 2024.",
+                "broadband|10|Rural broadband|Little;Today's;Universal|1933:0 2022:1|$B|2000|0|10|-0.1|0|75|-|0|gdp=0.01 scores=0.1|rural=3|156|M"
+                        + "|Rural families and businesses|The Treasury|The 2021 infrastructure law set aside $42 billion.",
+                "crypto|10|Crypto rules|Treated as securities;Light rules;A national reserve|1933:0|BRO|2015|0.2|0|0.3|0|40|R|0|gdp=0.01|ym=3 genz=1|26|W"
+                        + "|Crypto investors and companies|Investors exposed to fraud and crashes|A 2025 law set rules for stablecoins.",
+                "bank_rules|10|Bank capital rules|Loose;Today's;Strict|1933:0 1934:2 2000:1 2011:2 2019:1|RB|1933|0.1|0|-0.3|0|55|D|0|gdp=-0.02|-|104|M"
+                        + "|Depositors and taxpayers who pay for bailouts|Banks and borrowers, through costlier loans|Glass-Steagall in 1933, repealed in 1999; Dodd-Frank after the 2008 crash.",
+                "cfpb|10|Consumer protection bureau|Abolished;Today's;Expanded|1933:0 2011:1|B$O|2011|0.3|0|-0.2|0|60|D|0|infl=-0.01|-|52|W"
+                        + "|Borrowers and bank customers|Banks and lenders|Created by Dodd-Frank in 2010; sharply cut back in 2025.",
+                "space|10|NASA and space|Cut;Today's;The Moon and Mars|1933:0 1959:1|$B|1958|0|10|0|0|60|-|0|gdp=0.005|wcol=1|260|W"
+                        + "|Engineers and space states|The Treasury|NASA got 4% of the federal budget at the height of Apollo; it gets less than half a percent today.",
+                "repair|10|Right to repair|None;Required|1933:0|BR|2015|0.2|0|-0.1|0|75|-|0|-|rural=2|52|W"
+                        + "|Farmers and owners of phones and cars|Manufacturers|Several states passed laws after 2020, and John Deere agreed in 2023 to let farmers fix their own equipment.",
+                "data_centers|10|Data centers' power bills|Customers share the cost;Data centers pay their own way|1933:0|RB|2023|0.2|0|-0.1|0|70|-|0|infl=-0.01|-|52|W"
+                        + "|Household power customers|AI and cloud companies|Power demand from data centers began to raise bills in several states in 2024.",
+                // ---- defense and trade ----
+                "defense|11|Defense spending|Cut deeply;Cut;Today's;Raised;Raised a lot|1933:2|$B|1933|0|60|0.1|0.3|50|R|0|gdp=0.02 unemp=-0.02|vet=2 rural=1|52|M"
+                        + "|The military; defense workers and states|The Treasury; programs that get squeezed|Defense was 9% of GDP in 1960 and about 3% today.",
+                "foreign_aid|11|Foreign aid|Cut by half;Today's;Doubled|1933:0 1949:1|$B|1946|0|25|-0.1|-0.2|35|D|0|border=-3|-|104|W"
+                        + "|Poor countries and US influence|The Treasury|The Marshall Plan spent about 5% of GDP over four years; aid is under 1% of the budget today.",
+                "draft|11|The draft|None;Registration only;Conscription|1933:0 1941:2 1947:1 1948:2 1973:0 1980:1|B|1933|0|0|0|0.2|20|-|0|unemp=-0.2|genz=-6 ym=-6 par=-2|26|S"
+                        + "|The military's numbers|Young men and their families|Conscription ended in 1973; men have registered since 1980.",
+                "veterans|11|Veterans' health care|Cut;Today's;Expanded|1933:1|$B|1933|0|15|-0.1|0|80|-|0|-|vet=5|52|M"
+                        + "|Veterans and their families|The Treasury|The 2022 PACT Act covered veterans exposed to burn pits.",
+                "buy_american|11|Buy American rules|Loose;Today's;Strict|1933:1|ROB|1933|0.2|0|-0.1|0.1|75|-|0|infl=0.01 unemp=-0.01|union=2 wnc=1|52|W"
+                        + "|American manufacturers and their workers|Taxpayers, who pay more for projects|The Buy American Act dates to 1933.",
+                "export_controls|11|Export controls on advanced chips|Loose;Today's;Strict|1933:0 2023:1|OR|2018|0.1|0|0|0.1|60|-|0|gdp=-0.01|-|52|W"
+                        + "|National security|Chip makers who lose sales in China|Controls on chips to China began in 2022 and have tightened every year.",
+                "missile_def|11|Missile defense|Limited;Today's;A national shield|1933:0 1984:1|$B|1983|0|25|0.1|0.2|55|R|0|gdp=0.01|vet=1|260|W"
+                        + "|Defense contractors; voters who want protection|The Treasury; arms control|Reagan proposed it in 1983; a national shield was proposed again in 2025.",
+                "nukes|11|Nuclear arsenal|Cut;Today's;Expanded|1933:0 1946:1|$B|1946|0|15|0.1|0.2|40|R|0|-|-|260|W"
+                        + "|Deterrence, as its supporters see it|The Treasury; arms control|The arsenal peaked at about 31,000 warheads in 1967; about 3,700 today.",
+                "trade_aid|11|Aid for workers who lose jobs to trade|None;Today's;Expanded|1933:0 1963:1 2023:0|$B|1962|0|3|-0.1|0|65|D|0|unemp=-0.02|union=2 wnc=1|52|M"
+                        + "|Factory workers hit by imports|The Treasury|Trade adjustment assistance began in 1962 and lapsed in 2022.",
+                "de_minimis|11|Duty-free small packages|Closed;Open|1933:0 2016:1|OB|2015|0.2|0|0.1|0|40|-|0|infl=-0.02|genz=1|26|W"
+                        + "|Online shoppers|American retailers competing with cheap imports|Shipments under $800 came in duty-free from 2016 until 2025.",
+                "farm_aid|11|Farm subsidies|Cut;Today's;Raised|1933:0 1934:1|$B|1933|0|10|-0.1|0|50|-|0|pov=-0.02|rural=4|52|M"
+                        + "|Farmers|The Treasury; consumers abroad and at home|The Agricultural Adjustment Act of 1933 began paying farmers to grow less.",
+                "munitions|11|Shipbuilding and munitions|Today's;A wartime surge|1933:0|$B|1933|0|20|0|0.1|60|-|0|unemp=-0.03 gdp=0.01|union=2 vet=1|156|M"
+                        + "|Shipyard and factory workers; the military|The Treasury|American shipyards built one ship a day in World War II and a handful a year today."};
+
+        /** Group codes used in the table, in the order of Demographics.GROUP. */
+        static final String[] GROUP_CODE = {"genz", "sen", "ym", "yw", "wom", "men", "evan", "cath", "wnc", "wcol", "blk", "blkm", "hisp", "hispm", "cuban", "prdom",
+                "asian", "jew", "arab", "lds", "native", "sub", "rural", "urban", "union", "vet", "gun", "lgbt", "stud", "par"};
+
+        /** Named bills that change policies when they become law: bill id, then policy=level pairs. */
+        static final String[] BILL_POLICY = {"lower_costs child_care=2 insulin=2", "public_option public_option=1", "restore_roe abortion=3",
+                "imm_reform dreamers=2 legalization=1 border=2", "billionaire_tax wealth_tax=1", "housing zoning=1 lihtc=2", "ai_safety ai_safety=2",
+                "ss_protect payroll_cap=1 ss_benefits=3", "gun_safety bg_checks=2 assault=1 red_flag=2", "clean_energy grid=1 clean_credits=2", "voting_rights voting_access=2",
+                "paid_leave paid_leave=2", "child_credit child_credit=3", "min_wage min_wage=4", "tax_cuts mid_rates=2 corp_rate=0", "border_wall border=3",
+                "health_freedom hsa=2 aca_aid=0", "abortion_limit abortion=1", "energy_dom drilling=3 pipelines=2", "balance_budget caps=3", "school_choice school_choice=2",
+                "police police_money=2", "save_act voter_id=2", "no_tax_tips tips_tax=1", "infrastructure highways=2 transit=2", "chips2 chips=2 export_controls=2",
+                "permitting pipelines=2 grid=1", "kids_online kids_online=1", "crypto crypto=1", "ss_fix ret_age=1 payroll_cap=1",
+                "social_security ss_benefits=1 unemp_ins=1 cash_aid=2", "wagner unions=1", "flsa min_wage=1 child_labor=2 overtime=1", "wpa jobs_program=1",
+                "glass_steagall bank_rules=2", "draft40 draft=2", "highways highways=2", "medicare medicare=1 medicaid=1", "civil_rights64 civil_rights=1",
+                "voting_rights65 voting_access=1", "esea title_i=1", "poverty pre_k=1 snap=2", "immigration65 legal_imm=1", "clean_air70 power_plants=1",
+                "clean_water clean_water=1", "osha safety=1", "erta top_rate=2 mid_rates=2", "tax_reform86 top_rate=0", "irca legalization=1 e_verify=0",
+                "drugs86 sentencing=2", "fmla paid_leave=1", "crime94 police_money=2 assault=2 bg_checks=1", "welfare96 work_reqs=1 cash_aid=1", "bush_tax top_rate=1 mid_rates=2",
+                "nclb testing=2", "patriot surveillance=2", "aca medicaid=2 aca_aid=1", "dodd_frank bank_rules=2 cfpb=1", "cap_trade carbon_price=1", "dream dreamers=2",
+                "budget_control caps=2", "tcja corp_rate=1 mid_rates=2", "ahca aca_aid=0 medicaid=1", "wall17 border=3", "first_step sentencing=0", "ss83 ret_age=1",
+                "fap basic_income=1", "medicare_d drug_prices=0", "energy75 fuel_economy=1", "housing37 vouchers=1", "gi_bill pell=1 veterans=2", "ndea research_univ=2 space=1",
+                "space space=2", "kennedy_tax top_rate=3 mid_rates=2", "recovery_act jobs_program=1 transit=2 clean_credits=1"};
+
+        /** Real values by year, for the outcomes the policy model keeps: year, value pairs, from estimates and official series. */
+        static final double[][] HISTORY = {
+                null, null, null, null, null,
+                {1933, 88, 1945, 75, 1950, 50, 1960, 28, 1966, 20, 1970, 14, 1980, 13, 1990, 14, 2000, 14, 2010, 16, 2014, 11, 2016, 9, 2025, 8},     // uninsured, %
+                {1933, 45, 1945, 32, 1950, 30, 1959, 22, 1965, 17, 1970, 12.6, 1980, 13, 1990, 13.5, 2000, 11.3, 2010, 15.1, 2019, 10.5, 2022, 11.5, 2025, 10.6}, // poverty, %
+                {1933, 190, 1945, 150, 1960, 160, 1970, 364, 1980, 597, 1991, 758, 2000, 507, 2010, 404, 2014, 362, 2020, 398, 2025, 360},             // violent crime
+                {1933, 1.5, 1950, 2, 1970, 7, 1990, 9, 2000, 17, 2010, 38, 2015, 52, 2019, 71, 2021, 107, 2023, 105, 2025, 75},                     // overdoses, thousands
+                {1933, 2, 1945, 6, 1950, 38, 1954, 90, 1960, 3, 1970, 20, 1977, 75, 1986, 140, 1990, 90, 2000, 135, 2005, 95, 2010, 37, 2017, 25, 2019, 70, 2021, 145, 2023, 205, 2025, 60, 2029, 30}, // border, thousands
+                {1933, 1.1, 1940, 1.4, 1950, 2.4, 1960, 2.9, 1970, 4.3, 1980, 4.8, 1990, 5.1, 2000, 5.9, 2005, 6.0, 2010, 5.6, 2015, 5.3, 2020, 4.6, 2025, 4.8}, // emissions, billion tons
+                {1933, 88, 1965, 90, 1973, 93, 1990, 96, 2000, 98, 2012, 101, 2019, 100, 2022, 95, 2025, 96}};                                     // test scores
     }
 
     // ---------------------------------------------------------------------
@@ -11028,6 +12105,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             Diplo.setup(g);
             Approval.init(g);
             HomeFront.setup(g);
+            Policies.setup(g);
             History.setup(g);
             Week.routine(g);
             if (s.transition) Transitions.begin(g);         // the oath comes when the transition ends
@@ -11200,6 +12278,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             g.stress = clamp(g.stress * 0.85, 0, 100);
             health(g);
             Economy.week(g);
+            Policies.week(g);
             Approval.week(g);
             if (g.cong != null) {
                 Hill.drift(g);
@@ -11309,7 +12388,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
      * Profiles by kind (rows: expert, loyalist, politician, outsider, crossover) and field (columns, in DOM order).
      * {S} is a state, {P} the president's party, {O} the other party.
      */
-    static final String[][][] PROFILE = {
+    static final String[][][] PROFILE = dataPROFILE();
+
+    private static String[][][] dataPROFILE() {
+        return new String[][][]{
             {   // the expert
                     {"Career diplomat and former ambassador to three countries", "Deputy secretary of state in the last {P} administration"},
                     {"Former Federal Reserve governor", "Chief economist at a large bank", "Deputy Treasury secretary in the last {P} administration"},
@@ -11345,6 +12427,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                     {"A {O} former prosecutor known for independence", "A retired federal judge appointed by a {O} president"},
                     {"A {O} former governor of {S}", "A {O} mayor known for working across the aisle"},
                     {"A {O} veteran of the White House", "An independent strategist who has worked for both parties"}}};
+    }
 
     /** What a background check can turn up: what it is, how much it costs in the Senate, and how the story is told. */
     public static final String[] BAG_WHAT = {"unpaid taxes on consulting income", "lobbying for a foreign government", "an old essay calling for the department to be abolished",
@@ -12958,6 +14041,8 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             }
             if (b.stage >= ST_COMMITTEE && b.stage <= ST_FLOOR2) {
                 u.button(g, px + 14, 760, 220, 36, b.publicPush ? "You've gone public" : "Go public", !b.publicPush ? B_PRIMARY : B_OFF, !b.publicPush ? () -> msg = Legis.deal(game, bb, null, Legis.DL_PUBLIC) : null, "Make the case to the country. Moderates feel the pressure. " + Legis.DEAL_COST[Legis.DL_PUBLIC]);
+                int[] pt = Policies.target(b.defId);
+                if (pt != null) u.button(g, px + 244, 760, 190, 36, "Real-world impacts", B_NORM, () -> PolicyUI.show(u, pt[0], pt[1]), "What this bill would do, who wins and loses, and how sure anyone can be.");
                 if (b.ours) u.button(g, px + pw - 180, 760, 166, 36, "Withdraw the bill", B_GHOST, () -> { bb.stage = ST_DEAD; bb.stageWeek = game.week; if (bb.recon && game.cong.reconFy == Hill.fiscalYear(game)) game.cong.reconFy = -1; msg = "You pulled " + bb.name + "."; }, "Pull it before it fails.");
             }
         }
@@ -13248,14 +14333,14 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     //  RoomIds (resolutedesk.ui.RoomIds): The rooms of the White House and what each holds.
     // ---------------------------------------------------------------------
     //  The home screen: click the desk, the windows, the doors, the globe or the papers to go where the work is.
-    public static final int R_DESK = 0, R_COUNTRY = 1, R_ECON = 2, R_RESIDENCE = 3, R_WESTWING = 4, R_CONGRESS = 5, R_SITROOM = 6, R_PRESS = 7, NROOM = 8;
+    public static final int R_DESK = 0, R_COUNTRY = 1, R_ECON = 2, R_RESIDENCE = 3, R_WESTWING = 4, R_CONGRESS = 5, R_SITROOM = 6, R_PRESS = 7, R_POLICY = 8, NROOM = 9;
 
-    public static final String[] ROOM_NAME = {"The Resolute Desk", "The Country", "The Economy", "The Residence", "The West Wing", "The Roosevelt Room", "The Situation Room", "The Press Briefing Room"};
+    public static final String[] ROOM_NAME = {"The Resolute Desk", "The Country", "The Economy", "The Residence", "The West Wing", "The Roosevelt Room", "The Situation Room", "The Press Briefing Room", "The Cabinet Room"};
 
     public static final String[] ROOM_SUB = {"Your week, slot by slot", "Approval, by issue, group and state", "Jobs, prices, markets and the budget", "Your health, your sleep and your family",
-            "Your staff and your cabinet", "Congress: the leaders, the votes, the budget", "The world: allies, rivals and crises", "The press corps and the media"};
+            "Your staff and your cabinet", "Congress: the leaders, the votes, the budget", "The world: allies, rivals and crises", "The press corps and the media", "Policy: the law, its effects, and how it all connects"};
 
-    public static final boolean[] ROOM_OPEN = {true, true, true, true, true, true, true, true};
+    public static final boolean[] ROOM_OPEN = {true, true, true, true, true, true, true, true, true};
 
     public static final String[] ROOM_LATER = {"", "", "", "",
             "Your chief of staff, national security adviser, press secretary and counsel, each with skills, traits and loyalty; all 15 departments and their secretaries; cabinet meetings; leaks and resignations; and your vice president's missions.",
@@ -13286,7 +14371,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         public static void key(ResoluteDesk u, KeyEvent e) {
             int k = e.getKeyCode();
             if (k == KeyEvent.VK_SPACE) endWeek(u);
-            if (k >= KeyEvent.VK_1 && k <= KeyEvent.VK_8) Rooms.open(u, k - KeyEvent.VK_1);
+            if (k >= KeyEvent.VK_1 && k <= KeyEvent.VK_9) Rooms.open(u, k - KeyEvent.VK_1);
             if (k == KeyEvent.VK_P) u.go(SC_PAPER);
         }
 
@@ -13824,6 +14909,447 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             return "President " + g.pres.last + " begins the week with " + Math.round(g.approval) + " percent of Americans approving of the job, according to the latest polling average. "
                     + "Unemployment stands at " + fmt1(e.unemp) + " percent and prices are up " + fmt1(e.infl) + " percent from a year ago. "
                     + (g.stamina < 35 ? "Aides privately worry about the president's punishing schedule." : "Aides say the president's schedule this week focuses on " + PISSUE[Week.topIssue(g)].toLowerCase() + ".");
+        }
+    }
+
+    /** The Cabinet Room: every policy, what changing it would do, the outcomes it produces, and a map of how it all connects. */
+    static final class PolicyUI {
+        public static int tab, area, sel = -1, target = -1;
+        static String msg;
+        public static final String[] TABS = {"Policies", "Outcomes", "System map"};
+        static final String[] AREA_SHORT = {"Taxes", "Safety net", "Jobs", "Health", "Housing", "Energy", "Immigration", "Crime", "Education", "Rights", "Tech", "Defense"};
+        /** A typical effect on each outcome, for drawing the strength of a link. */
+        static final double[] FX_SCALE = {0.15, 0.08, 0.04, 1, 0.08, 1.5, 0.5, 2, 5, 12, 3, 0.5};
+
+        private PolicyUI() {
+        }
+
+        static void draw(ResoluteDesk u, Graphics2D g, Game game) {
+            if (game.pol == null) return;
+            u.segmented(g, 48, 116, 420, 30, TABS, tab, i -> tab = i, null);
+            text(g, game.pol.changes + (game.pol.changes == 1 ? " change" : " changes") + " so far", 490, 136, F_S, C_DIM);
+            if (msg != null) textFit(g, msg, 640, 137, DW - 690, F_XS, C_GOLD);
+            if (sel < 0 || !Policies.available(game, sel)) { int[] l = Policies.inArea(game, area); sel = l.length > 0 ? l[0] : 0; target = -1; }
+            switch (tab) {
+                case 1: outcomes(u, g, game); break;
+                case 2: map(u, g, game); break;
+                default: policies(u, g, game); break;
+            }
+        }
+
+        /** Opens the Cabinet Room on one policy, showing the impacts of moving it to a level. */
+        public static void show(ResoluteDesk u, int k, int to) {
+            tab = 0;
+            area = Policies.def(k).area;
+            sel = k;
+            target = to;
+            msg = null;
+            Rooms.open(u, R_POLICY);
+        }
+
+        static void select(int k) {
+            sel = k;
+            target = -1;
+            msg = null;
+        }
+
+        // ---- the policies ----
+        static void policies(ResoluteDesk u, Graphics2D g, Game game) {
+            PolicyState s = game.pol;
+            u.panel(g, 48, 160, 260, 652, "Areas");
+            double y = 190;
+            for (int a = 0; a < NAREA; a++) {
+                final int aa = a;
+                int[] l = Policies.inArea(game, a);
+                int moved = 0;
+                for (int k : l) if (s.level[k] != s.base[k]) moved++;
+                u.card(g, 58, y, 240, 46, area == a, () -> { area = aa; int[] ll = Policies.inArea(game, aa); if (ll.length > 0) select(ll[0]); }, null);
+                text(g, AREA_NAME[a], 70, y + 20, F_SB, Color.white);
+                text(g, l.length + " policies" + (moved > 0 ? ", " + moved + " changed" : ""), 70, y + 37, F_T, moved > 0 ? C_GOLD : C_DIM);
+                y += 50;
+            }
+            // the area's policies
+            int[] l = Policies.inArea(game, area);
+            u.panel(g, 320, 160, 520, 652, AREA_NAME[area]);
+            y = 188;
+            double h = Math.min(46, 612.0 / Math.max(1, l.length));
+            for (int k : l) {
+                final int kk = k;
+                PolicyDef d = Policies.def(k);
+                u.card(g, 330, y, 500, h - 4, sel == k, () -> select(kk), null);
+                textFit(g, d.name, 342, y + 17, 300, F_SB, Color.white);
+                textFit(g, d.levels[s.level[k]], 342, y + 33, 300, F_T, s.level[k] != s.base[k] ? C_GOLD : C_DIM);
+                pips(g, d, s.level[k], s.base[k], -1, 660, y + 14);
+                String st = Policies.inMotion(game, k) != null ? "pending" : s.level[k] != s.base[k] ? viaName(s.via[k]) : null;
+                if (st != null) textR(g, st, 820, y + 33, F_T, C_ACCENT);
+                if (d.signature) textR(g, "signature", 820, y + 17, F_T, C_FAINT);
+                y += h;
+            }
+            detail(u, g, game);
+        }
+
+        static String viaName(int ch) { return ch == CH_BILL ? "by law" : ch == CH_ORDER ? "by order" : ch == CH_RULE ? "by rule" : ch == CH_BUDGET ? "by budget" : "changed"; }
+
+        /** One dot per level: filled for the law now, a ring for the law on day one, gold for the level you're looking at. */
+        static void pips(Graphics2D g, PolicyDef d, int now, int base, int tgt, double x, double y) {
+            int n = d.levels.length;
+            for (int i = 0; i < n; i++) {
+                double cx = x + i * 16;
+                g.setColor(i == now ? C_ACCENT : i == tgt ? C_GOLD : new Color(255, 255, 255, 30));
+                g.fill(new Ellipse2D.Double(cx, y - 5, 10, 10));
+                if (i == base && i != now) { g.setColor(C_DIM); g.setStroke(new BasicStroke(1.4f)); g.draw(new Ellipse2D.Double(cx - 2, y - 7, 14, 14)); }
+            }
+        }
+
+        // ---- one policy and the impacts of changing it ----
+        static void detail(ResoluteDesk u, Graphics2D g, Game game) {
+            PolicyState s = game.pol;
+            int k = sel;
+            PolicyDef d = Policies.def(k);
+            int now = s.level[k];
+            if (target < 0 || target == now || target >= d.levels.length) target = now + 1 < d.levels.length ? now + 1 : now - 1;
+            int steps = target - now;
+            double px = 852, pw = DW - 48 - px, x0 = px + 18;
+            u.panel(g, px, 160, pw, 652, null);
+            text(g, d.name, x0, 194, F_H2, Color.white);
+            double cx = x0 + strW(g, d.name, F_H2) + 12;
+            if (d.signature) cx += chip(g, "Signature issue", cx, 180, C_GOLD, false) + 6;
+            chip(g, "Evidence: " + EV_NAME[d.evidence].toLowerCase(), cx, 180, d.evidence == 0 ? C_GOOD : d.evidence == 3 ? C_AMBER : C_ACCENT, false);
+            String since = s.level[k] != s.base[k] ? "  (changed " + viaName(s.via[k]) + ", " + monthYear(s.changed[k] * 7) + ")" : "";
+            textFit(g, "Now: " + d.levels[now] + since, x0, 216, pw - 36, F_XS, C_TEXT);
+            // the levels
+            int n = d.levels.length;
+            double bw = (pw - 36 - (n - 1) * 6) / n, by = 228;
+            for (int i = 0; i < n; i++) {
+                final int ii = i;
+                int style = i == now ? B_TABON : i == target ? B_GOLD : B_NORM;
+                u.button(g, x0 + i * (bw + 6), by, bw, 34, "", style, i == now ? null : () -> { target = ii; msg = null; }, d.levels[i]);
+                wrapCenter(g, d.levels[i], x0 + i * (bw + 6) + bw / 2, by + 14, bw - 10, i == target ? new Color(29, 20, 5) : i == now ? Color.white : C_TEXT);
+            }
+            if (Math.abs(steps) > 2) text(g, "One bill can move a policy two steps at most; pick a nearer level.", x0, by + 50, F_XS, C_AMBER);
+            label(g, "Real-world impacts of moving to: " + Policies.def(k).levels[target].toLowerCase(), x0, 290, C_GOLD);
+            // left column: who wins and loses, the precedent, the evidence
+            double lw = 300, y = 312;
+            y = section(g, "Who gains", d.winners, x0, y, lw, C_GOOD);
+            y = section(g, "Who pays", d.losers, x0, y, lw, C_AMBER);
+            y = section(g, "Precedent", d.precedent, x0, y, lw, C_DIM);
+            section(g, "How sure is this?", EV_NAME[d.evidence] + ". " + EV_DESC[d.evidence] + " The ranges show it.", x0, y, lw, C_DIM);
+            // right column: what changes, and who reacts
+            double rx = x0 + lw + 30, rw = px + pw - 18 - rx;
+            y = 312;
+            label(g, "Once it has worked through (" + lagText(d.lag) + ")", rx, y, C_FAINT);
+            y += 18;
+            int lines = 0;
+            for (int o = 0; o < NOUT; o++) {
+                if (d.fx[o] == 0 || o == O_DEFICIT) continue;
+                double[] r = Policies.range(d, steps, o, 1);
+                boolean good = r[1] * OC_GOOD[o] > 0;
+                arrow(g, rx + 4, y - 4, r[1] > 0, good ? C_GOOD : C_BAD, 1);
+                textFit(g, OC_NAME[o] + ": " + rangeText(o, r), rx + 18, y, rw - 18, F_XS, C_TEXT);
+                y += 16;
+                lines++;
+            }
+            if (d.cost != 0) {
+                double[] c = Policies.costRange(d, steps, 1);
+                boolean adds = c[1] > 0;
+                arrow(g, rx + 4, y - 4, adds, adds ? C_BAD : C_GOOD, 1);
+                textFit(g, "Deficit: " + (adds ? "adds " : "cuts it by ") + "$" + Math.round(Math.abs(c[0])) + " to $" + Math.round(Math.abs(c[2])) + " billion a year", rx + 18, y, rw - 18, F_XS, C_TEXT);
+                y += 16;
+                lines++;
+            }
+            if (lines == 0) { text(g, "Little that shows up in the numbers: this one is about values.", rx, y, F_XS, C_DIM); y += 16; }
+            y += 10;
+            label(g, "How voters react when it happens", rx, y, C_FAINT);
+            y += 18;
+            double nat = Policies.national(d, steps, 1);
+            arrow(g, rx + 4, y - 4, nat >= 0, nat >= 0 ? C_GOOD : C_BAD, Math.abs(nat) >= 3 ? 2 : 1);
+            text(g, "The country: " + signed1(nat) + " points at first, fading over months", rx + 18 + (Math.abs(nat) >= 3 ? 10 : 0), y, F_XS, Color.white);
+            y += 16;
+            int[] order = topGroups(d, steps);
+            for (int i = 0; i < order.length && i < 7; i++) {
+                int gr = order[i];
+                double v = Policies.groupEffect(d, gr, steps, 1);
+                int arrows = Math.abs(v) >= 6 ? 3 : Math.abs(v) >= 3 ? 2 : 1;
+                arrow(g, rx + 4, y - 4, v > 0, v > 0 ? C_GOOD : C_BAD, arrows);
+                text(g, GROUP[gr] + ": " + signed1(v), rx + 18 + (arrows - 1) * 10, y, F_XS, C_TEXT);
+                y += 16;
+            }
+            String party = d.leanFor(steps) < 0 ? "Neither party owns this one." : d.leanFor(steps) == game.party ? "Your party wants this." : "This is the other party's idea; your base won't like it.";
+            text(g, party, rx, y + 4, F_T, d.leanFor(steps) == game.party || d.leanFor(steps) < 0 ? C_DIM : C_AMBER);
+            channels(u, g, game, k, target, x0, pw - 36);
+        }
+
+        /** The ways to make the change, each with its odds, timing and strength. */
+        static void channels(ResoluteDesk u, Graphics2D g, Game game, int k, int to, double x0, double w) {
+            PolicyDef d = Policies.def(k);
+            double y = 716;
+            label(g, "Make the change", x0, y, C_GOLD);
+            y += 10;
+            double bw = (w - 3 * 8) / 4;
+            String[] lab = {"Send Congress a bill", "Sign an executive order", "Propose an agency rule", "Put it in the budget"};
+            for (int ch = 0; ch < NCH; ch++) {
+                final int c = ch;
+                double bx = x0 + ch * (bw + 8);
+                String no = Policies.cannot(game, k, to, ch);
+                u.button(g, bx, y, bw, 32, lab[ch], no == null ? (ch == CH_BILL ? B_PRIMARY : B_NORM) : B_OFF, no == null ? () -> { msg = Policies.propose(game, k, to, c); target = -1; } : null,
+                        no != null ? no : CH_NAME[ch] + ".");
+                String fact = !d.can(ch) ? "Not possible for this policy" : fact(game, k, to, ch);
+                wrap(g, fact, bx + 2, y + 48, bw - 4, F_T, d.can(ch) ? C_DIM : C_FAINT);
+            }
+        }
+
+        static String fact(Game game, int k, int to, int ch) {
+            PolicyDef d = Policies.def(k);
+            switch (ch) {
+                case CH_BILL: {
+                    if (Math.abs(to - game.pol.level[k]) > 2) return "A bill moves it two steps at most.";
+                    Bill b = Policies.bill(game, k, to);
+                    b.recon = b.def().budget && Legis.reconOk(game, b);
+                    return "House about " + Math.round(Legis.chance(game, b, HOUSE, false) * 100) + "%, Senate " + Math.round(Legis.chance(game, b, SENATE, false) * 100) + "%"
+                            + (b.recon ? " (by reconciliation)" : "") + ". Full strength; hard to undo.";
+                }
+                case CH_ORDER: return "At once, at 60% strength. Court risk about " + Math.round(Actions.legal(game, d.legal) * 100) + "%; a successor can undo it.";
+                case CH_RULE: return "After about " + Math.round(14 - 6 * Cabinet.pq(game, P_OMB)) + " weeks of comment, at 85%. Court risk " + Math.round(Actions.legal(game, d.legal) * 100) + "%.";
+                default: {
+                    int[] dt = dateOf(game.day());
+                    int y = dt[1] >= 9 ? dt[0] + 1 : dt[0];
+                    return "On October 1, " + y + ", if Congress funds it: " + (Hill.majority(game, HOUSE, game.party) ? "likely" : "a fight") + ".";
+                }
+            }
+        }
+
+        static double section(Graphics2D g, String title, String body, double x, double y, double w, Color c) {
+            label(g, title, x, y, c);
+            return y + 14 + wrap(g, body, x, y + 14, w, F_XS, C_TEXT) + 10;
+        }
+
+        static String lagText(int weeks) {
+            return weeks <= 13 ? "within months" : weeks <= 30 ? "about six months" : weeks <= 60 ? "about a year" : weeks <= 120 ? "about two years" : weeks <= 210 ? "three or four years" : "five years or more";
+        }
+
+        /** An estimate's range in the outcome's units: "-1.9 to -3.1 points", "-8% to -16%". */
+        static String rangeText(int o, double[] r) {
+            double a = r[0], b = r[2];
+            if (Math.abs(a) > Math.abs(b)) { double t = a; a = b; b = t; }
+            if (OC_PCT[o]) return pct(a) + " to " + pct(b);
+            if (o == O_GAS) return money2(a) + " to " + money2(b) + " a gallon";
+            return signed(a) + " to " + signed(b) + " points";
+        }
+
+        static String pct(double v) { return (v > 0 ? "+" : v < 0 ? "-" : "") + Math.round(Math.abs(v)) + "%"; }
+
+        static String signed(double v) { return (v > 0 ? "+" : v < 0 ? "-" : "") + (Math.abs(v) < 0.1 ? fmt2(Math.abs(v)) : fmt1(Math.abs(v))); }
+
+        static String money2(double v) { return (v > 0 ? "+$" : "-$") + fmt2(Math.abs(v)); }
+
+        /** The voter groups a change moves most. */
+        static int[] topGroups(PolicyDef d, int steps) {
+            int n = 0;
+            for (int gr = 0; gr < NG; gr++) if (d.groups[gr] != 0) n++;
+            int[] l = new int[n];
+            n = 0;
+            for (int gr = 0; gr < NG; gr++) if (d.groups[gr] != 0) l[n++] = gr;
+            for (int i = 1; i < n; i++) for (int j = i; j > 0 && Math.abs(d.groups[l[j]]) > Math.abs(d.groups[l[j - 1]]); j--) { int t = l[j]; l[j] = l[j - 1]; l[j - 1] = t; }
+            return l;
+        }
+
+        /** One to three small arrows, up or down. */
+        static void arrow(Graphics2D g, double x, double y, boolean up, Color c, int n) {
+            g.setColor(c);
+            for (int i = 0; i < n; i++) {
+                double ax = x + i * 10;
+                Path2D p = new Path2D.Double();
+                if (up) { p.moveTo(ax, y + 4); p.lineTo(ax + 4, y - 3); p.lineTo(ax + 8, y + 4); }
+                else { p.moveTo(ax, y - 3); p.lineTo(ax + 4, y + 4); p.lineTo(ax + 8, y - 3); }
+                p.closePath();
+                g.fill(p);
+            }
+        }
+
+        static void wrapCenter(Graphics2D g, String s, double cx, double y, double w, Color c) {
+            g.setFont(F_T);
+            String[] words = s.split(" ");
+            String l1 = "", l2 = "";
+            for (String wd : words) {
+                String t = l1.isEmpty() ? wd : l1 + " " + wd;
+                if (l2.isEmpty() && strW(g, t, F_T) <= w) l1 = t;
+                else l2 = l2.isEmpty() ? wd : l2 + " " + wd;
+            }
+            if (l2.isEmpty()) textC(g, l1, cx, y + 5, F_T, c);
+            else { textC(g, l1, cx, y, F_T, c); textC(g, fitTo(g, l2, w), cx, y + 12, F_T, c); }
+        }
+
+        static String fitTo(Graphics2D g, String s, double w) {
+            if (strW(g, s, F_T) <= w) return s;
+            while (s.length() > 1 && strW(g, s + "...", F_T) > w) s = s.substring(0, s.length() - 1);
+            return s + "...";
+        }
+
+        // ---- the outcomes ----
+        static void outcomes(ResoluteDesk u, Graphics2D g, Game game) {
+            PolicyState s = game.pol;
+            double cw = (DW - 96 - 3 * 12) / 4.0, ch = (652 - 2 * 12) / 3.0;
+            for (int o = 0; o < NOUT; o++) {
+                double x = 48 + (o % 4) * (cw + 12), y = 160 + (o / 4) * (ch + 12);
+                u.panel(g, x, y, cw, ch, OC_NAME[o]);
+                double v = s.out[o], v0 = s.out0[o], dv = v - v0;
+                text(g, outShow(o, v), x + 14, y + 62, F_NUMXL, Color.white);
+                text(g, OC_UNIT[o].startsWith("%") || OC_UNIT[o].equals("index") ? "" : OC_UNIT[o], x + 18 + strW(g, outShow(o, v), F_NUMXL), y + 62, F_XS, C_DIM);
+                boolean better = dv * OC_GOOD[o] > 0;
+                double rel = OC_PCT[o] && v0 != 0 ? dv / v0 * 100 : dv;
+                String since = OC_PCT[o] ? Math.round(Math.abs(rel)) + "%" : o == O_GAS ? "$" + fmt2(Math.abs(dv)) : fmt1(Math.abs(dv)) + " points";
+                if (Math.abs(rel) >= (OC_PCT[o] ? 0.5 : 0.05)) {
+                    arrow(g, x + 14, y + 82, dv > 0, better ? C_GOOD : C_BAD, 1);
+                    text(g, (dv > 0 ? "Up " : "Down ") + since + " since you took office", x + 30, y + 86, F_XS, better ? C_GOOD : C_BAD);
+                } else text(g, "About where it was when you took office", x + 14, y + 86, F_XS, C_DIM);
+                spark(g, s.hist, o + 1, x + 14, y + 98, cw - 28, 46, o == O_GROWTH ? C_ACCENT : better || Math.abs(rel) < 0.5 ? C_ACCENT : C_AMBER);
+                // what moved it
+                int a = -1, b = -1;
+                double av = 0, bv = 0;
+                for (int k = 0; k < Policies.count(); k++) {
+                    double c = Math.abs(Policies.contribution(game, k, o));
+                    if (c > av) { b = a; bv = av; a = k; av = c; } else if (c > bv) { b = k; bv = c; }
+                }
+                double ly = y + 162;
+                if (a < 0 || av < FX_SCALE[o] * 0.05) wrap(g, outFromEconomy(o) ? OC_DESC[o] + " Set by the economy; policies push it at the edges." : OC_DESC[o] + " No policy change has moved it yet.", x + 14, ly, cw - 28, F_T, C_DIM);
+                else {
+                    text(g, "Moved most by", x + 14, ly, F_T, C_FAINT);
+                    textFit(g, Policies.def(a).name, x + 14, ly + 14, cw - 28, F_XS, C_TEXT);
+                    if (b >= 0 && bv >= FX_SCALE[o] * 0.05) textFit(g, Policies.def(b).name, x + 14, ly + 28, cw - 28, F_XS, C_TEXT);
+                }
+            }
+        }
+
+        static void spark(Graphics2D g, List<double[]> hist, int col, double x, double y, double w, double h, Color c) {
+            if (hist.size() < 2) return;
+            double lo = 1e9, hi = -1e9;
+            for (double[] r : hist) { lo = Math.min(lo, r[col]); hi = Math.max(hi, r[col]); }
+            if (hi - lo < 1e-6) { hi += 1; lo -= 1; }
+            g.setColor(new Color(255, 255, 255, 14));
+            g.fill(new RoundRectangle2D.Double(x, y, w, h, 6, 6));
+            Path2D p = new Path2D.Double();
+            for (int i = 0; i < hist.size(); i++) {
+                double px = x + 4 + (w - 8) * i / (hist.size() - 1.0), py = y + h - 4 - (h - 8) * (hist.get(i)[col] - lo) / (hi - lo);
+                if (i == 0) p.moveTo(px, py); else p.lineTo(px, py);
+            }
+            g.setColor(c);
+            g.setStroke(new BasicStroke(1.6f));
+            g.draw(p);
+            g.setStroke(new BasicStroke(1f));
+        }
+
+        // ---- the system map ----
+        static void map(ResoluteDesk u, Graphics2D g, Game game) {
+            PolicyState s = game.pol;
+            double ax = 48;
+            for (int a = 0; a < NAREA; a++) {
+                final int aa = a;
+                double w = strW(g, AREA_SHORT[a], F_XSB) + 22;
+                u.button(g, ax, 160, w, 26, AREA_SHORT[a], area == a ? B_TABON : B_TAB, () -> { area = aa; int[] l = Policies.inArea(game, aa); if (l.length > 0) select(l[0]); });
+                ax += w + 4;
+            }
+            u.panel(g, 48, 196, DW - 96, 616, null);
+            int[] l = Policies.inArea(game, area);
+            double pxL = 70, pw = 250, outX = 700, outW = 200, grX = 1290;
+            double py0 = 222, ph = Math.min(44, 570.0 / Math.max(1, l.length));
+            double oy0 = 222, oh = 570.0 / NOUT;
+            double gy0 = 218, gh = 576.0 / NG;
+            label(g, "Policies", pxL, 214, C_FAINT);
+            label(g, "Outcomes", outX, 214, C_FAINT);
+            label(g, "Voter groups and their approval", grX, 214, C_FAINT);
+            // which policy is in focus: the one under the mouse, or the selected one
+            int focus = -1;
+            for (int i = 0; i < l.length; i++) if (u.hover(pxL, py0 + i * ph, pw, ph - 6)) focus = l[i];
+            int hoverO = -1;
+            for (int o = 0; o < NOUT; o++) if (u.hover(outX, oy0 + o * oh, outW, oh - 6)) hoverO = o;
+            if (focus < 0 && hoverO < 0) focus = sel;
+            // links: policy to outcome
+            for (int i = 0; i < l.length; i++) {
+                PolicyDef d = Policies.def(l[i]);
+                double sy = py0 + i * ph + (ph - 6) / 2;
+                for (int o = 0; o < NOUT; o++) {
+                    if (d.fx[o] == 0 && !(o == O_DEFICIT && d.cost != 0)) continue;
+                    double mag = o == O_DEFICIT ? d.cost / 60 : d.fx[o] / FX_SCALE[o];
+                    boolean good = o == O_DEFICIT ? d.cost < 0 : d.fx[o] * OC_GOOD[o] > 0;
+                    boolean lit = focus == l[i] || hoverO == o;
+                    link(g, pxL + pw, sy, outX, oy0 + o * oh + (oh - 6) / 2, good, mag, lit, focus >= 0 || hoverO >= 0);
+                }
+            }
+            // links: outcome to the issue voters judge it by
+            double isX = 1010, isW = 200, iy0 = 222, ih = 570.0 / NPI;
+            for (int[] e : OUTCOME_ISSUE) {
+                boolean lit = hoverO == e[0] || focus >= 0 && touches(focus, e[0]);
+                Color c = new Color(124, 196, 255, lit ? 170 : 40);
+                g.setColor(c);
+                g.setStroke(new BasicStroke(lit ? 2f : 1.2f));
+                double y1 = oy0 + e[0] * oh + (oh - 6) / 2, y2 = iy0 + e[1] * ih + (ih - 6) / 2, dx = (isX - outX - outW) * 0.45;
+                Path2D p = new Path2D.Double();
+                p.moveTo(outX + outW, y1);
+                p.curveTo(outX + outW + dx, y1, isX - dx, y2, isX, y2);
+                g.draw(p);
+                g.setStroke(new BasicStroke(1f));
+            }
+            label(g, "Issues, and your approval on each", isX, 214, C_FAINT);
+            for (int i = 0; i < NPI; i++) {
+                double y = iy0 + i * ih;
+                g.setColor(new Color(22, 34, 56, 245));
+                g.fill(new RoundRectangle2D.Double(isX, y, isW, ih - 6, 10, 10));
+                textFit(g, PISSUE[i], isX + 10, y + 15, isW - 60, F_XS, C_TEXT);
+                textR(g, Math.round(game.issueApp[i]) + "%", isX + isW - 10, y + 15, F_XSB, game.issueApp[i] >= 50 ? C_GOOD : C_AMBER);
+                bar(g, isX + 10, y + 21, isW - 20, 4, game.issueApp[i] / 100, game.issueApp[i] >= 50 ? C_GOOD : C_AMBER);
+            }
+            // nodes
+            for (int i = 0; i < l.length; i++) {
+                final int k = l[i];
+                PolicyDef d = Policies.def(k);
+                double y = py0 + i * ph;
+                u.card(g, pxL, y, pw, ph - 6, k == sel, () -> select(k), d.levels[s.level[k]]);
+                textFit(g, d.name, pxL + 10, y + 16, pw - 20, F_XSB, k == focus ? Color.white : C_TEXT);
+                double f = d.levels.length > 1 ? s.level[k] / (d.levels.length - 1.0) : 0;
+                bar(g, pxL + 10, y + 24, pw - 20, 5, f, s.level[k] != s.base[k] ? C_GOLD : C_ACCENT);
+            }
+            for (int o = 0; o < NOUT; o++) {
+                double y = oy0 + o * oh, dv = s.out[o] - s.out0[o];
+                boolean better = dv * OC_GOOD[o] > 0, moved = Math.abs(OC_PCT[o] && s.out0[o] != 0 ? dv / s.out0[o] * 100 : dv) >= (OC_PCT[o] ? 0.5 : 0.05);
+                g.setColor(new Color(22, 34, 56, 245));
+                g.fill(new RoundRectangle2D.Double(outX, y, outW, oh - 6, 18, 18));
+                g.setColor(o == hoverO ? C_ACCENT : new Color(255, 255, 255, 30));
+                g.draw(new RoundRectangle2D.Double(outX, y, outW, oh - 6, 18, 18));
+                text(g, OC_NAME[o], outX + 12, y + 17, F_XSB, Color.white);
+                textR(g, outShow(o, s.out[o]), outX + outW - 12, y + 17, F_XS, C_TEXT);
+                if (moved) arrow(g, outX + outW - 22, y + 30, dv > 0, better ? C_GOOD : C_BAD, 1);
+                u.hit(outX, y, outW, oh - 6, null, OC_DESC[o]);
+            }
+            // the voter groups: today's approval, and how the policy in focus would move each of them
+            PolicyDef fd = focus >= 0 ? Policies.def(focus) : null;
+            for (int gr = 0; gr < NG; gr++) {
+                double y = gy0 + gr * gh, v = fd != null ? Policies.groupEffect(fd, gr, 1, 1) : 0;
+                boolean on = v != 0;
+                if (on) arrow(g, grX - 34, y + gh / 2, v > 0, v > 0 ? C_GOOD : C_BAD, Math.abs(v) >= 6 ? 3 : Math.abs(v) >= 3 ? 2 : 1);
+                text(g, GROUP[gr], grX, y + gh / 2 + 4, F_T, on ? Color.white : C_DIM);
+                bar(g, grX + 170, y + gh / 2 - 2, 70, 5, game.groupApp[gr] / 100, game.groupApp[gr] >= 50 ? C_GOOD : C_AMBER);
+            }
+            text(g, "Lines: green when a step up makes that outcome better, red when worse; thicker is bigger. Arrows: how each group would react. Point at a policy or an outcome to trace it.", 70, 800, F_T, C_DIM);
+        }
+
+        /** Which issue each outcome is judged by: {outcome, issue}. */
+        static final int[][] OUTCOME_ISSUE = {{O_UNEMP, PI_JOBS}, {O_UNEMP, PI_ECON}, {O_INFL, PI_PRICES}, {O_GROWTH, PI_ECON}, {O_DEFICIT, PI_ECON}, {O_GAS, PI_PRICES},
+                {O_UNINS, PI_HEALTH}, {O_POV, PI_PRICES}, {O_CRIME, PI_CRIME}, {O_OD, PI_CRIME}, {O_BORDER, PI_IMMIG}, {O_EMIS, PI_ENERGY}, {O_SCORES, PI_EDU}};
+
+        static boolean touches(int k, int o) { PolicyDef d = Policies.def(k); return o == O_DEFICIT ? d.cost != 0 : d.fx[o] != 0; }
+
+        static void link(Graphics2D g, double x1, double y1, double x2, double y2, boolean good, double mag, boolean lit, boolean dimOthers) {
+            double m = clamp(Math.abs(mag), 0.15, 3);
+            Color c = good ? C_GOOD : C_BAD;
+            int alpha = lit ? 200 : dimOthers ? 18 : 70;
+            g.setColor(new Color(c.getRed(), c.getGreen(), c.getBlue(), alpha));
+            g.setStroke(new BasicStroke((float) (0.8 + 1.6 * m), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+            double dx = (x2 - x1) * 0.45;
+            Path2D p = new Path2D.Double();
+            p.moveTo(x1, y1);
+            p.curveTo(x1 + dx, y1, x2 - dx, y2, x2, y2);
+            g.draw(p);
+            g.setStroke(new BasicStroke(1f));
         }
     }
 
@@ -14813,7 +16339,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             int k = e.getKeyCode();
             if (k == KeyEvent.VK_ESCAPE) { if (pendingSlot >= 0) pendingSlot = -1; else u.go(SC_OVAL); }
             if (k == KeyEvent.VK_SPACE) Oval.endWeek(u);
-            if (k >= KeyEvent.VK_1 && k <= KeyEvent.VK_8) open(u, k - KeyEvent.VK_1);
+            if (k >= KeyEvent.VK_1 && k <= KeyEvent.VK_9) open(u, k - KeyEvent.VK_1);
         }
 
         public static void press(ResoluteDesk u, double mx, double my) { }
@@ -14849,11 +16375,12 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 case R_WESTWING: WestWing.draw(u, g, game); break;
                 case R_SITROOM: SitRoom.draw(u, g, game); break;
                 case R_PRESS: PressRoom.draw(u, g, game); break;
+                case R_POLICY: PolicyUI.draw(u, g, game); break;
                 default: later(u, g, game); break;
             }
         }
 
-        static final String[] ROOM_TAB = {"Desk", "Country", "Economy", "Residence", "West Wing", "Congress", "Situation Room", "Press"};
+        static final String[] ROOM_TAB = {"Desk", "Country", "Economy", "Residence", "West Wing", "Congress", "Situation Room", "Press", "Policy"};
 
         // ---- the desk: the week's calendar ----
         static void desk(ResoluteDesk u, Graphics2D g, Game game) {
@@ -16949,7 +18476,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             "Americans killed in a terror attack abroad", "Hackers shut down a major pipeline", "An American is detained abroad", "A surge at the southern border", "China cuts off rare earths",
             "OPEC cuts oil output", "India and Pakistan trade strikes"};
 
-    public static final String[] CR_BODY = {
+    public static final String[] CR_BODY = dataCR_BODY();
+
+    private static String[] dataCR_BODY() {
+        return new String[]{
             "The People's Liberation Army has launched its largest exercises yet, encircling the island with ships and aircraft. Taiwan's leaders are asking what Washington will do.",
             "Beijing says all ships bound for Taiwan must now submit to Chinese customs inspections. Shipping firms are rerouting; chip supplies are at risk.",
             "Missile strikes and an amphibious assault have begun. Taiwan is fighting back. Allies are waiting to see what America does.",
@@ -16970,8 +18500,12 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             "Beijing has stopped exports of rare-earth magnets in retaliation for your tariffs. Carmakers warn of shutdowns within weeks.",
             "OPEC and its allies announced a surprise cut in oil production. Prices jumped overnight.",
             "After a deadly attack in Kashmir, India and Pakistan have exchanged missile strikes. Both have nuclear weapons."};
+    }
 
-    public static final String[] CR_OPTS = {
+    public static final String[] CR_OPTS = dataCR_OPTS();
+
+    private static String[] dataCR_OPTS() {
+        return new String[]{
             "Sail a carrier group through the Strait|Defense secretary|m|0.8|deter=8 twt=3 rel:CN=-8 pacific=5 sec=0.15|deter=3 twt=10 rel:CN=-12|The carrier transit passes without incident and reassures allies.|A Chinese warship's close pass raises tensions further.;;"
                     + "Call Beijing and lower the temperature|Secretary of State|d|0.6|twt=-12 rel:CN=6|twt=-3|Beijing scales back the drills after the call.|Beijing pockets the call and keeps the drills going.;;"
                     + "Quietly speed up arms deliveries to Taiwan|National security adviser|i|0.75|deter=10 rel:CN=-5 rel:TW=8|deter=5 rel:CN=-12|The arms move quietly.|The deliveries leak, and Beijing is furious.;;"
@@ -17035,6 +18569,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             "Mediate between them|Secretary of State|d|0.55|rel:IN=4 rel:PK=6 for=0.4|rel:IN=-6|A ceasefire takes hold.|India rejects American mediation.;;"
                     + "Back India|National security adviser|d|1|rel:IN=10 rel:PK=-15|rel:IN=10|Pakistan turns to China.|Pakistan turns to China.;;"
                     + "Stay out of it|Chief of staff|s|1|for=-0.1|for=-0.1|The fighting burns out on its own.|The fighting burns out on its own."};
+    }
 
     /** Military operations: name, description, condition, odds, success fx, failure fx, story. */
     public static final String[] OP_NAME = {"Strike Iran's nuclear sites", "Strike Houthi missile sites", "Strike militias in Iraq and Syria", "Raid a terrorist leader's compound", "Send a carrier group to the Taiwan Strait",
@@ -17665,7 +19200,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     //  WorldShapes (resolutedesk.world.WorldShapes): Country outlines for the world map.
     // ---------------------------------------------------------------------
     /** Country outlines (Natural Earth 1:110m via world-atlas), Robinson projection, 1000 x ~447 units, half-unit encoded like the US map. */
-    public static final String[][] WORLD = {
+    public static final String[][] WORLD = dataWORLD();
+
+    private static String[][] dataWORLD() {
+        return new String[][]{
             {"CN", "#4i#'4JMNIRMTMROQQMRNS~#2[#%PMLRMFDXMQMNDZQPMMIRNQKQNRTURWQTTQVRR]QWSROTUTS`PVNTPXSUOSQSLVLVOTMTJJJPKWQSLULPKQMVOSOOMBIMQJNLPMMNDVQSKMMOHPMMLKNQLZMWQUQ`]UUYQXSU"
                     + "UVORLUMQUNQRVPUHNLQTTSWLOQRJKOSHQRSJNLNNSKRMSIQMRJQPLMLQKJLLQLSMTJONRTSSPQRTQSJTRSOQRHQORKRNTVRSUZZQTLPRSRQPYLOK_LWBZIPLRMLLSHRJPNULPMJPMGMMPIMLMOKJNLLKSFOIRQVL"
                     + "ONKKQHKPJKNMIJPNHSIMELNLKLPINQLKKLRJMJSKTKPLMHMMQLTNJLPBMFKLLLNIKJMMPAGKHSPOLLLNIHHEMLJIJMILNMOLIPNNNSLRMUPOKVNPMUL"},
@@ -17874,6 +19412,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             {"_", "#*@#'dTNNTIOQM"},
             {"_", "#0$#(6IHHQLOKGKMMKIIOMHJSMRGSNTUQNYPUJTRQOUGMIROPMQPOXRQQZNQLOMRSPRRVZDYGQKM"}
     };
+    }
 
     public static final double WORLD_TOP = 245.635;
 

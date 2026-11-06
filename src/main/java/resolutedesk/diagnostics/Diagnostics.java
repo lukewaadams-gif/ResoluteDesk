@@ -23,6 +23,8 @@ import static resolutedesk.home.DisasterData.*;
 import static resolutedesk.home.EventData.*;
 import static resolutedesk.model.Parties.*;
 import static resolutedesk.opinion.Issues.*;
+import static resolutedesk.policy.Outcomes.*;
+import static resolutedesk.policy.PolicyData.*;
 import static resolutedesk.press.Outlets.*;
 import static resolutedesk.sim.DecisionKinds.*;
 import static resolutedesk.sim.Rosters.*;
@@ -70,6 +72,7 @@ import resolutedesk.model.Game;
 import resolutedesk.model.Settings;
 import resolutedesk.opinion.Elect;
 import resolutedesk.opinion.Groups;
+import resolutedesk.policy.Policies;
 import resolutedesk.press.Polls;
 import resolutedesk.press.QA;
 import resolutedesk.press.Speech;
@@ -83,6 +86,7 @@ import resolutedesk.transition.Transitions;
 import resolutedesk.ui.Creator;
 import resolutedesk.ui.HillUI;
 import resolutedesk.ui.Night;
+import resolutedesk.ui.PolicyUI;
 import resolutedesk.ui.PressRoom;
 import resolutedesk.ui.Rooms;
 import resolutedesk.ui.Screens;
@@ -115,6 +119,7 @@ public final class Diagnostics {
             for (int r = 0; r < runs; r++) sim(1000 + r, year, pres, scen, weeks);
         }
         if (what.equals("ui")) ui(a.length > 2 ? a[2] : "shots");
+        if (what.equals("policies")) policySim(a.length > 2 ? Integer.parseInt(a[2]) : 2025, a.length > 3 ? Integer.parseInt(a[3]) : 104);
         if (what.equals("transition")) transitionSim(a.length > 2 ? Integer.parseInt(a[2]) : 2025, a.length > 3 ? Integer.parseInt(a[3]) : 52);
         if (what.equals("check")) check();
         if (what.equals("impeach")) for (int r = 0; r < (a.length > 2 ? Integer.parseInt(a[2]) : 5); r++) impeach(2000 + r, a.length > 3 ? Double.parseDouble(a[3]) : 9);
@@ -317,6 +322,32 @@ public final class Diagnostics {
         System.out.println("shot " + name);
     }
 
+    /** Policy changes through every channel (a bill, an order, a rule and the budget), then the outcomes over the weeks that follow. */
+    static void policySim(int year, int weeks) {
+        Game g = newGame(31, year, null, 0);
+        StringBuilder b = new StringBuilder("=== policies " + year + " " + g.pres.name() + "\n");
+        String[][] plan = {{"medicaid", "1", "0"}, {"drilling", "1", "1"}, {"overtime", "1", "2"}, {"nih", "1", "3"}, {"police_money", "1", "0"}, {"fuel_economy", "1", "2"}};
+        for (String[] p : plan) {
+            int k = Policies.index(p[0]);
+            if (k < 0 || !Policies.available(g, k)) continue;
+            int to = g.pol.level[k] + Integer.parseInt(p[1]);
+            if (to >= Policies.def(k).levels.length) to = g.pol.level[k] - 1;
+            b.append("  ").append(p[0]).append(" via ").append(CH_NAME[Integer.parseInt(p[2])]).append(": ").append(Policies.propose(g, k, to, Integer.parseInt(p[2]))).append("\n");
+        }
+        for (int w = 0; w < weeks && !g.over; w++) {
+            Auto.week(g);
+            Week.resolve(g);
+            Decisions.autoAll(g);
+            if (w % 13 == 12) {
+                b.append("  week ").append(g.week).append(" approval ").append(fmt1(g.approval));
+                for (int o = 0; o < NOUT; o++) b.append(" ").append(OC_KEY[o]).append(" ").append(fmt2(g.pol.out[o]));
+                b.append("\n");
+            }
+        }
+        for (int k = 0; k < Policies.count(); k++) if (g.pol.level[k] != g.pol.base[k]) b.append("  ").append(Policies.def(k).id).append(" ").append(g.pol.base[k]).append(" -> ").append(g.pol.level[k]).append("\n");
+        System.out.print(b);
+    }
+
     /**
      * A transition played by a simple script (interview and check the top jobs, float and announce the best, meet
      * senators), then a year of the presidency. The equivalence check runs it in both versions.
@@ -358,6 +389,21 @@ public final class Diagnostics {
         }
         for (int k = 0; k < NPOST; k++) if (g.ex.post[k] != null) b.append("  ").append(POST_SHORT[k]).append(": ").append(g.ex.post[k].name).append(" ").append(g.ex.post[k].voteYes).append("-").append(g.ex.post[k].voteNo).append("\n");
         System.out.print(b);
+    }
+
+    /** The Cabinet Room: a policy and its impacts, the outcomes, and the system map. */
+    static void policyShots(ResoluteDesk u, String dir) {
+        Game g = u.game;
+        int mw = Policies.index("min_wage"), md = Policies.index("medicaid");
+        Rooms.open(u, R_POLICY);
+        PolicyUI.tab = 0; PolicyUI.area = A_JOBS; PolicyUI.sel = mw; PolicyUI.target = 3; shot(u, dir, "policy_minwage");
+        PolicyUI.area = A_HEALTH; PolicyUI.sel = md; PolicyUI.target = -1; shot(u, dir, "policy_medicaid");
+        Policies.propose(g, Policies.index("drilling"), g.pol.level[Policies.index("drilling")] + 1, CH_ORDER);
+        Policies.propose(g, md, g.pol.level[md] + 1, CH_BILL);
+        for (int w = 0; w < 30; w++) { Week.routine(g); Week.resolve(g); Decisions.autoAll(g); }
+        PolicyUI.tab = 1; shot(u, dir, "policy_outcomes");
+        PolicyUI.tab = 2; PolicyUI.area = A_ENERGY; PolicyUI.sel = Policies.index("drilling"); shot(u, dir, "policy_map");
+        PolicyUI.tab = 0;
     }
 
     /** The transition: a fresh shortlist, then a few weeks of the team's work. */
@@ -406,6 +452,7 @@ public final class Diagnostics {
         Rooms.mapMode = 1; Rooms.selState = stateIdx("MI"); Rooms.open(u, R_COUNTRY); shot(u, dir, "room_country_unemp");
         Rooms.open(u, R_CONGRESS);
         for (int t = 0; t < HillUI.TABS.length; t++) { HillUI.tab = t; HillUI.sel = -1; shot(u, dir, "hill_" + t); }
+        policyShots(u, dir);
         HillUI.tab = 1; HillUI.draftSel = 1; HillUI.draft = Legis.draft(u.game, HillUI.agenda(u.game).get(1)); shot(u, dir, "hill_draft");
         HillUI.tab = 0; HillUI.chairCh = 1; shot(u, dir, "hill_senate_chairs");
         for (Bill b : u.game.cong.bills) if (b.stage == ST_LAW) { Legis.toDesk(u.game, b); break; }

@@ -236,6 +236,7 @@ public final class Courts {
             a.status = A_REVOKED; a.statusWeek = g.week;
             Action b = new Action();
             b.def = a.def; b.kind = a.kind; b.custom = a.custom; b.area = a.area; b.lean = a.lean; b.scope = a.scope * 0.7;
+            b.policy = a.policy; b.polFrom = a.polFrom; b.polTo = a.polTo; b.reacted = true;
             b.name = a.name + " (revised)"; b.support = a.support + 2; b.legal = a.legal * 0.55; b.issued = g.week; b.statusWeek = g.week; b.status = A_LIVE;
             g.ex.actions.add(b);
             g.log(NK_INFO, "The White House issues a narrower version of " + a.name.toLowerCase(), null, 1.0);

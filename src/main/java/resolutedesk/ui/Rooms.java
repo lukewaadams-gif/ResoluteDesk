@@ -53,7 +53,7 @@ public final class Rooms {
         int k = e.getKeyCode();
         if (k == KeyEvent.VK_ESCAPE) { if (pendingSlot >= 0) pendingSlot = -1; else u.go(SC_OVAL); }
         if (k == KeyEvent.VK_SPACE) Oval.endWeek(u);
-        if (k >= KeyEvent.VK_1 && k <= KeyEvent.VK_8) open(u, k - KeyEvent.VK_1);
+        if (k >= KeyEvent.VK_1 && k <= KeyEvent.VK_9) open(u, k - KeyEvent.VK_1);
     }
 
     public static void press(ResoluteDesk u, double mx, double my) { }
@@ -89,11 +89,12 @@ public final class Rooms {
             case R_WESTWING: WestWing.draw(u, g, game); break;
             case R_SITROOM: SitRoom.draw(u, g, game); break;
             case R_PRESS: PressRoom.draw(u, g, game); break;
+            case R_POLICY: PolicyUI.draw(u, g, game); break;
             default: later(u, g, game); break;
         }
     }
 
-    static final String[] ROOM_TAB = {"Desk", "Country", "Economy", "Residence", "West Wing", "Congress", "Situation Room", "Press"};
+    static final String[] ROOM_TAB = {"Desk", "Country", "Economy", "Residence", "West Wing", "Congress", "Situation Room", "Press", "Policy"};
 
     // ---- the desk: the week's calendar ----
     static void desk(ResoluteDesk u, Graphics2D g, Game game) {

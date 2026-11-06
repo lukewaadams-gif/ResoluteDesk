@@ -62,7 +62,7 @@ public final class Oval {
     public static void key(ResoluteDesk u, KeyEvent e) {
         int k = e.getKeyCode();
         if (k == KeyEvent.VK_SPACE) endWeek(u);
-        if (k >= KeyEvent.VK_1 && k <= KeyEvent.VK_8) Rooms.open(u, k - KeyEvent.VK_1);
+        if (k >= KeyEvent.VK_1 && k <= KeyEvent.VK_9) Rooms.open(u, k - KeyEvent.VK_1);
         if (k == KeyEvent.VK_P) u.go(SC_PAPER);
     }
 

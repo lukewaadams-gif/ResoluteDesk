@@ -15,6 +15,7 @@ import resolutedesk.congress.Bloc;
 import resolutedesk.home.HomeFront;
 import resolutedesk.model.Econ;
 import resolutedesk.model.Game;
+import resolutedesk.policy.Policies;
 
 /**
  * Orders take effect at once and can be undone as easily. Rules take months of comment but last.
@@ -64,6 +65,23 @@ public final class Actions {
         return a;
     }
 
+    /** An order or rule that moves a policy; the policy model decides its effects and the public's reaction. */
+    public static void issuePolicy(Game g, Action a, boolean rule) {
+        a.def = -1; a.kind = rule ? K_RULE : K_ORDER; a.issued = g.week; a.statusWeek = g.week;
+        g.ex.actions.add(a);
+        if (rule) {
+            a.status = A_COMMENT;
+            a.finalWeek = g.week + (int) Math.round(14 - 6 * Cabinet.pq(g, P_OMB));
+            g.log(NK_INFO, "The administration proposes a rule: " + a.name.toLowerCase(), "Public comments are open until " + dateStr(a.finalWeek * 7) + ".", 1.0);
+            react(g, a, 0.4);
+            return;
+        }
+        a.status = A_LIVE;
+        g.log(NK_INFO, "President " + g.pres.last + " signs an executive order: " + a.name.toLowerCase(), null, 1.4);
+        react(g, a, 1);
+        takeEffect(g, a);
+    }
+
     /** A custom order: issue, direction, how far it reaches and on what legal footing. */
     public static Action custom(Game g, int area, int dir, double scope, int basis) {
         Action a = new Action();
@@ -105,6 +123,7 @@ public final class Actions {
     public static void apply(Game g, Action a, boolean on) {
         if (on == a.applied) return;
         a.applied = on;
+        if (a.policy >= 0) { Policies.fromAction(g, a, on); return; }
         Econ e = g.econ;
         double s = on ? a.scope : -a.scope;
         if (on) {

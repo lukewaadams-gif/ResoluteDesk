@@ -20,6 +20,7 @@ src/main/java/resolutedesk/
   economy/            the weekly economic model
   opinion/            the electorate and approval
   congress/           members, blocs, bills, legislation, relationships and favors, the budget, the midterms
+  policy/             about 150 policies, the channels that change them, and the outcomes they produce
   executive/          staff and cabinet, orders and rules, the courts, scandals, the vice president
   world/              countries, diplomacy, summits, crises, operations and wars
   history/            eras and the turning points of history
@@ -66,6 +67,13 @@ of Inauguration Day, then `transition.Transitions.begin` empties the jobs and dr
 transition has its own week counter and its own random stream, so the choices made in it don't change the
 presidency's random draws. `Setup.inaugurate` hands the picks to the executive branch and starts week 0.
 
+Policies (`policy.Policies`) run right after the economy each week. A change made by law, order,
+rule or budget moves a policy's level; the effect works through over the policy's lag into the
+economy (trend growth, unemployment, inflation, oil and the deficit) and into the outcomes the
+policy model keeps itself (coverage, poverty, crime, overdoses, the border, emissions and test
+scores). Orders and rules travel as `executive.Action`s, so they can be sued and overturned like
+any other; bills are ordinary `congress.Bill`s whose definition is generated from the policy.
+
 Things that need the president come back as `sim.Decision`s in the inbox, each with options,
 advisers' views and odds. `sim.Decisions` knows what every kind of decision does, and how the
 hands-off president would choose, which is what watch mode and the simulations use.
@@ -108,6 +116,8 @@ the project:
 - `ResoluteDesk` becomes the single top-level class, and every other class a static nested class.
 - Holders are merged into the top-level class itself, so their members keep working by their simple
   names. A qualified reference such as `Draw.chart(...)` becomes `ResoluteDesk.chart(...)`.
+- Long array initializers move into methods of their own, so the top-level class's static
+  initializer stays under Java's 64 KB limit for one method.
 - Units are placed so that each comes after the classes its static initializers use. Java doesn't
   need this, because it initializes classes lazily, but the browser runtime initializes them in
   file order.

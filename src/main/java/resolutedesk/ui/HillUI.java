@@ -35,6 +35,7 @@ import resolutedesk.congress.Relations;
 import resolutedesk.executive.Cabinet;
 import resolutedesk.model.Game;
 import resolutedesk.opinion.Elect;
+import resolutedesk.policy.Policies;
 
 /** The Roosevelt Room: Congress, bills, whip counts, the budget and the midterms. */
 public final class HillUI {
@@ -363,6 +364,8 @@ public final class HillUI {
         }
         if (b.stage >= ST_COMMITTEE && b.stage <= ST_FLOOR2) {
             u.button(g, px + 14, 760, 220, 36, b.publicPush ? "You've gone public" : "Go public", !b.publicPush ? B_PRIMARY : B_OFF, !b.publicPush ? () -> msg = Legis.deal(game, bb, null, Legis.DL_PUBLIC) : null, "Make the case to the country. Moderates feel the pressure. " + Legis.DEAL_COST[Legis.DL_PUBLIC]);
+            int[] pt = Policies.target(b.defId);
+            if (pt != null) u.button(g, px + 244, 760, 190, 36, "Real-world impacts", B_NORM, () -> PolicyUI.show(u, pt[0], pt[1]), "What this bill would do, who wins and loses, and how sure anyone can be.");
             if (b.ours) u.button(g, px + pw - 180, 760, 166, 36, "Withdraw the bill", B_GHOST, () -> { bb.stage = ST_DEAD; bb.stageWeek = game.week; if (bb.recon && game.cong.reconFy == Hill.fiscalYear(game)) game.cong.reconFy = -1; msg = "You pulled " + bb.name + "."; }, "Pull it before it fails.");
         }
     }

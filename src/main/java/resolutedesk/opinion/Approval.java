@@ -15,6 +15,7 @@ import resolutedesk.model.Cand;
 import resolutedesk.model.Econ;
 import resolutedesk.model.Era;
 import resolutedesk.model.Game;
+import resolutedesk.policy.Policies;
 
 /**
  * Approval: the weekly national number and its breakdown by issue, by group and by state.
@@ -29,7 +30,7 @@ import resolutedesk.model.Game;
  */
 public final class Approval {
     /** How much each kind of event moves the target, and how fast the effects fade each week. */
-    static final double PERF_WEIGHT = 1.6, SCANDAL_WEIGHT = 1.2, RALLY_WEIGHT = 1.6;
+    public static final double PERF_WEIGHT = 1.6, SCANDAL_WEIGHT = 1.2, RALLY_WEIGHT = 1.6;
     static final double HONEYMOON_FADE = 0.975, RALLY_FADE = 0.965, PERF_FADE = 0.96, SCANDAL_FADE = 0.975;
     /** The public mood: a slow random drift, about two points either way. */
     static final double MOOD_FADE = 0.97, MOOD_STEP = 0.45;
@@ -66,7 +67,7 @@ public final class Approval {
 
     static double issueWeighted(Game g) {
         double v = 0, w = 0;
-        for (int i = 0; i < NPI; i++) { v += g.issueSal[i] * g.issueAdj[i]; w += g.issueSal[i]; }
+        for (int i = 0; i < NPI; i++) { v += g.issueSal[i] * (g.issueAdj[i] + Policies.result(g, i)); w += g.issueSal[i]; }
         return w > 0 ? v / w : 0;
     }
 
@@ -165,7 +166,7 @@ public final class Approval {
         Econ e = g.econ;
         double a = g.approval;
         for (int i = 0; i < NPI; i++) {
-            double v = a + 4 * g.issueAdj[i] + (g.command[i] - 50) * 0.04;
+            double v = a + 4 * (g.issueAdj[i] + Policies.result(g, i)) + (g.command[i] - 50) * 0.04;
             if (i == PI_ECON) v += 1.6 * (e.gdp - 2) - 1.5 * (e.unemp - e.uRef) + 0.08 * (e.sentiment - 80);
             if (i == PI_PRICES) v += -2.5 * (Economy.piEff(e.infl) - e.piRef) - 5 * (e.gas / e.priceLevel - e.gasRef) - 0.6 * (e.groceries - 2.5) - 0.4 * (e.rent - 3.5) - 4;
             if (i == PI_JOBS) v += -2.2 * (e.unemp - e.uRef) + 0.01 * (e.jobsLast - 150);

@@ -6,6 +6,7 @@ import static resolutedesk.model.Parties.*;
 import static resolutedesk.opinion.Issues.*;
 
 import resolutedesk.model.Game;
+import resolutedesk.policy.Policies;
 
 /** The bills a president can send to Congress, modern and historical. */
 public final class BillData {
@@ -50,7 +51,16 @@ public final class BillData {
             new BillDef("crypto", "Crypto market rules", "Clear rules for stablecoins and digital-asset exchanges.", PI_TECH, -1, 0.3, 0, 0, false, 50, 0.02, 0, 0, "Americans hold about $# billion in regulated stablecoins.", 400, 0),
             new BillDef("ss_fix", "A bipartisan Social Security fix", "A commission's mix of a higher payroll-tax cap and a slower rise in benefits for the well-off.", PI_ECON, -1, 0, 0, -20, false, 55, 0, 0, 0, "Social Security's trust fund is solvent for # more years.", 40, 0)};
 
-    public static BillDef billDef(String id) { for (BillDef b : BILLS) if (b.id.equals(id)) return b; return null; }
+    public static BillDef billDef(String id) {
+        if (Policies.isPolicyBill(id)) return Policies.billDef(id);
+        for (BillDef b : BILLS) if (b.id.equals(id)) return b;
+        return null;
+    }
+
+    /** The bill for a change to one policy. Its effects on the economy and the country come from the policy model, not the bill. */
+    public static BillDef policyBill(String id, String name, String desc, int area, int lean, double econ, double cult, double cost, boolean budget, double support, boolean revenue) {
+        return new BillDef(id, name, desc, area, lean, econ, cult, cost, budget, support, 0, 0, 0, null, 0, 0, revenue);
+    }
 
     //  Bills from the New Deal to the pandemic, each available in the years it was on the table.
     //  Costs are scaled to today's economy and shrink to the era's dollars when you play an earlier year.

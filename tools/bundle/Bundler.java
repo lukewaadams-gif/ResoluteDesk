@@ -4,6 +4,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -93,7 +94,7 @@ public final class Bundler {
         b.append('\n');
         for (String d : app.doc) b.append(d).append('\n');
         b.append("public ").append(app.modifiers).append(app.kind).append(' ').append(app.simple).append(app.rest).append('\n');
-        appendLines(b, app.body, "", holderSimple);
+        appendLines(b, dataMethods(app.body), "", holderSimple);
         for (Unit u : initOrder(units, app, holders)) {
             b.append('\n');
             if (holders.contains(u.fq)) {
@@ -103,7 +104,7 @@ public final class Bundler {
                 if (!summary.isEmpty()) b.append(": ").append(summary);
                 b.append('\n');
                 b.append("    // ---------------------------------------------------------------------\n");
-                appendLines(b, withoutPrivateConstructor(u), "", holderSimple);
+                appendLines(b, dataMethods(withoutPrivateConstructor(u)), "", holderSimple);
             } else {
                 for (String d : u.doc) b.append("    ").append(d).append('\n');
                 String mods = u.kind.equals("class") ? "static " + u.modifiers : u.modifiers;
@@ -329,6 +330,50 @@ public final class Bundler {
             }
         }
         return out;
+    }
+
+    /** Initializers longer than this move into methods of their own (see dataMethods). */
+    static final int DATA_METHOD_CHARS = 1500;
+
+    /**
+     * Moves long array initializers of static fields into methods of their own. Every holder is
+     * merged into the top-level class, and Java compiles all of a class's static initializers into one
+     * method, which may not exceed 64 KB of bytecode; the game's tables would overflow it. A field such as
+     * {@code static final String[] ROWS = {...};} becomes {@code static final String[] ROWS = dataROWS();}
+     * with the array built in {@code dataROWS()}, so each table counts against its own method instead.
+     * The fields keep their names and their order of initialization.
+     */
+    static List<String> dataMethods(List<String> body) {
+        String text = String.join("\n", body);
+        String code = blankLiteralsAndComments(text);
+        Matcher m = Pattern.compile("(?m)^( *)((?:public |protected |private )?static final )([\\w.]+(?:\\[\\])+) (\\w+) = \\{").matcher(code);
+        List<int[]> spans = new ArrayList<>();
+        List<String[]> parts = new ArrayList<>();
+        while (m.find()) {
+            int open = m.end() - 1, depth = 0, i = open;
+            for (; i < code.length(); i++) {
+                char c = code.charAt(i);
+                if (c == '{') depth++;
+                else if (c == '}' && --depth == 0) break;
+            }
+            int semi = i + 1;
+            while (semi < code.length() && Character.isWhitespace(code.charAt(semi))) semi++;
+            if (semi >= code.length() || code.charAt(semi) != ';' || i - open < DATA_METHOD_CHARS) continue;
+            spans.add(new int[]{m.start(), open, i + 1, semi + 1});
+            parts.add(new String[]{m.group(1), m.group(2), m.group(3), m.group(4)});
+        }
+        StringBuilder out = new StringBuilder(text);
+        for (int k = spans.size() - 1; k >= 0; k--) {
+            int[] sp = spans.get(k);
+            String[] pt = parts.get(k);
+            String ind = pt[0], type = pt[2], name = pt[3];
+            String decl = ind + pt[1] + type + " " + name + " = data" + name + "();\n\n"
+                    + ind + "private static " + type + " data" + name + "() {\n"
+                    + ind + "    return new " + type + text.substring(sp[1], sp[2]) + ";\n"
+                    + ind + "}";
+            out.replace(sp[0], sp[3], decl);
+        }
+        return new ArrayList<>(Arrays.asList(out.toString().split("\n", -1)));
     }
 
     /** Appends body lines, re-indented, with qualified references to merged holders pointed at the top-level class. */

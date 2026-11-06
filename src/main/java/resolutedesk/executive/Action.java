@@ -9,5 +9,7 @@ public final class Action implements Serializable {
     public String name;
     public double support, legal, scope = 1;
     public boolean custom, failed, sued, applied;
+    public int policy = -1, polFrom, polTo;                    // an order or rule that moves a policy (see policy.Policies)
+    public boolean reacted;                                    // the public has already reacted to it
     double aGdp, aUnemp, aInfl, aTariff, aOil, aDef;           // what it applied, so it can be undone
 }

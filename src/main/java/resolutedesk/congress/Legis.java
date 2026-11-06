@@ -11,7 +11,6 @@ import static resolutedesk.model.NewsKinds.*;
 import static resolutedesk.model.Parties.*;
 import static resolutedesk.sim.DecisionKinds.*;
 import static resolutedesk.ui.Sound.*;
-import static resolutedesk.world.Countries.*;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -21,6 +20,7 @@ import resolutedesk.executive.Implement;
 import resolutedesk.home.HomeFront;
 import resolutedesk.model.Econ;
 import resolutedesk.model.Game;
+import resolutedesk.policy.Policies;
 import resolutedesk.sim.Decision;
 import resolutedesk.sim.Decisions;
 import resolutedesk.ui.Sfx;
@@ -286,6 +286,7 @@ public final class Legis {
         b.strength = b.size * (0.7 + 0.6 * b.scope) * (b.recon && b.scope > 0.6 ? 0.85 : 1);
         if (Implement.roll(g, b.name, d.area, 1)) b.strength *= 0.75;
         g.cong.laws++;
+        if (Policies.isPolicyBill(b.defId)) { enactPolicy(g, b, signed); return; }
         if (signed) HomeFront.act(g, b.econ(), b.cult(), 1.0 * Math.min(1.5, b.strength));
         Econ e = g.econ;
         double pctGdp = b.netCost() / (e.nominalGdp * 10);
@@ -300,6 +301,17 @@ public final class Legis {
             else { Member ch = Hill.chairFor(g, b, b.first); if (ch != null) Relations.earn(g, ch, "You signed their committee's bill, " + b.name); }
             if (!mine) for (Bloc bl : g.cong.blocs) if (bl.party == g.party) bl.rel = Math.max(0, bl.rel - 3);
             g.log(NK_BIG, "PRESIDENT " + g.pres.last.toUpperCase() + " SIGNS " + b.name.toUpperCase(), d.desc + (b.recon && b.scope > 0.6 ? " The parliamentarian struck several provisions under the Byrd rule." : ""), 3.0);
+            snd(Sfx.CHEER);
+        } else g.log(NK_INFO, b.name + " becomes law without the president's signature", null, 1.4);
+        Policies.law(g, b, signed);
+    }
+
+    /** A bill that moves one policy: the policy model applies its effects, on the economy and on voters. */
+    static void enactPolicy(Game g, Bill b, boolean signed) {
+        Policies.law(g, b, signed);
+        if (signed) {
+            if (b.ours) Relations.win(g, 2);
+            g.log(NK_BIG, "PRESIDENT " + g.pres.last.toUpperCase() + " SIGNS A LAW ON THE " + b.def().name.toUpperCase(), b.def().desc, 2.6);
             snd(Sfx.CHEER);
         } else g.log(NK_INFO, b.name + " becomes law without the president's signature", null, 1.4);
     }

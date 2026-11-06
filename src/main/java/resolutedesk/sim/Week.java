@@ -30,6 +30,7 @@ import resolutedesk.model.Cand;
 import resolutedesk.model.Econ;
 import resolutedesk.model.Game;
 import resolutedesk.opinion.Approval;
+import resolutedesk.policy.Policies;
 import resolutedesk.world.Diplo;
 
 /** The president's calendar plays out slot by slot; then the economy, opinion and the news move. */
@@ -181,6 +182,7 @@ public final class Week {
         g.stress = clamp(g.stress * 0.85, 0, 100);
         health(g);
         Economy.week(g);
+        Policies.week(g);
         Approval.week(g);
         if (g.cong != null) {
             Hill.drift(g);

@@ -7,7 +7,6 @@ import static resolutedesk.transition.TransitionData.*;
 import static resolutedesk.ui.Draw.*;
 import static resolutedesk.ui.Fonts.*;
 import static resolutedesk.ui.ScreenIds.*;
-import static resolutedesk.ui.Sound.*;
 import static resolutedesk.ui.Theme.*;
 
 import java.awt.Color;

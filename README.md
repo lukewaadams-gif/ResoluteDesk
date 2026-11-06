@@ -117,6 +117,34 @@ Open the Roosevelt Room from the Oval Office, or press 6.
   - From late summer you can schedule campaign stops in states, and the money you've raised helps.
   - New leaders and chairs take over if control changes.
 
+### Policies and their real-world effects (new in version 2)
+
+Open the Cabinet Room from any room's tabs, or press 9.
+
+- **146 policies in 12 areas**: taxes and the budget, the safety net, jobs, health care, housing and transportation, energy and the environment, immigration, crime, education, rights and democracy, technology and business, and defense and trade.
+  - Each policy has two to five levels, from the minimum wage (none, a third of the typical wage, up to two-thirds) to abortion law, the asylum rules, the carbon price or the draft.
+  - Every era starts with the law of its day: a 91% top tax rate in 1961, Medicare from 1966, Roe from 1973 to 2022.
+- **Change them the way presidents do:**
+  - **A bill:** full strength and hard to undo, but it has to get through Congress. The odds are shown before you send it.
+  - **An executive order:** immediate, but at 60% strength. Courts can block it, and a successor can undo it.
+  - **An agency rule:** months of public comment, then 85% strength. Congress can try to overturn it.
+  - **The budget:** takes effect on October 1, if Congress funds it.
+  - Each policy allows only the channels that can really change it; the minimum wage, for example, takes a law.
+- **Real-world outcomes**, with lags: unemployment, inflation, growth, the deficit, gas prices, the uninsured rate, poverty, violent crime, overdose deaths, border crossings, carbon emissions and test scores. Each starts at its real value for the year and moves as your policies work through, over months or years.
+- **Voters react twice:** when you make a change, and as the results show up. A signature policy the public wants can move national approval by up to five points; the groups it touches move much more.
+- **The real-world impacts panel** for every change, shown when you pick a policy and a level:
+  - who gains and who pays
+  - the effects on the economy, the budget and each outcome, with ranges and timing
+  - how sure anyone can be (strong, moderate, weak or contested evidence)
+  - the historical precedent
+  - how each voter group would react, with arrows
+  - the odds, timing and strength of each way to make the change
+
+  Bills for a policy change in the Roosevelt Room open the same panel.
+- **The system map:** in the style of Democracy, the policies of an area linked to the outcomes they move, the outcomes linked to the issues voters judge you on, and the voter groups each policy wins or loses. Point at a policy or an outcome to trace it.
+- **Outcomes** at a glance: each number, where it has moved since you took office, its history, and the policies that moved it most.
+- The named bills of history change the policies they really changed. The Social Security Act creates Social Security; the Affordable Care Act expands Medicaid.
+
 ### The executive branch (update 3)
 
 Open the West Wing from the Oval Office, or press 5.
@@ -258,7 +286,7 @@ Version 2 arrives in stages, each one playable:
 
 1. **The code, reorganized** (done). The game is now a multi-file Java project with one package per mechanic, tests and build tools (see [The code](#the-code)). This stage also fixes the bug that gave many cabinet members and staff the same surname.
 2. **The transition and your team** (done). Ten weeks from Election Day to the inauguration to choose your cabinet and staff from shortlists, with vetting, leaks and early Senate whip counts. A new approval model with real presidents' range, from honeymoons in the 60s to lows in the 20s and rallies near 90%. Political capital gives way to relationships you build: goodwill with blocs, leaders and committee chairs, and favors owed.
-3. **Policies and their real-world effects.** About 150 policies in 12 areas, changed through bills, executive orders, agency rules or the budget. Each changes measurable outcomes over months and years, and each has an impacts panel with winners, losers, timing, precedents and how sure the evidence is. A map of the whole system shows what affects what.
+3. **Policies and their real-world effects** (done). About 150 policies in 12 areas, changed through bills, executive orders, agency rules or the budget. Each changes measurable outcomes over months and years, and each has an impacts panel with winners, losers, timing, precedents and how sure the evidence is. A map of the whole system shows what affects what.
 4. **Foreign policy and war.** Concrete objectives with at least 20 countries, a full set of tools from arms sales to covert action, wars of choice against any country, many ways to end a war, and realistic consequences.
 5. **News and runaway storylines.** Hundreds of new stories, and stories that grow with your choices and can take over a presidency.
 6. **Watch mode priorities and the 2029 setup.** Presets and sliders for the computer president, and sliders for the world you inherit in 2029.
