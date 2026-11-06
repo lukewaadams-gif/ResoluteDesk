@@ -330,7 +330,7 @@ public final class Legacy {
         }
         l.add(new String[]{"Your laws", n == 0 ? "No major legislation became law on your watch." : laws.toString() + (lawsAll(g) > n ? " And " + (lawsAll(g) - n) + " more." : "")});
         StringBuilder world = new StringBuilder();
-        for (War x : g.world.wars) if (x.stage >= 3 && (x.started >= 0 || x.ended >= 0)) world.append(x.name).append(x.stage == 3 ? " was won" : x.stage == 4 ? " was lost" : " ended in an agreement").append(", at a cost of ").append(thousands(Math.round(x.kia))).append(" American lives. ");
+        for (War x : g.world.wars) if (x.stage >= 3 && (x.started >= 0 || x.ended >= 0)) world.append(x.name).append(x.stage == 3 ? " was won" : x.stage == 4 ? " was lost" : x.stage == 6 ? " ended on a withdrawal timetable" : x.stage == 7 ? " ended with a handover" : x.stage == 8 ? " ended when the president declared victory" : " ended in an agreement").append(", at a cost of ").append(thousands(Math.round(x.kia))).append(" American lives. ");
         for (War x : g.world.wars) if (x.stage == 2) world.append(x.name).append(" was still going on, with ").append(thousands(Math.round(x.troops * 1000))).append(" Americans deployed. ");
         world.append(g.world.deals == 0 ? "You reached no agreements with foreign leaders." : "You reached " + g.world.deals + (g.world.deals == 1 ? " agreement" : " agreements") + " with foreign leaders.");
         if (!g.world.record.isEmpty()) {
@@ -506,7 +506,7 @@ public final class Legacy {
         l.add("The road to the White House|Your life before the presidency, from " + (g.pres.homeAb != null ? STATES[Math.max(0, g.pres.home)].name : "home") + " to the inaugural stand in " + g.era.year + ".");
         int n = 0;
         for (Bill b : g.cong.bills) if (b.stage == ST_LAW && b.ours && n < 2) { l.add(b.name + "|" + (impactOf(b) != null ? impactOf(b) : b.def().desc)); n++; }
-        for (War x : g.world.wars) if (x.stage >= 2 && (x.started >= 0 || x.ended >= 0)) { l.add(x.name + "|" + (x.stage == 3 ? "From the first battles to victory" : x.stage == 5 ? "The fighting, and the long road to a settlement" : x.stage == 4 ? "A hard war and a bitter end" : "The war that outlasted your presidency") + "; " + thousands(Math.round(x.kia)) + " names on the memorial wall."); break; }
+        for (War x : g.world.wars) if (x.stage >= 2 && (x.started >= 0 || x.ended >= 0)) { l.add(x.name + "|" + (x.stage == 3 ? "From the first battles to victory" : x.stage == 5 ? "The fighting, and the long road to a settlement" : x.stage == 4 ? "A hard war and a bitter end" : x.stage >= 6 ? "The war, and the way out" : "The war that outlasted your presidency") + "; " + thousands(Math.round(x.kia)) + " names on the memorial wall."); break; }
         if (!g.histOk.isEmpty()) l.add("Decisions|" + g.histOk.get(g.histOk.size() - 1).replace(":", ": you chose to") + ".");
         if (g.re != null && g.re.done) l.add("The " + g.re.year + " campaign|Buttons, posters and the election-night map: " + g.re.evMe + " to " + g.re.evOpp + ".");
         l.add("The first family|Life in the Residence: the dinners, the pets and the Christmas trees.");

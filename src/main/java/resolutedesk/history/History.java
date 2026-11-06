@@ -26,6 +26,7 @@ import resolutedesk.sim.Decisions;
 import resolutedesk.ui.Flag;
 import resolutedesk.world.Diplo;
 import resolutedesk.world.War;
+import resolutedesk.world.Wars;
 import resolutedesk.world.World;
 
 /** History as it unfolds: the turning points of each era, the wars of the day and the world changing on schedule. */
@@ -184,9 +185,10 @@ public final class History {
         World w = g.world;
         Random r = g.rng;
         double dq = Cabinet.pq(g, P_DEF);
-        for (War x : w.wars) {
+        for (War x : new ArrayList<War>(w.wars)) {
             if (x.stage != 2) continue;
             x.weeks++;
+            if (x.kind >= 0 && Wars.step(g, x)) continue;
             double eff = x.troops <= 0 ? -1.2 : clamp(Math.log(x.troops / x.need) * 0.9, -1.5, 1.2);
             double strat = x.strategy == 0 ? -0.15 : x.strategy == 2 ? 0.45 : x.strategy == 3 ? -0.2 : 0;
             double allyK = x.ally >= 0 ? (w.rel[x.ally] - 40) * 0.003 : 0;
@@ -196,14 +198,14 @@ public final class History {
             double dead = x.troops * kiaRate * (0.6 + 0.8 * r.nextDouble());
             x.kia += dead;
             w.kia += (int) Math.round(dead);
-            if (dead > 0) g.perf -= Math.min(0.4, dead / (x.stakes * x.stakes) / 3000.0);
-            double supT = 35 + 18 * Math.min(3, x.stakes);
-            x.support = clamp(x.support + (supT - x.support) * 0.01 - dead / x.stakes / 2000.0 - (x.weeks > 104 ? 0.03 : 0) + (x.front - 50) * 0.003, 5, 98);
+            if (dead > 0) g.perf -= x.kind >= 0 ? Math.min(0.3, dead / 250.0) : Math.min(0.4, dead / (x.stakes * x.stakes) / 3000.0);
+            double supT = x.kind >= 0 ? Wars.supportTarget(x) : 35 + 18 * Math.min(3, x.stakes);
+            x.support = clamp(x.support + (supT - x.support) * (x.kind >= 0 ? 0.03 : 0.01) - dead / x.stakes / 2000.0 - (x.weeks > 104 ? 0.03 : 0) + (x.front - 50) * 0.003, 5, 98);
             x.talks = clamp(x.talks + (x.strategy == 3 ? 1.5 : 0.1) + (x.front > 65 ? 0.4 : 0) - (x.front < 35 ? 0.3 : 0) + r.nextGaussian() * 0.6, 0, 100);
             g.issueAdj[PI_SECURITY] = clamp(g.issueAdj[PI_SECURITY] + (x.support - 50) * 0.0004 + (x.front - 50) * 0.0002, -1.5, 1.5);
             g.issueSal[PI_SECURITY] = clamp(g.issueSal[PI_SECURITY] + 0.004 * x.stakes, 0.2, 2.2);
             if (dead > 50 && r.nextDouble() < 0.06) g.log(NK_WORLD, x.name + ": " + thousands(Math.round(x.kia)) + " Americans killed so far", null, 1.2);
-            if (x.front >= 100) end(g, x, 3);
+            if (x.front >= 100) { if (x.kind < 0) end(g, x, 3); else Wars.victory(g, x); }
             else if (x.front <= 0) end(g, x, 4);
             else if (x.talks >= 100 && x.front >= 25) end(g, x, 5);
             else if (x.troops <= 0.5 && x.weeks > 4) end(g, x, x.front >= 60 ? 5 : 4);
@@ -211,23 +213,30 @@ public final class History {
         g.econ.war = warSpend(w);
     }
 
-    static void end(Game g, War x, int how) {
+    /** Words for how a war ended, after its name: " won", " lost", and so on. */
+    static final String[] ENDED = {"", "", "", " won", " lost", " ended by agreement", " ended on a withdrawal timetable", " handed over", " ended when the president declared victory"};
+
+    public static void end(Game g, War x, int how) {
         if (x.stage != 2) return;
         x.stage = how; x.ended = g.week;
-        String title = how == 3 ? x.name.toUpperCase() + " ENDS IN VICTORY" : how == 4 ? x.name.toUpperCase() + " ENDS IN DEFEAT" : x.name.toUpperCase() + " ENDS IN AN AGREEMENT";
+        String up = x.name.toUpperCase();
+        String title = how == 3 ? up + " ENDS IN VICTORY" : how == 4 ? up + " ENDS IN DEFEAT" : how == 6 ? up + " ENDS AS THE LAST TROOPS COME HOME"
+                : how == 7 ? up + ": AMERICAN FORCES HAND OVER AND COME HOME" : how == 8 ? "PRESIDENT DECLARES VICTORY: " + up + " IS OVER" : up + " ENDS IN AN AGREEMENT";
         String body = thousands(Math.round(x.kia)) + " Americans died over " + Math.round(x.weeks / 52.0 * 10) / 10.0 + " years.";
         g.log(NK_BIG, title, body, 5);
         String nm = x.name.startsWith("The ") ? "the " + x.name.substring(4) : x.name;
         String when = dateStr(g.day()) + ": ";
-        g.world.record.add(when + nm + (how == 3 ? " won" : how == 4 ? " lost" : " ended by agreement"));
-        if (how == 3) { g.perf += 3 + x.stakes; g.rally += 6 + x.stakes * 2; g.issueAdj[PI_SECURITY] = clamp(g.issueAdj[PI_SECURITY] + 0.5, -1.5, 1.5); g.milestones.add(when + "won " + nm); }
+        g.world.record.add(when + nm + ENDED[how]);
+        if (how == 3 && x.kind >= 0) { g.perf += 1.5 + x.stakes; g.rally += 2 + x.stakes; g.milestones.add(when + "won " + nm); }
+        else if (how == 3) { g.perf += 3 + x.stakes; g.rally += 6 + x.stakes * 2; g.issueAdj[PI_SECURITY] = clamp(g.issueAdj[PI_SECURITY] + 0.5, -1.5, 1.5); g.milestones.add(when + "won " + nm); }
         else if (how == 4) { g.perf -= 3; g.issueAdj[PI_FOREIGN] = clamp(g.issueAdj[PI_FOREIGN] - 0.5, -1.5, 1.5); g.milestones.add(when + "lost " + nm); }
-        else { g.perf += 1.5; g.milestones.add(when + "ended " + nm + " by agreement"); }
+        else if (how == 5) { g.perf += 1.5; g.milestones.add(when + "ended " + nm + " by agreement"); }
+        else g.milestones.add(when + nm + ENDED[how]);
         if (x.id.equals("ww2e") && how == 3 && x.enemy >= 0) { g.world.rel[x.enemy] = 0; g.world.align[x.enemy] = 0; g.world.leader[x.enemy] = "the Allied occupation"; g.world.ltitle[x.enemy] = "Military government"; }
         if (x.id.equals("ww2p") && how == 3 && x.enemy >= 0) { g.world.rel[x.enemy] = 10; g.world.align[x.enemy] = 0; g.world.leader[x.enemy] = "the American occupation"; g.world.ltitle[x.enemy] = "Military government"; }
         if (how == 3 && x.stakes >= 3) g.econ.demandShock += 0.45 * x.troops * x.cost * 0.8;
         x.troops = 0;
-        Decisions.info(g, how == 3 ? "Victory" : how == 4 ? "Defeat" : "The War Is Over", x.name + (how == 3 ? " ends in victory. " : how == 4 ? " ends in defeat. " : " ends in an agreement. ") + body);
+        Decisions.info(g, how == 3 ? "Victory" : how == 4 ? "Defeat" : "The War Is Over", x.name + (how == 3 ? " ends in victory. " : how == 4 ? " ends in defeat. " : how == 5 ? " ends in an agreement. " : ENDED[how].replace(" ended", " ends") + ". ") + body);
     }
 
     static void flash(Game g) {

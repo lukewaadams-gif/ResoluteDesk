@@ -42,6 +42,7 @@ import resolutedesk.ui.Modal;
 import resolutedesk.ui.Sfx;
 import resolutedesk.world.Diplo;
 import resolutedesk.world.Summit;
+import resolutedesk.world.Wars;
 import resolutedesk.world.World;
 
 /** Making decisions: the options of each kind of decision, the advice, what each choice does, and how the hands-off president chooses. */
@@ -139,6 +140,7 @@ public final class Decisions {
             case D_HIST: return History.auto(g, d.a);
             case D_CAMPAIGN: return Reelection.auto(g, d);
             case D_ASK: return Relations.auto(g, d);
+            case D_WARPOWERS: return Wars.auto(g, d);
             case D_SPEECH: return d.codes != null ? (g.week % d.codes.length) : d.a == 0 ? 0 : 0;
             case D_SUMMIT: case D_GSUMMIT: case D_DISASTER: case D_QA: return 0;
             default: return 0;
@@ -235,6 +237,7 @@ public final class Decisions {
             case D_HIST: History.decide(g, d.a, k); break;
             case D_CAMPAIGN: Reelection.decide(g, d, k); break;
             case D_ASK: Relations.answer(g, d, k); break;
+            case D_WARPOWERS: Wars.warPowers(g, d, k); break;
             case D_HOME: HomeFront.eventDecision(g, d.a, k); break;
             case D_DISASTER: HomeFront.disasterDecision(g, d, k); break;
             case D_SPEECH: Speech.step(g, d.codes != null ? d.codes[k] : k); break;

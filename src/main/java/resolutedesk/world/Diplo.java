@@ -51,6 +51,8 @@ public final class Diplo {
         // what's already in the economy's tariff stays; tariffs set here are on top of it
         w.tariffAdd = 0;
         History.world(g, g.era.year, true);
+        Statecraft.setup(g);
+        Objectives.refresh(g);
     }
 
     static double totalTrade() { double t = 0; for (double v : CT_TRADE) t += v; return t + 900; }
@@ -134,6 +136,8 @@ public final class Diplo {
         World w = g.world;
         Random r = g.rng;
         Econ e = g.econ;
+        Statecraft.week(g);
+        Objectives.refresh(g);
         if (g.era.year == 2025) for (String ch : CHANGES25) {
             String[] t = ch.split("\\|");
             if (Integer.parseInt(t[1]) != g.week) continue;

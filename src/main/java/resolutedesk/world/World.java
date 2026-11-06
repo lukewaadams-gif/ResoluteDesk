@@ -35,4 +35,14 @@ public final class World implements Serializable {
     public double tradeK = 1;
     public List<War> wars;
     public int worldYear = -1, pressYear = -1;
+    // statecraft (version 2): the tools of foreign policy, country by country (see Statecraft)
+    public int[] milAid = new int[NC], arms = new int[NC], ties = new int[NC], pact = new int[NC], peace = new int[NC];
+    public int[] cvProg = new int[NC], cvDue = new int[NC];      // a covert program under way (CV2_* + 1, or 0) and the week it resolves
+    public double[] troopsIn = new double[NC];                    // American troops based there, thousands
+    public double[] unrest = new double[NC];                      // instability inside the country, 0-100
+    public boolean[] toppled = new boolean[NC];                   // its government fell to American action
+    public int[] authorized = new int[NC];                        // the week Congress authorized force against it, or 0
+    public double refugees = 20;                                  // people displaced by conflict, heading for Europe and the border (0-100)
+    public List<Objective> objectives = new ArrayList<Objective>();
+    public int objectivesYear = -1, done, wars0;
 }

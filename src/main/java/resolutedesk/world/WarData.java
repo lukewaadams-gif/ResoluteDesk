@@ -15,7 +15,24 @@ public final class WarData {
 
     public static final String[] STRATEGY = {"Hold the line", "Balanced", "On the offensive", "Seek a settlement"};
 
-    public static final String[] WAR_STAGE = {"Not begun", "", "Fighting", "Won", "Lost", "Ended by agreement"};
+    /** Where a war stands. Wars of choice can also end on a timetable, by handing over, or by declaring victory. */
+    public static final int WS_NONE = 0, WS_FIGHTING = 2, WS_WON = 3, WS_LOST = 4, WS_AGREED = 5, WS_TIMETABLE = 6, WS_HANDED = 7, WS_DECLARED = 8;
+    public static final String[] WAR_STAGE = {"Not begun", "", "Fighting", "Won", "Lost", "Ended by agreement", "Withdrawn on a timetable", "Handed over", "Victory declared"};
+
+    /** The kinds of war a president can start: strikes from the air and sea, a blockade, a no-fly zone, an invasion, and the occupation that follows. */
+    public static final int WK_STRIKES = 0, WK_BLOCKADE = 1, WK_NOFLY = 2, WK_INVASION = 3, WK_OCCUPATION = 4;
+    public static final String[] WK_NAME = {"Air and missile strikes", "A naval blockade", "A no-fly zone", "An invasion", "An occupation"};
+    public static final String[] WK_DESC = {"Strike military targets from the air and sea. Few American troops at risk; the enemy will look for ways to hit back.",
+            "Stop ships going in or out until the government gives in. An act of war: it squeezes the economy, and the price of anything they export.",
+            "Keep the government's aircraft out of the sky to protect civilians. Cheap, but pilots can be shot down, and it can drag you in deeper.",
+            "Send in ground forces to remove the government. If it falls, you own what comes next: an occupation, and very likely an insurgency.",
+            "Hold the country while a new government takes over. Insurgents fight on; casualties mount; support at home wears thin."};
+    /**
+     * Front-line progress a week at full strength against an enemy of no military power (it falls as their power rises;
+     * an occupation loses ground instead); deaths per 1,000 troops a week; cost (% of GDP per 1,000 troops a year).
+     */
+    public static final double[] WK_PACE = {4, 2.5, 1.5, 26, -0.06}, WK_LETHAL = {0.01, 0.005, 0.012, 0.08, 0.05}, WK_COST = {0.01, 0.008, 0.01, 0.007, 0.007};
+    public static final double[] WK_FRONT = {50, 40, 55, 30, 50};
 
     /** The wars under way on inauguration day: "year|id:front:troops:support:talks ...". */
     public static final String[] WAR_START = {"1945|ww2e:94:5500:88:0 ww2p:70:3500:90:0", "1953|korea:50:300:40:60", "1965|vietnam:45:23:70:0", "1969|vietnam:45:536:38:20",

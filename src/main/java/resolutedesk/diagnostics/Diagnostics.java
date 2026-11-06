@@ -33,7 +33,9 @@ import static resolutedesk.transition.TransitionData.*;
 import static resolutedesk.ui.RoomIds.*;
 import static resolutedesk.ui.ScreenIds.*;
 import static resolutedesk.ui.Theme.*;
+import static resolutedesk.world.Countries.*;
 import static resolutedesk.world.CrisisData.*;
+import static resolutedesk.world.StatecraftData.*;
 import static resolutedesk.world.WarData.*;
 import static resolutedesk.world.WorldData.*;
 import static resolutedesk.world.WorldTables.*;
@@ -41,6 +43,7 @@ import static resolutedesk.world.WorldTables.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import resolutedesk.ResoluteDesk;
@@ -95,8 +98,13 @@ import resolutedesk.ui.TransitionUI;
 import resolutedesk.ui.USMap;
 import resolutedesk.ui.WestWing;
 import resolutedesk.world.Diplo;
+import resolutedesk.world.Objective;
+import resolutedesk.world.ObjectiveDef;
+import resolutedesk.world.Objectives;
+import resolutedesk.world.Statecraft;
 import resolutedesk.world.Summit;
 import resolutedesk.world.War;
+import resolutedesk.world.Wars;
 import resolutedesk.world.World;
 
 /** Command-line checks of the game's data, simulations of whole presidencies, and screenshots of every screen. Run with "test check", "test sim ..." or "test ui <dir>". */
@@ -120,6 +128,7 @@ public final class Diagnostics {
         }
         if (what.equals("ui")) ui(a.length > 2 ? a[2] : "shots");
         if (what.equals("policies")) policySim(a.length > 2 ? Integer.parseInt(a[2]) : 2025, a.length > 3 ? Integer.parseInt(a[3]) : 104);
+        if (what.equals("wars")) warSim(a.length > 2 ? Integer.parseInt(a[2]) : 2025, a.length > 3 ? Integer.parseInt(a[3]) : 80);
         if (what.equals("transition")) transitionSim(a.length > 2 ? Integer.parseInt(a[2]) : 2025, a.length > 3 ? Integer.parseInt(a[3]) : 52);
         if (what.equals("check")) check();
         if (what.equals("impeach")) for (int r = 0; r < (a.length > 2 ? Integer.parseInt(a[2]) : 5); r++) impeach(2000 + r, a.length > 3 ? Double.parseDouble(a[3]) : 9);
@@ -297,6 +306,22 @@ public final class Diagnostics {
             for (BillDef d : BILLS) if (d.id.equals(id)) { found = true; if (enacted(id) < d.from || enacted(id) > d.to) System.out.println("BILL " + id + " ENACTED OUTSIDE ITS YEARS"); }
             if (!found) System.out.println("ENACTED: NO BILL " + id);
         }
+        int nobj = 0;
+        for (ObjectiveDef d : Objectives.defs()) {
+            nobj++;
+            String code = d.generic() ? "IR" : d.who;
+            if (!d.generic() && ctIdx(d.who) < 0) System.out.println("OBJECTIVE " + d.id + ": no country " + d.who);
+            if (d.from > d.to) System.out.println("OBJECTIVE " + d.id + ": years run backward");
+            if (d.steps.length < 1 || d.steps.length > 4) System.out.println("OBJECTIVE " + d.id + " has " + d.steps.length + " steps");
+            checkFx(d.payoff.replace("{C}", code));
+            for (String[] st : d.steps) {
+                if (st.length != 7) { System.out.println("OBJECTIVE " + d.id + " step has " + st.length + " parts"); continue; }
+                if (!"dmij".contains(st[1]) || st[1].length() != 1) System.out.println("OBJECTIVE " + d.id + ": odds kind " + st[1]);
+                Double.parseDouble(st[2]);
+                for (int k = 4; k <= 6; k++) if (!st[k].equals("-")) checkFx(st[k].replace("{C}", code));
+            }
+        }
+        System.out.println("statecraft: " + nobj + " objectives");
         System.out.println("history: " + ERAS.size() + " eras, " + HIST.size() + " historical figures, " + FLASH.length + " turning points, " + HBILL_SPEC.length + " historical bills");
         System.out.println("check done: " + n + " actions, " + nc + " crises, " + ne + " events");
     }
@@ -352,6 +377,43 @@ public final class Diagnostics {
      * A transition played by a simple script (interview and check the top jobs, float and announce the best, meet
      * senators), then a year of the presidency. The equivalence check runs it in both versions.
      */
+    /**
+     * Statecraft and wars of choice: aid, arms, troops, covert action and objectives, then an invasion of the most
+     * hostile country that can be invaded and strikes on the next, with a hands-off president answering Congress.
+     */
+    static void warSim(int year, int weeks) {
+        Game g = newGame(77, year, null, 0);
+        World w = g.world;
+        StringBuilder b = new StringBuilder("=== wars " + year + " " + g.pres.name() + "  approval " + fmt1(g.approval) + "\n");
+        for (int k = 0; k < 6; k++) { Auto.week(g); Week.resolve(g); Decisions.autoAll(g); }
+        int foe = -1, foe2 = -1, friend = -1;
+        for (int c = 0; c < NC; c++) {
+            if (gone(g, c)) continue;
+            if (!nuke(g, c) && (foe < 0 || w.rel[c] < w.rel[foe])) foe = c;
+            if (friend < 0 || w.rel[c] > w.rel[friend]) friend = c;
+        }
+        for (int c = 0; c < NC; c++) if (!gone(g, c) && c != foe && !nuke(g, c) && (foe2 < 0 || w.rel[c] < w.rel[foe2])) foe2 = c;
+        b.append("  friend ").append(CT_ID[friend]).append(" foe ").append(CT_ID[foe]).append(" next ").append(CT_ID[foe2]).append("\n");
+        b.append("  ").append(Statecraft.setMilAid(g, friend, 2)).append(" / ").append(Statecraft.setArms(g, friend, 1)).append(" / ").append(Statecraft.setTroops(g, friend, 2)).append("\n");
+        b.append("  ").append(Statecraft.startCovert(g, foe2, CV2_CYBER)).append("\n");
+        b.append("  trade ").append(fmt2(Statecraft.tradeOdds(g, friend))).append(" treaty ").append(fmt2(Statecraft.treatyOdds(g, friend))).append(" aumf ").append(fmt2(Wars.authorizeOdds(g, foe))).append(": ").append(Wars.authorize(g, foe)).append("\n");
+        b.append("  ").append(Wars.start(g, foe, WK_INVASION)).append("\n  ").append(Wars.start(g, foe2, WK_STRIKES)).append("\n");
+        for (int k = 0; k < weeks && !g.over; k++) {
+            if (k % 4 == 0) for (Objective o : new ArrayList<Objective>(w.objectives)) if (o.country == friend && Objectives.cannot(g, o) == null) b.append("  wk").append(g.week).append(" ").append(Objectives.attempt(g, o)).append("\n");
+            Auto.week(g); Week.resolve(g); Decisions.autoAll(g);
+            if (g.week % 13 == 0) {
+                b.append("  wk").append(g.week).append(": approval ").append(fmt1(g.approval)).append(" oil ").append(fmt0(g.econ.oil)).append(" terror ").append(fmt0(w.terror)).append(" refugees ").append(fmt0(w.refugees))
+                        .append(" unrest ").append(fmt0(w.unrest[foe])).append(" toppled ").append(w.toppled[foe]).append(" protest ").append(fmt0(g.home.protest)).append(" defcon ").append(w.defcon).append("\n");
+                for (War x : w.wars) if (x.kind >= 0) b.append("    ").append(x.name).append(": ").append(WAR_STAGE[x.stage]).append(" front ").append(fmt1(x.front)).append(" troops ").append(fmt1(x.troops)).append(" kia ").append(Math.round(x.kia))
+                        .append(" support ").append(fmt1(x.support)).append(x.timetable >= 0 ? " timetable " + x.timetable : "").append("\n");
+            }
+        }
+        for (Objective o : w.objectives) if (o.status != 0 || o.step > 0) b.append("  objective ").append(o.id).append(" step ").append(o.step).append(" status ").append(o.status).append("\n");
+        b.append("  objectives ").append(w.objectives.size()).append(" achieved ").append(w.done).append(" covert ").append(w.covert).append(" exposed ").append(w.exposed).append(" kia ").append(w.kia).append("\n");
+        for (String m : g.milestones) b.append("  * ").append(m).append("\n");
+        System.out.println(b);
+    }
+
     static void transitionSim(int year, int weeks) {
         Settings s = new Settings();
         Era e = era(year);
@@ -389,6 +451,20 @@ public final class Diagnostics {
         }
         for (int k = 0; k < NPOST; k++) if (g.ex.post[k] != null) b.append("  ").append(POST_SHORT[k]).append(": ").append(g.ex.post[k].name).append(" ").append(g.ex.post[k].voteYes).append("-").append(g.ex.post[k].voteNo).append("\n");
         System.out.print(b);
+    }
+
+    /** Statecraft and a war of choice: objectives and tools for one country, then an invasion and the occupation that follows. */
+    static void worldShots(ResoluteDesk u, String dir) {
+        Game g = u.game;
+        Rooms.open(u, R_SITROOM);
+        SitRoom.tab = 7; SitRoom.sel = CC_UA; shot(u, dir, "statecraft_ukraine");
+        SitRoom.sel = CC_IR; shot(u, dir, "statecraft_iran");
+        Wars.start(g, CC_VE, WK_INVASION);
+        for (int w = 0; w < 26; w++) { Week.routine(g); Week.resolve(g); Decisions.autoAll(g); }
+        SitRoom.tab = 6; SitRoom.selWar = 0;
+        for (int i = 0; i < g.world.wars.size(); i++) if (g.world.wars.get(i).enemy == CC_VE) SitRoom.selWar = 0;
+        shot(u, dir, "war_venezuela");
+        SitRoom.tab = 0;
     }
 
     /** The Cabinet Room: a policy and its impacts, the outcomes, and the system map. */
@@ -453,6 +529,7 @@ public final class Diagnostics {
         Rooms.open(u, R_CONGRESS);
         for (int t = 0; t < HillUI.TABS.length; t++) { HillUI.tab = t; HillUI.sel = -1; shot(u, dir, "hill_" + t); }
         policyShots(u, dir);
+        worldShots(u, dir);
         HillUI.tab = 1; HillUI.draftSel = 1; HillUI.draft = Legis.draft(u.game, HillUI.agenda(u.game).get(1)); shot(u, dir, "hill_draft");
         HillUI.tab = 0; HillUI.chairCh = 1; shot(u, dir, "hill_senate_chairs");
         for (Bill b : u.game.cong.bills) if (b.stage == ST_LAW) { Legis.toDesk(u.game, b); break; }

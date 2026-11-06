@@ -36,6 +36,7 @@ import resolutedesk.opinion.Groups;
 import resolutedesk.policy.Policies;
 import resolutedesk.sim.Decision;
 import resolutedesk.world.Diplo;
+import resolutedesk.world.Statecraft;
 
 /** Saving and loading games, and bringing saves from earlier versions up to date. */
 public final class SaveGame {
@@ -105,6 +106,7 @@ public final class SaveGame {
         Policies.upgrade(g);
         if (g.world.name == null) History.world(g, g.era.year, false);
         if (g.world.wars == null) History.setup(g);
+        if (g.world.milAid == null) Statecraft.upgrade(g);
         if (g.termWeeks <= 0 || g.term == 1 && g.termWeeks == 208 && g.era.inM != 0) g.termWeeks = termEnd(g);
         if (g.milestones == null) g.milestones = new ArrayList<String>();
         if (g.histOk == null) g.histOk = new ArrayList<String>();

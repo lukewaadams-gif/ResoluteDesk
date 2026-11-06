@@ -30,20 +30,21 @@ import resolutedesk.home.Home;
 import resolutedesk.model.Game;
 import resolutedesk.world.Diplo;
 import resolutedesk.world.War;
+import resolutedesk.world.Wars;
 import resolutedesk.world.World;
 
 /** The Situation Room: the world map, the daily brief, hot spots, operations, trade, alliances and wars. */
 public final class SitRoom {
     public static int tab, sel = CC_CN, selOp = 0;
     static String msg;
-    public static final String[] TABS = {"The world", "Daily brief", "Hot spots", "Operations", "Trade", "Alliances", "Wars"};
+    public static final String[] TABS = {"The world", "Daily brief", "Hot spots", "Operations", "Trade", "Alliances", "Wars", "Statecraft"};
 
     static void draw(ResoluteDesk u, Graphics2D g, Game game) {
         if (game.world == null) Diplo.setup(game);
-        u.segmented(g, 48, 116, 820, 30, TABS, tab, i -> { tab = i; msg = null; }, null);
+        u.segmented(g, 48, 116, 860, 30, TABS, tab, i -> { tab = i; msg = null; }, null);
         World w = game.world;
-        text(g, "DEFCON " + w.defcon, 890, 137, F_BB, w.defcon <= 3 ? C_BAD : w.defcon == 4 ? C_AMBER : C_GOOD);
-        if (msg != null) textFit(g, msg, 990, 137, DW - 1040, F_XS, C_GOLD);
+        text(g, "DEFCON " + w.defcon, 924, 137, F_BB, w.defcon <= 3 ? C_BAD : w.defcon == 4 ? C_AMBER : C_GOOD);
+        if (msg != null) textFit(g, msg, 1024, 137, DW - 1072, F_XS, C_GOLD);
         switch (tab) {
             case 1: brief(u, g, game); break;
             case 2: hot(u, g, game); break;
@@ -51,6 +52,7 @@ public final class SitRoom {
             case 4: trade(u, g, game); break;
             case 5: alliances(u, g, game); break;
             case 6: wars(u, g, game); break;
+            case 7: StatecraftUI.draw(u, g, game); break;
             default: world(u, g, game); break;
         }
     }
@@ -116,8 +118,9 @@ public final class SitRoom {
         u.button(g, px + 18, y, pw - 36, 30, "Invite to the White House", inv ? B_NORM : B_OFF, inv ? () -> msg = Diplo.invite(game, cc) : null, war ? no : "A state visit in a few weeks. A bigger boost than a call.");
         y += 36;
         boolean sum = w.summitCountry < 0 && !war;
+        u.button(g, px + 18, y + 36, pw - 36, 30, "Objectives, aid, arms, troops and force", B_GOLD, () -> { tab = 7; msg = null; }, "The Statecraft tab: what you want from " + cnameIn(game, c) + ", and every tool for getting it.");
         u.button(g, px + 18, y, pw - 36, 30, "Propose a summit", sum ? B_PRIMARY : B_OFF, sum ? () -> msg = Diplo.proposeSummit(game, cc) : null, war ? no + " Peace comes through the Wars tab and the turning points." : "A face-to-face negotiation in three rounds: the opening, the ask and the give.");
-        y += 46;
+        y += 82;
         // every country, by region
         label(g, "All countries", px + 18, y, C_GOLD);
         double top = y + 10, hh = 800 - top;
@@ -277,7 +280,13 @@ public final class SitRoom {
         y = 204;
         String foe = x.enemy >= 0 ? cname(game, x.enemy) : x.id.equals("vietnam") ? "North Vietnam and the Viet Cong" : x.id.equals("afghan") ? "The Taliban and al-Qaeda" : x.id.equals("iraq") ? "The insurgency" : "The Islamic State";
         text(g, "Against: " + foe + (x.ally >= 0 ? ".  Fighting alongside: " + cname(game, x.ally) + "." : "."), px + 18, y, F_S, C_TEXT); y += 26;
-        text(g, "Americans killed: " + thousands(Math.round(x.kia)) + "    Weeks of war: " + Math.round(x.weeks) + "    Cost: about " + fmt1(x.troops * x.cost) + "% of GDP a year", px + 18, y, F_S, C_TEXT); y += 30;
+        text(g, "Americans killed: " + thousands(Math.round(x.kia)) + "    Weeks of war: " + Math.round(x.weeks) + "    Cost: about " + fmt1(x.troops * x.cost) + "% of GDP a year", px + 18, y, F_S, C_TEXT); y += 22;
+        if (x.kind >= 0 && x.enemy >= 0) {
+            World wd = game.world;
+            text(g, WK_NAME[x.kind] + ".   Unrest inside " + cnameIn(game, x.enemy) + ": " + Math.round(wd.unrest[x.enemy]) + "    Refugees: " + Math.round(wd.refugees) + "    Terror threat: " + Math.round(wd.terror) + (game.home != null ? "    Protest at home: " + Math.round(game.home.protest) : ""),
+                    px + 18, y, F_XS, C_DIM);
+        }
+        y += 22;
         if (x.stage != 2) { text(g, WAR_STAGE[x.stage] + (x.ended >= 0 ? " on " + dateStr(x.ended * 7) : "") + ".", px + 18, y, F_H3, x.stage == 3 ? C_GOOD : C_DIM); return; }
         gauge(g, "The front (0 is defeat, 100 is victory)", x.front, false, px + 18, y, pw - 36); y += 38;
         gauge(g, "Support at home", x.support, false, px + 18, y, pw - 36); y += 38;
@@ -299,9 +308,32 @@ public final class SitRoom {
                 new String[]{"Fewer casualties, slow losses of ground.", "Steady pressure.", "Gains on the front, at a much higher cost in lives.", "Fewer casualties and faster talks, but the enemy gains ground."});
         y += 50;
         wrap(g, "Victory comes when the front reaches 100; defeat at 0. A settlement comes when the talks are complete and the front still holds. Casualties wear down support at home, and support is part of how the public judges your handling of security.", px + 18, y, pw - 36, F_XS, C_DIM);
-        y += 60;
-        u.button(g, px + 18, y, 260, 32, "Withdraw and end the war", B_GHOST, () -> u.modal("End the war?", "Bringing everyone home now ends " + xx.name.toLowerCase() + (xx.front >= 60 ? " on terms we can live with." : " in what history will call a defeat."),
-                new String[]{"Keep fighting", "Withdraw"}, new Runnable[]{null, () -> History.withdraw(game, xx)}, C_BAD));
+        y += 50;
+        // ways out, and in
+        label(g, "Ending it, or not", px + 18, y, C_GOLD); y += 10;
+        double bw2 = (pw - 36 - 5 * 8) / 6;
+        String[] lab = {"Withdraw now", "Declare victory", "Timetable: 6 months", "Timetable: a year", "Hand over", "Escalate"};
+        String hand = Wars.cannotHand(xx);
+        String[] tips = {"Bring everyone home now. " + (xx.front >= 60 ? "On terms we can live with." : "History will call it a defeat."),
+                "End it now and call it a win. Believable if the front is 70 or better; otherwise allies and enemies take note.",
+                "Troops come home gradually over six months. The enemy can count the days.", "A slower drawdown over a year.",
+                hand != null ? hand : "Hand the fight to " + Wars.successor(xx) + " over two months.", "More troops and a harder offensive: faster gains, more casualties, less support."};
+        Runnable[] acts = {() -> u.modal("End the war?", "Bringing everyone home now ends " + xx.name.toLowerCase() + (xx.front >= 60 ? " on terms we can live with." : " in what history will call a defeat."),
+                new String[]{"Keep fighting", "Withdraw"}, new Runnable[]{null, () -> History.withdraw(game, xx)}, C_BAD),
+                () -> msg = Wars.declareVictory(game, xx), () -> msg = Wars.timetable(game, xx, 26), () -> msg = Wars.timetable(game, xx, 52), () -> msg = Wars.handoff(game, xx), () -> msg = Wars.escalate(game, xx)};
+        for (int i = 0; i < lab.length; i++) {
+            boolean ok = (i != 4 || hand == null) && (i < 2 || i > 3 || xx.timetable < 0);
+            u.button(g, px + 18 + i * (bw2 + 8), y, bw2, 30, lab[i], ok ? (i == 5 ? B_DANGER : i == 0 ? B_GHOST : B_NORM) : B_OFF, ok ? acts[i] : null, tips[i]);
+        }
+        y += 44;
+        if (xx.kind >= 0) {
+            String auth = xx.authorized ? "Congress authorized this war." : xx.wpVoted ? "Congress never authorized this war." : "Congress has not authorized this war; after about sixty days it can vote to end it.";
+            text(g, auth, px + 18, y + 18, F_XS, xx.authorized ? C_DIM : C_AMBER);
+            if (!xx.authorized && xx.enemy >= 0) u.button(g, px + pw - 18 - 250, y, 250, 26, "Ask Congress to authorize it", B_NORM, () -> msg = Wars.authorize(game, xx.enemy), "A vote in both chambers: " + chance(Wars.authorizeOdds(game, xx.enemy)) + " to pass.");
+            y += 30;
+        }
+        if (xx.timetable >= 0) text(g, "Withdrawal under way: the last troops leave by " + dateStr(xx.timetable * 7) + ".", px + 18, y + 18, F_XS, C_GOLD);
+        if (xx.handoff >= 0) text(g, "Handover under way: complete by " + dateStr(xx.handoff * 7) + ".", px + 18, y + 18, F_XS, C_GOLD);
     }
 
     static String money(double b) { return b >= 10 ? "$" + Math.round(b) + " billion" : b >= 1 ? "$" + fmt1(b) + " billion" : "$" + Math.round(b * 1000) + " million"; }

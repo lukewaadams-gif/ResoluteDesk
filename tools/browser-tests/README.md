@@ -12,6 +12,9 @@ by counting the JavaScript errors the page raised, which should be zero.
 | `executive.js` | hiring staff, nominations, an executive order, the vice president and delegation |
 | `world.js` | the Situation Room: calls, visits, a summit, tariffs, an operation, covert action and a trip abroad |
 | `press.js` | a press conference, an interview, a post, a poll, an address and the daily brief |
+| `transition.js` | the transition: interviews, background checks, floating and announcing picks, saving and resuming, and the oath |
+| `policy.js` | the Cabinet Room: a policy and its impacts, a bill, an executive order, outcomes and the system map |
+| `statecraft.js` | statecraft and a war of choice: military aid, an objective, covert action, a vote in Congress, an invasion, a timetable, saving and resuming |
 | `history.js` | a 1961 presidency: the tour, a war, re-election, election night, the verdict, the Hall of Fame, the import screen and watch mode |
 
 They need Node and Playwright (`npm install -g playwright`):

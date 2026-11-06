@@ -267,6 +267,14 @@ class Color {
     getBlue() { return this.b; }
     getAlpha() { return this.a; }
     equals(o) { return o instanceof Color && o.r === this.r && o.g === this.g && o.b === this.b && o.a === this.a; }
+    // brighter() and darker() follow java.awt.Color exactly (a factor of 0.7)
+    brighter() {
+        let r = this.r, g = this.g, b = this.b; const i = 3;
+        if (r === 0 && g === 0 && b === 0) return new Color(i, i, i, this.a);
+        if (r > 0 && r < i) r = i; if (g > 0 && g < i) g = i; if (b > 0 && b < i) b = i;
+        return new Color(Math.min(Math.trunc(r / 0.7), 255), Math.min(Math.trunc(g / 0.7), 255), Math.min(Math.trunc(b / 0.7), 255), this.a);
+    }
+    darker() { return new Color(Math.max(Math.trunc(this.r * 0.7), 0), Math.max(Math.trunc(this.g * 0.7), 0), Math.max(Math.trunc(this.b * 0.7), 0), this.a); }
     css() {
         if (this._css === null) this._css = this.a === 255 ? 'rgb(' + this.r + ',' + this.g + ',' + this.b + ')' : 'rgba(' + this.r + ',' + this.g + ',' + this.b + ',' + (this.a / 255).toFixed(4) + ')';
         return this._css;

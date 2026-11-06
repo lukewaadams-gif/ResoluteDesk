@@ -3417,6 +3417,9 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
 
     public static String pct0(double v) { return Math.round(v * 100) + "%"; }
 
+    /** Odds in words that never promise certainty: "under 1%", "about 40%", "over 99%". */
+    public static String chance(double p) { return p < 0.005 ? "under 1%" : p > 0.995 ? "over 99%" : "about " + Math.round(p * 100) + "%"; }
+
     public static String pct1(double v) { return String.format("%.1f%%", v * 100); }
 
     public static String signed1(double v) { if (Math.abs(v) < 0.05) return "0.0"; return (v >= 0 ? "+" : "") + String.format("%.1f", v); }
@@ -5226,6 +5229,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             }
             if (what.equals("ui")) ui(a.length > 2 ? a[2] : "shots");
             if (what.equals("policies")) policySim(a.length > 2 ? Integer.parseInt(a[2]) : 2025, a.length > 3 ? Integer.parseInt(a[3]) : 104);
+            if (what.equals("wars")) warSim(a.length > 2 ? Integer.parseInt(a[2]) : 2025, a.length > 3 ? Integer.parseInt(a[3]) : 80);
             if (what.equals("transition")) transitionSim(a.length > 2 ? Integer.parseInt(a[2]) : 2025, a.length > 3 ? Integer.parseInt(a[3]) : 52);
             if (what.equals("check")) check();
             if (what.equals("impeach")) for (int r = 0; r < (a.length > 2 ? Integer.parseInt(a[2]) : 5); r++) impeach(2000 + r, a.length > 3 ? Double.parseDouble(a[3]) : 9);
@@ -5403,6 +5407,22 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 for (BillDef d : BILLS) if (d.id.equals(id)) { found = true; if (enacted(id) < d.from || enacted(id) > d.to) System.out.println("BILL " + id + " ENACTED OUTSIDE ITS YEARS"); }
                 if (!found) System.out.println("ENACTED: NO BILL " + id);
             }
+            int nobj = 0;
+            for (ObjectiveDef d : Objectives.defs()) {
+                nobj++;
+                String code = d.generic() ? "IR" : d.who;
+                if (!d.generic() && ctIdx(d.who) < 0) System.out.println("OBJECTIVE " + d.id + ": no country " + d.who);
+                if (d.from > d.to) System.out.println("OBJECTIVE " + d.id + ": years run backward");
+                if (d.steps.length < 1 || d.steps.length > 4) System.out.println("OBJECTIVE " + d.id + " has " + d.steps.length + " steps");
+                checkFx(d.payoff.replace("{C}", code));
+                for (String[] st : d.steps) {
+                    if (st.length != 7) { System.out.println("OBJECTIVE " + d.id + " step has " + st.length + " parts"); continue; }
+                    if (!"dmij".contains(st[1]) || st[1].length() != 1) System.out.println("OBJECTIVE " + d.id + ": odds kind " + st[1]);
+                    Double.parseDouble(st[2]);
+                    for (int k = 4; k <= 6; k++) if (!st[k].equals("-")) checkFx(st[k].replace("{C}", code));
+                }
+            }
+            System.out.println("statecraft: " + nobj + " objectives");
             System.out.println("history: " + ERAS.size() + " eras, " + HIST.size() + " historical figures, " + FLASH.length + " turning points, " + HBILL_SPEC.length + " historical bills");
             System.out.println("check done: " + n + " actions, " + nc + " crises, " + ne + " events");
         }
@@ -5458,6 +5478,43 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
          * A transition played by a simple script (interview and check the top jobs, float and announce the best, meet
          * senators), then a year of the presidency. The equivalence check runs it in both versions.
          */
+        /**
+         * Statecraft and wars of choice: aid, arms, troops, covert action and objectives, then an invasion of the most
+         * hostile country that can be invaded and strikes on the next, with a hands-off president answering Congress.
+         */
+        static void warSim(int year, int weeks) {
+            Game g = newGame(77, year, null, 0);
+            World w = g.world;
+            StringBuilder b = new StringBuilder("=== wars " + year + " " + g.pres.name() + "  approval " + fmt1(g.approval) + "\n");
+            for (int k = 0; k < 6; k++) { Auto.week(g); Week.resolve(g); Decisions.autoAll(g); }
+            int foe = -1, foe2 = -1, friend = -1;
+            for (int c = 0; c < NC; c++) {
+                if (gone(g, c)) continue;
+                if (!nuke(g, c) && (foe < 0 || w.rel[c] < w.rel[foe])) foe = c;
+                if (friend < 0 || w.rel[c] > w.rel[friend]) friend = c;
+            }
+            for (int c = 0; c < NC; c++) if (!gone(g, c) && c != foe && !nuke(g, c) && (foe2 < 0 || w.rel[c] < w.rel[foe2])) foe2 = c;
+            b.append("  friend ").append(CT_ID[friend]).append(" foe ").append(CT_ID[foe]).append(" next ").append(CT_ID[foe2]).append("\n");
+            b.append("  ").append(Statecraft.setMilAid(g, friend, 2)).append(" / ").append(Statecraft.setArms(g, friend, 1)).append(" / ").append(Statecraft.setTroops(g, friend, 2)).append("\n");
+            b.append("  ").append(Statecraft.startCovert(g, foe2, CV2_CYBER)).append("\n");
+            b.append("  trade ").append(fmt2(Statecraft.tradeOdds(g, friend))).append(" treaty ").append(fmt2(Statecraft.treatyOdds(g, friend))).append(" aumf ").append(fmt2(Wars.authorizeOdds(g, foe))).append(": ").append(Wars.authorize(g, foe)).append("\n");
+            b.append("  ").append(Wars.start(g, foe, WK_INVASION)).append("\n  ").append(Wars.start(g, foe2, WK_STRIKES)).append("\n");
+            for (int k = 0; k < weeks && !g.over; k++) {
+                if (k % 4 == 0) for (Objective o : new ArrayList<Objective>(w.objectives)) if (o.country == friend && Objectives.cannot(g, o) == null) b.append("  wk").append(g.week).append(" ").append(Objectives.attempt(g, o)).append("\n");
+                Auto.week(g); Week.resolve(g); Decisions.autoAll(g);
+                if (g.week % 13 == 0) {
+                    b.append("  wk").append(g.week).append(": approval ").append(fmt1(g.approval)).append(" oil ").append(fmt0(g.econ.oil)).append(" terror ").append(fmt0(w.terror)).append(" refugees ").append(fmt0(w.refugees))
+                            .append(" unrest ").append(fmt0(w.unrest[foe])).append(" toppled ").append(w.toppled[foe]).append(" protest ").append(fmt0(g.home.protest)).append(" defcon ").append(w.defcon).append("\n");
+                    for (War x : w.wars) if (x.kind >= 0) b.append("    ").append(x.name).append(": ").append(WAR_STAGE[x.stage]).append(" front ").append(fmt1(x.front)).append(" troops ").append(fmt1(x.troops)).append(" kia ").append(Math.round(x.kia))
+                            .append(" support ").append(fmt1(x.support)).append(x.timetable >= 0 ? " timetable " + x.timetable : "").append("\n");
+                }
+            }
+            for (Objective o : w.objectives) if (o.status != 0 || o.step > 0) b.append("  objective ").append(o.id).append(" step ").append(o.step).append(" status ").append(o.status).append("\n");
+            b.append("  objectives ").append(w.objectives.size()).append(" achieved ").append(w.done).append(" covert ").append(w.covert).append(" exposed ").append(w.exposed).append(" kia ").append(w.kia).append("\n");
+            for (String m : g.milestones) b.append("  * ").append(m).append("\n");
+            System.out.println(b);
+        }
+
         static void transitionSim(int year, int weeks) {
             Settings s = new Settings();
             Era e = era(year);
@@ -5495,6 +5552,20 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             }
             for (int k = 0; k < NPOST; k++) if (g.ex.post[k] != null) b.append("  ").append(POST_SHORT[k]).append(": ").append(g.ex.post[k].name).append(" ").append(g.ex.post[k].voteYes).append("-").append(g.ex.post[k].voteNo).append("\n");
             System.out.print(b);
+        }
+
+        /** Statecraft and a war of choice: objectives and tools for one country, then an invasion and the occupation that follows. */
+        static void worldShots(ResoluteDesk u, String dir) {
+            Game g = u.game;
+            Rooms.open(u, R_SITROOM);
+            SitRoom.tab = 7; SitRoom.sel = CC_UA; shot(u, dir, "statecraft_ukraine");
+            SitRoom.sel = CC_IR; shot(u, dir, "statecraft_iran");
+            Wars.start(g, CC_VE, WK_INVASION);
+            for (int w = 0; w < 26; w++) { Week.routine(g); Week.resolve(g); Decisions.autoAll(g); }
+            SitRoom.tab = 6; SitRoom.selWar = 0;
+            for (int i = 0; i < g.world.wars.size(); i++) if (g.world.wars.get(i).enemy == CC_VE) SitRoom.selWar = 0;
+            shot(u, dir, "war_venezuela");
+            SitRoom.tab = 0;
         }
 
         /** The Cabinet Room: a policy and its impacts, the outcomes, and the system map. */
@@ -5559,6 +5630,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             Rooms.open(u, R_CONGRESS);
             for (int t = 0; t < HillUI.TABS.length; t++) { HillUI.tab = t; HillUI.sel = -1; shot(u, dir, "hill_" + t); }
             policyShots(u, dir);
+            worldShots(u, dir);
             HillUI.tab = 1; HillUI.draftSel = 1; HillUI.draft = Legis.draft(u.game, HillUI.agenda(u.game).get(1)); shot(u, dir, "hill_draft");
             HillUI.tab = 0; HillUI.chairCh = 1; shot(u, dir, "hill_senate_chairs");
             for (Bill b : u.game.cong.bills) if (b.stage == ST_LAW) { Legis.toDesk(u.game, b); break; }
@@ -7743,9 +7815,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             World w = g.world;
             Random r = g.rng;
             double dq = Cabinet.pq(g, P_DEF);
-            for (War x : w.wars) {
+            for (War x : new ArrayList<War>(w.wars)) {
                 if (x.stage != 2) continue;
                 x.weeks++;
+                if (x.kind >= 0 && Wars.step(g, x)) continue;
                 double eff = x.troops <= 0 ? -1.2 : clamp(Math.log(x.troops / x.need) * 0.9, -1.5, 1.2);
                 double strat = x.strategy == 0 ? -0.15 : x.strategy == 2 ? 0.45 : x.strategy == 3 ? -0.2 : 0;
                 double allyK = x.ally >= 0 ? (w.rel[x.ally] - 40) * 0.003 : 0;
@@ -7755,14 +7828,14 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 double dead = x.troops * kiaRate * (0.6 + 0.8 * r.nextDouble());
                 x.kia += dead;
                 w.kia += (int) Math.round(dead);
-                if (dead > 0) g.perf -= Math.min(0.4, dead / (x.stakes * x.stakes) / 3000.0);
-                double supT = 35 + 18 * Math.min(3, x.stakes);
-                x.support = clamp(x.support + (supT - x.support) * 0.01 - dead / x.stakes / 2000.0 - (x.weeks > 104 ? 0.03 : 0) + (x.front - 50) * 0.003, 5, 98);
+                if (dead > 0) g.perf -= x.kind >= 0 ? Math.min(0.3, dead / 250.0) : Math.min(0.4, dead / (x.stakes * x.stakes) / 3000.0);
+                double supT = x.kind >= 0 ? Wars.supportTarget(x) : 35 + 18 * Math.min(3, x.stakes);
+                x.support = clamp(x.support + (supT - x.support) * (x.kind >= 0 ? 0.03 : 0.01) - dead / x.stakes / 2000.0 - (x.weeks > 104 ? 0.03 : 0) + (x.front - 50) * 0.003, 5, 98);
                 x.talks = clamp(x.talks + (x.strategy == 3 ? 1.5 : 0.1) + (x.front > 65 ? 0.4 : 0) - (x.front < 35 ? 0.3 : 0) + r.nextGaussian() * 0.6, 0, 100);
                 g.issueAdj[PI_SECURITY] = clamp(g.issueAdj[PI_SECURITY] + (x.support - 50) * 0.0004 + (x.front - 50) * 0.0002, -1.5, 1.5);
                 g.issueSal[PI_SECURITY] = clamp(g.issueSal[PI_SECURITY] + 0.004 * x.stakes, 0.2, 2.2);
                 if (dead > 50 && r.nextDouble() < 0.06) g.log(NK_WORLD, x.name + ": " + thousands(Math.round(x.kia)) + " Americans killed so far", null, 1.2);
-                if (x.front >= 100) end(g, x, 3);
+                if (x.front >= 100) { if (x.kind < 0) end(g, x, 3); else Wars.victory(g, x); }
                 else if (x.front <= 0) end(g, x, 4);
                 else if (x.talks >= 100 && x.front >= 25) end(g, x, 5);
                 else if (x.troops <= 0.5 && x.weeks > 4) end(g, x, x.front >= 60 ? 5 : 4);
@@ -7770,23 +7843,30 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             g.econ.war = warSpend(w);
         }
 
-        static void end(Game g, War x, int how) {
+        /** Words for how a war ended, after its name: " won", " lost", and so on. */
+        static final String[] ENDED = {"", "", "", " won", " lost", " ended by agreement", " ended on a withdrawal timetable", " handed over", " ended when the president declared victory"};
+
+        public static void end(Game g, War x, int how) {
             if (x.stage != 2) return;
             x.stage = how; x.ended = g.week;
-            String title = how == 3 ? x.name.toUpperCase() + " ENDS IN VICTORY" : how == 4 ? x.name.toUpperCase() + " ENDS IN DEFEAT" : x.name.toUpperCase() + " ENDS IN AN AGREEMENT";
+            String up = x.name.toUpperCase();
+            String title = how == 3 ? up + " ENDS IN VICTORY" : how == 4 ? up + " ENDS IN DEFEAT" : how == 6 ? up + " ENDS AS THE LAST TROOPS COME HOME"
+                    : how == 7 ? up + ": AMERICAN FORCES HAND OVER AND COME HOME" : how == 8 ? "PRESIDENT DECLARES VICTORY: " + up + " IS OVER" : up + " ENDS IN AN AGREEMENT";
             String body = thousands(Math.round(x.kia)) + " Americans died over " + Math.round(x.weeks / 52.0 * 10) / 10.0 + " years.";
             g.log(NK_BIG, title, body, 5);
             String nm = x.name.startsWith("The ") ? "the " + x.name.substring(4) : x.name;
             String when = dateStr(g.day()) + ": ";
-            g.world.record.add(when + nm + (how == 3 ? " won" : how == 4 ? " lost" : " ended by agreement"));
-            if (how == 3) { g.perf += 3 + x.stakes; g.rally += 6 + x.stakes * 2; g.issueAdj[PI_SECURITY] = clamp(g.issueAdj[PI_SECURITY] + 0.5, -1.5, 1.5); g.milestones.add(when + "won " + nm); }
+            g.world.record.add(when + nm + ENDED[how]);
+            if (how == 3 && x.kind >= 0) { g.perf += 1.5 + x.stakes; g.rally += 2 + x.stakes; g.milestones.add(when + "won " + nm); }
+            else if (how == 3) { g.perf += 3 + x.stakes; g.rally += 6 + x.stakes * 2; g.issueAdj[PI_SECURITY] = clamp(g.issueAdj[PI_SECURITY] + 0.5, -1.5, 1.5); g.milestones.add(when + "won " + nm); }
             else if (how == 4) { g.perf -= 3; g.issueAdj[PI_FOREIGN] = clamp(g.issueAdj[PI_FOREIGN] - 0.5, -1.5, 1.5); g.milestones.add(when + "lost " + nm); }
-            else { g.perf += 1.5; g.milestones.add(when + "ended " + nm + " by agreement"); }
+            else if (how == 5) { g.perf += 1.5; g.milestones.add(when + "ended " + nm + " by agreement"); }
+            else g.milestones.add(when + nm + ENDED[how]);
             if (x.id.equals("ww2e") && how == 3 && x.enemy >= 0) { g.world.rel[x.enemy] = 0; g.world.align[x.enemy] = 0; g.world.leader[x.enemy] = "the Allied occupation"; g.world.ltitle[x.enemy] = "Military government"; }
             if (x.id.equals("ww2p") && how == 3 && x.enemy >= 0) { g.world.rel[x.enemy] = 10; g.world.align[x.enemy] = 0; g.world.leader[x.enemy] = "the American occupation"; g.world.ltitle[x.enemy] = "Military government"; }
             if (how == 3 && x.stakes >= 3) g.econ.demandShock += 0.45 * x.troops * x.cost * 0.8;
             x.troops = 0;
-            Decisions.info(g, how == 3 ? "Victory" : how == 4 ? "Defeat" : "The War Is Over", x.name + (how == 3 ? " ends in victory. " : how == 4 ? " ends in defeat. " : " ends in an agreement. ") + body);
+            Decisions.info(g, how == 3 ? "Victory" : how == 4 ? "Defeat" : "The War Is Over", x.name + (how == 3 ? " ends in victory. " : how == 4 ? " ends in defeat. " : how == 5 ? " ends in an agreement. " : ENDED[how].replace(" ended", " ends") + ". ") + body);
         }
 
         static void flash(Game g) {
@@ -9250,6 +9330,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             Policies.upgrade(g);
             if (g.world.name == null) History.world(g, g.era.year, false);
             if (g.world.wars == null) History.setup(g);
+            if (g.world.milAid == null) Statecraft.upgrade(g);
             if (g.termWeeks <= 0 || g.term == 1 && g.termWeeks == 208 && g.era.inM != 0) g.termWeeks = termEnd(g);
             if (g.milestones == null) g.milestones = new ArrayList<String>();
             if (g.histOk == null) g.histOk = new ArrayList<String>();
@@ -9578,7 +9659,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             }
             l.add(new String[]{"Your laws", n == 0 ? "No major legislation became law on your watch." : laws.toString() + (lawsAll(g) > n ? " And " + (lawsAll(g) - n) + " more." : "")});
             StringBuilder world = new StringBuilder();
-            for (War x : g.world.wars) if (x.stage >= 3 && (x.started >= 0 || x.ended >= 0)) world.append(x.name).append(x.stage == 3 ? " was won" : x.stage == 4 ? " was lost" : " ended in an agreement").append(", at a cost of ").append(thousands(Math.round(x.kia))).append(" American lives. ");
+            for (War x : g.world.wars) if (x.stage >= 3 && (x.started >= 0 || x.ended >= 0)) world.append(x.name).append(x.stage == 3 ? " was won" : x.stage == 4 ? " was lost" : x.stage == 6 ? " ended on a withdrawal timetable" : x.stage == 7 ? " ended with a handover" : x.stage == 8 ? " ended when the president declared victory" : " ended in an agreement").append(", at a cost of ").append(thousands(Math.round(x.kia))).append(" American lives. ");
             for (War x : g.world.wars) if (x.stage == 2) world.append(x.name).append(" was still going on, with ").append(thousands(Math.round(x.troops * 1000))).append(" Americans deployed. ");
             world.append(g.world.deals == 0 ? "You reached no agreements with foreign leaders." : "You reached " + g.world.deals + (g.world.deals == 1 ? " agreement" : " agreements") + " with foreign leaders.");
             if (!g.world.record.isEmpty()) {
@@ -9754,7 +9835,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             l.add("The road to the White House|Your life before the presidency, from " + (g.pres.homeAb != null ? STATES[Math.max(0, g.pres.home)].name : "home") + " to the inaugural stand in " + g.era.year + ".");
             int n = 0;
             for (Bill b : g.cong.bills) if (b.stage == ST_LAW && b.ours && n < 2) { l.add(b.name + "|" + (impactOf(b) != null ? impactOf(b) : b.def().desc)); n++; }
-            for (War x : g.world.wars) if (x.stage >= 2 && (x.started >= 0 || x.ended >= 0)) { l.add(x.name + "|" + (x.stage == 3 ? "From the first battles to victory" : x.stage == 5 ? "The fighting, and the long road to a settlement" : x.stage == 4 ? "A hard war and a bitter end" : "The war that outlasted your presidency") + "; " + thousands(Math.round(x.kia)) + " names on the memorial wall."); break; }
+            for (War x : g.world.wars) if (x.stage >= 2 && (x.started >= 0 || x.ended >= 0)) { l.add(x.name + "|" + (x.stage == 3 ? "From the first battles to victory" : x.stage == 5 ? "The fighting, and the long road to a settlement" : x.stage == 4 ? "A hard war and a bitter end" : x.stage >= 6 ? "The war, and the way out" : "The war that outlasted your presidency") + "; " + thousands(Math.round(x.kia)) + " names on the memorial wall."); break; }
             if (!g.histOk.isEmpty()) l.add("Decisions|" + g.histOk.get(g.histOk.size() - 1).replace(":", ": you chose to") + ".");
             if (g.re != null && g.re.done) l.add("The " + g.re.year + " campaign|Buttons, posters and the election-night map: " + g.re.evMe + " to " + g.re.evOpp + ".");
             l.add("The first family|Life in the Residence: the dinners, the pets and the Christmas trees.");
@@ -11759,6 +11840,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         public Probe probeRef;
         public Person person;
         public Member member;
+        public War war;
         public int[] codes;
         Person[] advisers;
     }
@@ -11769,7 +11851,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     //  Things only the president can decide land in the inbox. Each choice comes with what your advisers say.
     public static final int D_SIGN = 1, D_CR = 2, D_SHUTDOWN = 3, D_DEBT = 4, D_BUDGET = 5, D_INFO = 6, D_MUSTPASS = 7,
             D_CRA = 8, D_EMERG_END = 9, D_COURT = 10, D_SCANDAL = 11, D_LEAK = 12, D_PARDON = 13, D_SUBPOENA = 14, D_IMPEACH = 15,
-            D_WORLD = 16, D_SUMMIT = 17, D_GSUMMIT = 18, D_HOME = 19, D_DISASTER = 20, D_SPEECH = 21, D_QA = 22, D_HIST = 23, D_CAMPAIGN = 24, D_ASK = 25;
+            D_WORLD = 16, D_SUMMIT = 17, D_GSUMMIT = 18, D_HOME = 19, D_DISASTER = 20, D_SPEECH = 21, D_QA = 22, D_HIST = 23, D_CAMPAIGN = 24, D_ASK = 25, D_WARPOWERS = 26;
 
     /** Making decisions: the options of each kind of decision, the advice, what each choice does, and how the hands-off president chooses. */
     static final class Decisions {
@@ -11866,6 +11948,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 case D_HIST: return History.auto(g, d.a);
                 case D_CAMPAIGN: return Reelection.auto(g, d);
                 case D_ASK: return Relations.auto(g, d);
+                case D_WARPOWERS: return Wars.auto(g, d);
                 case D_SPEECH: return d.codes != null ? (g.week % d.codes.length) : d.a == 0 ? 0 : 0;
                 case D_SUMMIT: case D_GSUMMIT: case D_DISASTER: case D_QA: return 0;
                 default: return 0;
@@ -11962,6 +12045,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 case D_HIST: History.decide(g, d.a, k); break;
                 case D_CAMPAIGN: Reelection.decide(g, d, k); break;
                 case D_ASK: Relations.answer(g, d, k); break;
+                case D_WARPOWERS: Wars.warPowers(g, d, k); break;
                 case D_HOME: HomeFront.eventDecision(g, d.a, k); break;
                 case D_DISASTER: HomeFront.disasterDecision(g, d, k); break;
                 case D_SPEECH: Speech.step(g, d.codes != null ? d.codes[k] : k); break;
@@ -16959,14 +17043,14 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     static final class SitRoom {
         public static int tab, sel = CC_CN, selOp = 0;
         static String msg;
-        public static final String[] TABS = {"The world", "Daily brief", "Hot spots", "Operations", "Trade", "Alliances", "Wars"};
+        public static final String[] TABS = {"The world", "Daily brief", "Hot spots", "Operations", "Trade", "Alliances", "Wars", "Statecraft"};
 
         static void draw(ResoluteDesk u, Graphics2D g, Game game) {
             if (game.world == null) Diplo.setup(game);
-            u.segmented(g, 48, 116, 820, 30, TABS, tab, i -> { tab = i; msg = null; }, null);
+            u.segmented(g, 48, 116, 860, 30, TABS, tab, i -> { tab = i; msg = null; }, null);
             World w = game.world;
-            text(g, "DEFCON " + w.defcon, 890, 137, F_BB, w.defcon <= 3 ? C_BAD : w.defcon == 4 ? C_AMBER : C_GOOD);
-            if (msg != null) textFit(g, msg, 990, 137, DW - 1040, F_XS, C_GOLD);
+            text(g, "DEFCON " + w.defcon, 924, 137, F_BB, w.defcon <= 3 ? C_BAD : w.defcon == 4 ? C_AMBER : C_GOOD);
+            if (msg != null) textFit(g, msg, 1024, 137, DW - 1072, F_XS, C_GOLD);
             switch (tab) {
                 case 1: brief(u, g, game); break;
                 case 2: hot(u, g, game); break;
@@ -16974,6 +17058,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 case 4: trade(u, g, game); break;
                 case 5: alliances(u, g, game); break;
                 case 6: wars(u, g, game); break;
+                case 7: StatecraftUI.draw(u, g, game); break;
                 default: world(u, g, game); break;
             }
         }
@@ -17039,8 +17124,9 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             u.button(g, px + 18, y, pw - 36, 30, "Invite to the White House", inv ? B_NORM : B_OFF, inv ? () -> msg = Diplo.invite(game, cc) : null, war ? no : "A state visit in a few weeks. A bigger boost than a call.");
             y += 36;
             boolean sum = w.summitCountry < 0 && !war;
+            u.button(g, px + 18, y + 36, pw - 36, 30, "Objectives, aid, arms, troops and force", B_GOLD, () -> { tab = 7; msg = null; }, "The Statecraft tab: what you want from " + cnameIn(game, c) + ", and every tool for getting it.");
             u.button(g, px + 18, y, pw - 36, 30, "Propose a summit", sum ? B_PRIMARY : B_OFF, sum ? () -> msg = Diplo.proposeSummit(game, cc) : null, war ? no + " Peace comes through the Wars tab and the turning points." : "A face-to-face negotiation in three rounds: the opening, the ask and the give.");
-            y += 46;
+            y += 82;
             // every country, by region
             label(g, "All countries", px + 18, y, C_GOLD);
             double top = y + 10, hh = 800 - top;
@@ -17200,7 +17286,13 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             y = 204;
             String foe = x.enemy >= 0 ? cname(game, x.enemy) : x.id.equals("vietnam") ? "North Vietnam and the Viet Cong" : x.id.equals("afghan") ? "The Taliban and al-Qaeda" : x.id.equals("iraq") ? "The insurgency" : "The Islamic State";
             text(g, "Against: " + foe + (x.ally >= 0 ? ".  Fighting alongside: " + cname(game, x.ally) + "." : "."), px + 18, y, F_S, C_TEXT); y += 26;
-            text(g, "Americans killed: " + thousands(Math.round(x.kia)) + "    Weeks of war: " + Math.round(x.weeks) + "    Cost: about " + fmt1(x.troops * x.cost) + "% of GDP a year", px + 18, y, F_S, C_TEXT); y += 30;
+            text(g, "Americans killed: " + thousands(Math.round(x.kia)) + "    Weeks of war: " + Math.round(x.weeks) + "    Cost: about " + fmt1(x.troops * x.cost) + "% of GDP a year", px + 18, y, F_S, C_TEXT); y += 22;
+            if (x.kind >= 0 && x.enemy >= 0) {
+                World wd = game.world;
+                text(g, WK_NAME[x.kind] + ".   Unrest inside " + cnameIn(game, x.enemy) + ": " + Math.round(wd.unrest[x.enemy]) + "    Refugees: " + Math.round(wd.refugees) + "    Terror threat: " + Math.round(wd.terror) + (game.home != null ? "    Protest at home: " + Math.round(game.home.protest) : ""),
+                        px + 18, y, F_XS, C_DIM);
+            }
+            y += 22;
             if (x.stage != 2) { text(g, WAR_STAGE[x.stage] + (x.ended >= 0 ? " on " + dateStr(x.ended * 7) : "") + ".", px + 18, y, F_H3, x.stage == 3 ? C_GOOD : C_DIM); return; }
             gauge(g, "The front (0 is defeat, 100 is victory)", x.front, false, px + 18, y, pw - 36); y += 38;
             gauge(g, "Support at home", x.support, false, px + 18, y, pw - 36); y += 38;
@@ -17222,9 +17314,32 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                     new String[]{"Fewer casualties, slow losses of ground.", "Steady pressure.", "Gains on the front, at a much higher cost in lives.", "Fewer casualties and faster talks, but the enemy gains ground."});
             y += 50;
             wrap(g, "Victory comes when the front reaches 100; defeat at 0. A settlement comes when the talks are complete and the front still holds. Casualties wear down support at home, and support is part of how the public judges your handling of security.", px + 18, y, pw - 36, F_XS, C_DIM);
-            y += 60;
-            u.button(g, px + 18, y, 260, 32, "Withdraw and end the war", B_GHOST, () -> u.modal("End the war?", "Bringing everyone home now ends " + xx.name.toLowerCase() + (xx.front >= 60 ? " on terms we can live with." : " in what history will call a defeat."),
-                    new String[]{"Keep fighting", "Withdraw"}, new Runnable[]{null, () -> History.withdraw(game, xx)}, C_BAD));
+            y += 50;
+            // ways out, and in
+            label(g, "Ending it, or not", px + 18, y, C_GOLD); y += 10;
+            double bw2 = (pw - 36 - 5 * 8) / 6;
+            String[] lab = {"Withdraw now", "Declare victory", "Timetable: 6 months", "Timetable: a year", "Hand over", "Escalate"};
+            String hand = Wars.cannotHand(xx);
+            String[] tips = {"Bring everyone home now. " + (xx.front >= 60 ? "On terms we can live with." : "History will call it a defeat."),
+                    "End it now and call it a win. Believable if the front is 70 or better; otherwise allies and enemies take note.",
+                    "Troops come home gradually over six months. The enemy can count the days.", "A slower drawdown over a year.",
+                    hand != null ? hand : "Hand the fight to " + Wars.successor(xx) + " over two months.", "More troops and a harder offensive: faster gains, more casualties, less support."};
+            Runnable[] acts = {() -> u.modal("End the war?", "Bringing everyone home now ends " + xx.name.toLowerCase() + (xx.front >= 60 ? " on terms we can live with." : " in what history will call a defeat."),
+                    new String[]{"Keep fighting", "Withdraw"}, new Runnable[]{null, () -> History.withdraw(game, xx)}, C_BAD),
+                    () -> msg = Wars.declareVictory(game, xx), () -> msg = Wars.timetable(game, xx, 26), () -> msg = Wars.timetable(game, xx, 52), () -> msg = Wars.handoff(game, xx), () -> msg = Wars.escalate(game, xx)};
+            for (int i = 0; i < lab.length; i++) {
+                boolean ok = (i != 4 || hand == null) && (i < 2 || i > 3 || xx.timetable < 0);
+                u.button(g, px + 18 + i * (bw2 + 8), y, bw2, 30, lab[i], ok ? (i == 5 ? B_DANGER : i == 0 ? B_GHOST : B_NORM) : B_OFF, ok ? acts[i] : null, tips[i]);
+            }
+            y += 44;
+            if (xx.kind >= 0) {
+                String auth = xx.authorized ? "Congress authorized this war." : xx.wpVoted ? "Congress never authorized this war." : "Congress has not authorized this war; after about sixty days it can vote to end it.";
+                text(g, auth, px + 18, y + 18, F_XS, xx.authorized ? C_DIM : C_AMBER);
+                if (!xx.authorized && xx.enemy >= 0) u.button(g, px + pw - 18 - 250, y, 250, 26, "Ask Congress to authorize it", B_NORM, () -> msg = Wars.authorize(game, xx.enemy), "A vote in both chambers: " + chance(Wars.authorizeOdds(game, xx.enemy)) + " to pass.");
+                y += 30;
+            }
+            if (xx.timetable >= 0) text(g, "Withdrawal under way: the last troops leave by " + dateStr(xx.timetable * 7) + ".", px + 18, y + 18, F_XS, C_GOLD);
+            if (xx.handoff >= 0) text(g, "Handover under way: complete by " + dateStr(xx.handoff * 7) + ".", px + 18, y + 18, F_XS, C_GOLD);
         }
 
         static String money(double b) { return b >= 10 ? "$" + Math.round(b) + " billion" : b >= 1 ? "$" + fmt1(b) + " billion" : "$" + Math.round(b * 1000) + " million"; }
@@ -17347,6 +17462,177 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     public static void snd(int id) { if (sfx != null) sfx.play(id, 1, 1); }
 
     public static void snd(int id, double vol, double pitch) { if (sfx != null) sfx.play(id, vol, pitch); }
+
+    /** The Situation Room's statecraft tab: one country's objectives, and every tool for dealing with it, up to war. */
+    static final class StatecraftUI {
+        private StatecraftUI() {
+        }
+
+        static void draw(ResoluteDesk u, Graphics2D g, Game game) {
+            World w = game.world;
+            if (gone(game, SitRoom.sel)) for (int k = 0; k < NC; k++) if (!gone(game, k)) { SitRoom.sel = k; break; }
+            countries(u, g, game, w);
+            objectives(u, g, game, w, SitRoom.sel);
+            tools(u, g, game, w, SitRoom.sel);
+        }
+
+        static void say(String m) { SitRoom.msg = m; }
+
+        // ---- every country ----
+        static void countries(ResoluteDesk u, Graphics2D g, Game game, World w) {
+            u.panel(g, 48, 160, 200, 652, "Countries");
+            double y = 188;
+            int n = 0;
+            for (int c = 0; c < NC; c++) if (!gone(game, c)) n++;
+            double h = Math.min(16, 616.0 / Math.max(1, n));
+            for (int rg = 0; rg < REGION.length; rg++) for (int c = 0; c < NC; c++) {
+                if (CT_REGION[c] != rg || gone(game, c)) continue;
+                final int cc = c;
+                u.card(g, 54, y, 188, h - 1, c == SitRoom.sel, () -> { SitRoom.sel = cc; say(null); }, null);
+                textFit(g, cname(game, c), 62, y + h - 4, 130, F_T, atWar(game, c) ? C_BAD : Color.white);
+                textR(g, (w.rel[c] > 0 ? "+" : "") + Math.round(w.rel[c]), 236, y + h - 4, F_TB, WorldMap.relColor(w.rel[c]).brighter());
+                y += h;
+            }
+        }
+
+        // ---- what we want from them ----
+        static void objectives(ResoluteDesk u, Graphics2D g, Game game, World w, int c) {
+            double px = 260, pw = 500;
+            u.panel(g, px, 160, pw, 652, null);
+            Flag.draw(g, c, px + 18, 176, 54, 36);
+            text(g, cname(game, c), px + 84, 192, F_H2, Color.white);
+            int al = align(game, c);
+            textFit(g, w.leader[c] + ", " + w.ltitle[c].toLowerCase() + ".  " + ALIGN[al] + (nuke(game, c) ? ", nuclear-armed" : ""), px + 84, 210, pw - 100, F_XS, al == AL_ADVERSARY ? C_REP_L : al == AL_TREATY ? C_GOOD : C_TEXT);
+            String state = atWar(game, c) ? "At war with the United States" : "Relations " + (w.rel[c] > 0 ? "+" : "") + Math.round(w.rel[c]) + ";  ties " + TIES[w.ties[c]].toLowerCase()
+                    + (w.unrest[c] >= 40 ? ";  unrest " + Math.round(w.unrest[c]) : "") + (w.toppled[c] ? ";  government toppled" : "");
+            textFit(g, state, px + 18, 234, pw - 36, F_XS, atWar(game, c) ? C_BAD : C_DIM);
+            label(g, "Objectives", px + 18, 262, C_GOLD);
+            List<Objective> l = Objectives.of(game, c);
+            double y = 274, h = l.isEmpty() ? 0 : Math.min(132, (800 - y) / l.size() - 8);
+            if (l.isEmpty()) wrap(g, "Nothing on the agenda with " + cnameIn(game, c) + " in this era.", px + 18, y + 16, pw - 36, F_XS, C_DIM);
+            for (Objective o : l) { objective(u, g, game, o, px + 12, y, pw - 24, h); y += h + 8; }
+        }
+
+        static void objective(ResoluteDesk u, Graphics2D g, Game game, Objective o, double x, double y, double w, double h) {
+            u.card(g, x, y, w, h, o.status == 1, null, null);
+            String[][] steps = Objectives.def(o).steps;
+            textFit(g, Objectives.name(game, o), x + 12, y + 20, w - 24, F_SB, o.status == 1 ? C_GOOD : Color.white);
+            wrapMax(g, Objectives.why(game, o), x + 12, y + 36, w - 24, F_T, C_DIM, 2, 12);
+            // the steps, as dots on a line
+            double sx = x + 16, sy = y + 72, gap = (w - 32) / Math.max(1, steps.length - 1);
+            g.setColor(new Color(255, 255, 255, 30));
+            g.fillRect((int) sx, (int) sy - 1, (int) (w - 32), 2);
+            for (int i = 0; i < steps.length; i++) {
+                double cx = steps.length == 1 ? x + w / 2 : sx + i * gap;
+                boolean done = i < o.step;
+                g.setColor(done ? C_GOOD : i == o.step && o.status == 0 ? C_GOLD : new Color(255, 255, 255, 50));
+                g.fill(new Ellipse2D.Double(cx - 5, sy - 5, 10, 10));
+            }
+            if (o.status == 1) { text(g, "Achieved", x + 12, y + h - 14, F_XSB, C_GOOD); return; }
+            String[] s = Objectives.step(o);
+            String no = Objectives.cannot(game, o);
+            textFit(g, "Next: " + s[0] + (s[4].equals("-") ? "" : "  (costs something)"), x + 12, y + 96, w - 140, F_XS, C_TEXT);
+            double odds = Objectives.odds(game, o);
+            textFit(g, no != null ? no : odds >= 1 ? "Certain to work: everything it needs is in place" : Paper.cap(chance(odds)) + " to work", x + 12, y + 112, w - 140, F_T, no != null ? C_AMBER : odds >= 0.6 ? C_GOOD : C_GOLD);
+            u.button(g, x + w - 120, y + h - 40, 108, 28, "Try it", no == null ? B_GOLD : B_OFF, no == null ? () -> say(Objectives.attempt(game, o)) : null, s[0] + ". Failure costs a month, and three in a row stall it for half a year.");
+        }
+
+        // ---- the tools ----
+        static void tools(ResoluteDesk u, Graphics2D g, Game game, World w, int c) {
+            double px = 772, pw = DW - 48 - px, x0 = px + 18, cw = pw - 36;
+            u.panel(g, px, 160, pw, 652, "The tools");
+            boolean war = atWar(game, c);
+            double y = 208;
+            // support
+            label(g, "Military aid", x0, y, C_FAINT);
+            u.segmented(g, x0 + 130, y - 14, cw - 130, 22, MIL_AID, w.milAid[c], i -> say(Statecraft.setMilAid(game, c, i)), null);
+            y += 28;
+            label(g, "Arms sales", x0, y, C_FAINT);
+            u.segmented(g, x0 + 130, y - 14, cw - 130, 22, ARMS, w.arms[c], i -> say(Statecraft.setArms(game, c, i)), null);
+            y += 28;
+            label(g, "American forces", x0, y, C_FAINT);
+            u.segmented(g, x0 + 130, y - 14, cw - 130, 22, TROOP_NAME, Statecraft.troopStep(w, c), i -> say(Statecraft.setTroops(game, c, i)), null);
+            y += 28;
+            label(g, "Diplomatic ties", x0, y, C_FAINT);
+            u.segmented(g, x0 + 130, y - 14, (cw - 130) * 0.6, 22, TIES, w.ties[c], i -> say(Statecraft.setTies(game, c, i)), null);
+            boolean pk = w.peace[c] > 0;
+            u.button(g, x0 + 130 + (cw - 130) * 0.6 + 8, y - 14, (cw - 130) * 0.4 - 8, 22, pk ? "Peacekeepers: in" : "Send peacekeepers", pk ? B_ON : B_NORM, () -> say(Statecraft.setPeace(game, c, !pk)),
+                    "Join a UN or allied mission where there's a conflict to keep apart.");
+            y += 22;
+            if (c == CC_TW) { text(g, "Full ties with Taiwan means recognizing it as a country. Beijing would treat it as an act of hostility.", x0, y + 6, F_T, C_AMBER); y += 12; }
+            // agreements
+            y += 18;
+            label(g, "Agreements", x0, y, C_GOLD);
+            y += 10;
+            double tw = (cw - 10) / 2;
+            boolean hasPact = w.pact[c] > 0, ally = align(game, c) == AL_TREATY;
+            u.button(g, x0, y, tw, 28, hasPact ? "Trade agreement in force" : "Send Congress a trade agreement", hasPact || war ? B_OFF : B_NORM, hasPact || war ? null : () -> say(Statecraft.tradeDeal(game, c)),
+                    "Needs a majority in both chambers: " + chance(Statecraft.tradeOdds(game, c)) + " to pass.");
+            u.button(g, x0 + tw + 10, y, tw, 28, ally ? "A treaty ally" : "Sign a defense treaty", ally || war ? B_OFF : B_NORM, ally || war ? null : () -> say(Statecraft.defensePact(game, c)),
+                    "Needs two-thirds of the Senate: " + chance(Statecraft.treatyOdds(game, c)) + " to be ratified.");
+            y += 34;
+            text(g, "A trade deal: " + chance(Statecraft.tradeOdds(game, c)) + " in Congress.   A treaty: " + (w.rel[c] < 40 && !ally ? "they aren't interested yet" : chance(Statecraft.treatyOdds(game, c)) + " in the Senate") + ".", x0, y + 8, F_T, C_DIM);
+            // covert action
+            y += 30;
+            label(g, "Covert action", x0, y, C_GOLD);
+            y += 8;
+            if (w.cvProg[c] > 0) {
+                text(g, CV2_NAME[w.cvProg[c] - 1] + " is under way. Results by " + dateStr(w.cvDue[c] * 7) + ".", x0, y + 16, F_XS, C_ACCENT);
+                y += 26;
+            } else {
+                double bw = (cw - 3 * 8) / 4;
+                for (int k = 0; k < CV2_NAME.length; k++) {
+                    final int kk = k;
+                    double bx = x0 + k * (bw + 8);
+                    u.button(g, bx, y, bw, 28, CV2_NAME[k], war ? B_OFF : B_NORM, war ? null : () -> say(Statecraft.startCovert(game, c, kk)), CV2_DESC[k] + " A presidential finding; if it leaks, it's a scandal.");
+                    text(g, Math.round(Statecraft.covertOdds(game, c, k) * 100) + "% to work, " + Math.round(Statecraft.leakOdds(game, k) * 100) + "% to leak", bx + 2, y + 42, F_T, C_DIM);
+                }
+                y += 50;
+            }
+            // force
+            y += 16;
+            label(g, "Force", x0, y, C_BAD);
+            y += 8;
+            boolean auth = w.authorized[c] > 0 && game.week - w.authorized[c] < 52;
+            u.button(g, x0, y, cw, 28, auth ? "Congress has authorized force against " + cnameIn(game, c) : "Ask Congress to authorize the use of force", auth ? B_OFF : B_NORM, auth ? null : () -> say(Wars.authorize(game, c)),
+                    "A vote in both chambers: " + chance(Wars.authorizeOdds(game, c)) + ". With it, the war starts with more support, and Congress can't order the troops home.");
+            y += 36;
+            int[] kinds = {WK_STRIKES, WK_BLOCKADE, WK_NOFLY, WK_INVASION};
+            double bw = (cw - 3 * 8) / 4;
+            for (int i = 0; i < kinds.length; i++) {
+                final int kind = kinds[i];
+                double bx = x0 + i * (bw + 8);
+                String no = Wars.cannot(game, c, kind);
+                u.button(g, bx, y, bw, 32, WK_NAME[kind], no == null ? B_DANGER : B_OFF, no == null ? () -> confirm(u, game, c, kind) : null, no != null ? no : WK_DESC[kind]);
+                wrapMax(g, no == null ? "About " + thousands(Math.round(Wars.need(game, c, kind) * 1000)) + " troops" : "Not possible", bx + 2, y + 46, bw - 4, F_T, no == null ? C_DIM : C_FAINT, 1, 12);
+            }
+            y += 58;
+            wrapMax(g, "What to expect: " + Wars.expect(game, c, WK_STRIKES), x0, y + 6, cw, F_T, C_DIM, 3, 12);
+            standing(g, game, w, c, x0, 712, cw);
+        }
+
+        /** The relationship at a glance: trade, tariffs and sanctions, aid, American forces there, and Congress's view. */
+        static void standing(Graphics2D g, Game game, World w, int c, double x0, double y, double cw) {
+            label(g, "Where things stand", x0, y, C_FAINT);
+            String[][] cells = {
+                    {"Trade", gone(game, c) ? "-" : "$" + Math.round(tradeOf(game, c)) + " bn a year"},
+                    {"Tariff / sanctions", TARIFF_OPT[Math.max(0, Math.min(TARIFF_OPT.length - 1, w.tariff[c]))] + " / " + LEVEL[Math.max(0, Math.min(LEVEL.length - 1, w.sanction[c]))].toLowerCase()},
+                    {"Aid", LEVEL[Math.max(0, Math.min(LEVEL.length - 1, w.aid[c]))]},
+                    {"US forces there", w.troopsIn[c] < 0.05 ? "None" : thousands(Math.round(w.troopsIn[c] * 1000))},
+                    {"Force authorized", Wars.authorized(game, c) ? "In force" : "None"}};
+            double cwid = cw / cells.length;
+            for (int i = 0; i < cells.length; i++) {
+                text(g, cells[i][0], x0 + i * cwid, y + 22, F_T, C_DIM);
+                textFit(g, cells[i][1], x0 + i * cwid, y + 40, cwid - 10, F_SB, Color.white);
+            }
+            wrapMax(g, "Odds shift with relations, your standing in Congress, and the era. Each objective's next step names what it needs.", x0, y + 64, cw, F_T, C_FAINT, 2, 12);
+        }
+
+        static void confirm(ResoluteDesk u, Game game, int c, int kind) {
+            String body = WK_DESC[kind] + "\n\n" + Wars.expect(game, c, kind) + "\n\nThis can't be taken back once the first shots are fired.";
+            u.modal(Wars.warName(game, c, kind) + "?", body, new String[]{"Stand down", "Give the order"}, new Runnable[]{null, () -> { say(Wars.start(game, c, kind)); SitRoom.tab = 6; }}, C_BAD);
+        }
+    }
 
     /** A callback that receives text, used by text fields. */
     interface TextAction {
@@ -18625,6 +18911,8 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             // what's already in the economy's tariff stays; tariffs set here are on top of it
             w.tariffAdd = 0;
             History.world(g, g.era.year, true);
+            Statecraft.setup(g);
+            Objectives.refresh(g);
         }
 
         static double totalTrade() { double t = 0; for (double v : CT_TRADE) t += v; return t + 900; }
@@ -18708,6 +18996,8 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             World w = g.world;
             Random r = g.rng;
             Econ e = g.econ;
+            Statecraft.week(g);
+            Objectives.refresh(g);
             if (g.era.year == 2025) for (String ch : CHANGES25) {
                 String[] t = ch.split("\\|");
                 if (Integer.parseInt(t[1]) != g.week) continue;
@@ -19013,6 +19303,747 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         }
     }
 
+    /** A goal the United States is pursuing with one country: its steps, how far it has come, and when it can be tried again. */
+    static final class Objective implements Serializable {
+        private static final long serialVersionUID = 1L;
+        public String id;                          // the row in ObjectiveData
+        public int country, step, status;          // status: 0 open, 1 achieved, 2 stalled for now
+        public int tryAfter, fails;                // the week the next attempt can be made; failures on this step
+    }
+
+    /** One objective, read from its row in ObjectiveTable. */
+    static final class ObjectiveDef {
+        public final String id, who, name, why, payoff;
+        public final int from, to;
+        /** Each step: label, odds kind, base odds, requirement, cost, effect on success, effect on failure. */
+        public final String[][] steps;
+
+        ObjectiveDef(String row) {
+            String[] t = row.split("\\|", 8);
+            id = t[0]; who = t[1]; from = Integer.parseInt(t[2]); to = Integer.parseInt(t[3]); name = t[4]; why = t[5]; payoff = t[6];
+            String[] st = t[7].split(";;");
+            steps = new String[st.length][];
+            for (int i = 0; i < st.length; i++) steps[i] = st[i].split("\\|", -1);
+        }
+
+        /** A template for any country of one alignment (*A adversary, *N neutral, *P partner, *T treaty ally), rather than one country. */
+        public boolean generic() { return who.startsWith("*"); }
+    }
+
+    /**
+     * What the United States can try to achieve with each country, era by era. Objectives are fictional plans
+     * about real situations; no real leader is quoted or blamed.
+     *
+     * <p>Each row: id|country (or *A, *N, *P, *T for any adversary, neutral, partner or treaty ally)|first year|last
+     * year|name|why it matters|what success brings|steps. Steps are separated by ";;", each one
+     * label|odds kind|base odds|requirement|cost when tried|effect on success|effect on failure. Odds kinds follow
+     * Diplo.p (d diplomacy, m military, i intelligence, j justice). A requirement is a tool setting such as
+     * milaid>=2, sanction<=1 or troops@PL>=5 (another country's, after @). Effects use Diplo.fx; {C} is the country.
+     */
+    static final class ObjectiveTable {
+        private ObjectiveTable() {
+        }
+
+        static final String[] ROWS = {
+                // ---- today's world ----
+                "cn_trade|CN|2017|2100|A trade deal with China|Farmers lost their biggest buyer in the trade war. A deal would bring the orders back and lower some prices.|farm=10 econ=0.2 prices=0.1 rel:CN=10 perf=1.5"
+                        + "|Open talks with Beijing|d|0.75||-|rel:CN=4|rel:CN=-3;;A tariff truce|d|0.55|tariff<=3|-|rel:CN=4 fin=0.3|rel:CN=-5 farm=-3;;Sign it at a summit|d|0.5||-|-|rel:CN=-6 for=-0.1",
+                "cn_fentanyl|CN|2017|2100|Stop the fentanyl chemicals|Most of the chemicals for illicit fentanyl come from China. A real crackdown would cut overdose deaths.|od=-8 crime=0.2 rel:CN=4"
+                        + "|Send an envoy|d|0.65||-|rel:CN=2|-;;Joint enforcement|j|0.5||-|-|rel:CN=-3;;Check that it's working|i|0.55||-|-|-",
+                "cn_hotline|CN|2017|2100|Military talks and a crisis hotline|An accident at sea could start a war nobody wants. Talks between the two militaries lower the risk.|deter=4 twt=-6 sec=0.2"
+                        + "|Call Beijing|d|0.7||-|-|-;;Military-to-military talks|m|0.55||-|twt=-2|twt=3",
+                "cn_taiwan|CN|2017|2100|Deter an attack on Taiwan|Keeping the peace in the Taiwan Strait means making an attack look too costly to try.|twt=-15 deter=10 pacific=6 rel:CN=-8"
+                        + "|Arm Taiwan|m|0.9|arms@TW>=1|def=0.02|deter=3|-;;Carriers through the Strait|m|0.75||def=0.01|deter=3 rel:CN=-5|twt=5;;Quiet assurances at a summit|d|0.45||-|-|twt=4",
+                "ru_ceasefire|RU|2022|2100|A ceasefire in Ukraine|The war has killed hundreds of thousands. A ceasefire that holds would calm Europe and the markets.|ukr=8 talks=40 nato=-2 perf=2 rally=1 fin=0.3"
+                        + "|Send a negotiator|d|0.55||-|talks=8|-;;Use the sanctions as leverage|d|0.5|sanction>=2|-|talks=10|rel:RU=-4;;Close the deal at a summit|d|0.4||-|-|talks=-10 for=-0.2",
+                "ru_arms|RU|2011|2100|Nuclear arms control|New START, the last treaty limiting the two arsenals, was due to run out in February 2026. Without limits, both sides can build up again.|deter=5 sec=0.3 rel:RU=6"
+                        + "|Call Moscow|d|0.6||-|-|-;;Negotiate new limits|d|0.45||-|-|rel:RU=-4",
+                "ru_detained|RU|2017|2100|Bring home detained Americans|Russia holds several Americans; their families want them home.|perf=1.2 rally=0.5"
+                        + "|Send an envoy|d|0.6||-|-|-;;A prisoner exchange|d|0.65||for=-0.05|-|rel:RU=-3",
+                "ua_hold|UA|2022|2100|Help Ukraine hold the line|Russian forces press on several fronts. Air defense and ammunition decide whether the lines hold.|ukr=12 nato=5 rel:UA=15 rel:RU=-10"
+                        + "|Keep the military aid coming|m|1|milaid>=2|-|ukr=2|-;;An air-defense package|m|0.8||def=0.03|ukr=4|-;;Train new brigades|m|0.8||def=0.01|ukr=3|-",
+                "ua_minerals|UA|2024|2100|A minerals and rebuilding deal|Ukraine has rare earths and a country to rebuild. A joint fund ties American business to its future.|rel:UA=8 econ=0.1 ukr=2"
+                        + "|Call Kyiv|d|0.8||-|-|-;;Sign the agreement|d|0.7||-|-|rel:UA=-4",
+                "ua_nato|UA|2022|2100|A path into NATO for Ukraine|Kyiv wants security guarantees. Moscow calls membership a red line.|nato=6 deter=4 rel:UA=20 rel:RU=-25 ukr=4"
+                        + "|Back it at a NATO summit|d|0.4||-|nato=2|nato=-3;;Senate ratification|d|0.35||-|-|-",
+                "gb_trade|GB|2017|2100|A trade agreement with Britain|A deal has been talked about since Britain left the European Union.|econ=0.15 rel:GB=10"
+                        + "|Open talks|d|0.7||-|-|-;;Close the deal|d|0.55||-|-|rel:GB=-3",
+                "gb_aukus|GB|2021|2100|Keep the AUKUS submarines on schedule|The deal gives Australia nuclear-powered submarines built with Britain and the US. Shipyards are the bottleneck.|pacific=6 deter=3 rel:GB=5 rel:AU=8"
+                        + "|Call London and Canberra|d|0.8||-|-|-;;Money for the shipyards|m|0.85||def=0.02|-|-",
+                "fr_europe|FR|2022|2100|Europe steps up for Ukraine|France wants Europe to carry more of the load. A joint plan would share the cost.|ukr=5 nato=4 rel:FR=6 def=-0.01"
+                        + "|A summit with Paris|d|0.65||-|-|-;;Agree on a joint aid package|d|0.6||-|ukr=1|rel:FR=-3",
+                "de_defense|DE|2017|2100|Germany spends more on defense|Germany is Europe's biggest economy. Its budget decides how strong NATO is in the East.|nato=6 deter=3 rel:DE=3"
+                        + "|Call Berlin|d|0.75||-|-|-;;Press at the NATO summit|d|0.55||-|nato=1|rel:DE=-5",
+                "it_china|IT|2017|2023|Italy leaves China's Belt and Road|Italy was the only G7 country in China's investment program.|rel:IT=5 rel:CN=-3 for=0.05"
+                        + "|Talks in Rome|d|0.75||-|-|-",
+                "ca_trade|CA|2017|2100|Settle the trade fight with Canada|Canada buys more American goods than any other country. Tariffs on both sides hurt the border states.|econ=0.15 rel:CA=12 st:MI=1 st:OH=0.5"
+                        + "|Call Ottawa|d|0.75||-|-|-;;Review the USMCA|d|0.55|tariff<=2|-|-|rel:CA=-6",
+                "ca_arctic|CA|2017|2100|An Arctic defense plan|Russian and Chinese ships are more active in the Arctic, and NORAD needs new radar.|sec=0.2 rel:CA=5 deter=2"
+                        + "|Talks with Canada|d|0.65||def=0.01|-|-",
+                "mx_cartels|MX|2017|2100|Take on the cartels|The cartels move fentanyl and people across the border. Mexico's help is the difference.|cartel=-12 od=-10 imm=0.2 crime=0.2"
+                        + "|Send an envoy|d|0.65||-|rel:MX=2|-;;A joint task force|j|0.55||-|cartel=-3|rel:MX=-4;;Extradite cartel leaders|j|0.5||-|-|cartel=3",
+                "mx_migrants|MX|2017|2100|Mexico holds migrants at its southern border|Most migrants reach the US through Mexico, and its own enforcement changes the numbers.|migr=-12 imm=0.3 rel:MX=-2"
+                        + "|Call Mexico City|d|0.7||-|-|-;;Aid for its border|d|0.65|aid@MX>=1|-|-|-",
+                "jp_defense|JP|2017|2100|Japan doubles its defense budget|Japan has the region's most capable military after China's. A bigger budget deters Beijing and Pyongyang.|pacific=6 deter=4 rel:JP=4"
+                        + "|Call Tokyo|d|0.8||-|-|-;;A summit in Tokyo|d|0.65||-|-|-",
+                "jp_chips|JP|2021|2100|A chip alliance with Japan|Japan makes the materials and machines chips depend on. Together the two can tighten the controls on China.|tech=0.2 econ=0.05 rel:JP=5 rel:CN=-4"
+                        + "|Talks on export controls|d|0.65||-|-|-",
+                "kr_cost|KR|2017|2100|Seoul pays more for American troops|About 28,000 American troops are based in South Korea. A new deal on costs saves money and strains ties.|def=-0.01 rel:KR=-4 pacific=1"
+                        + "|Negotiate the cost-sharing deal|d|0.6||-|-|rel:KR=-6",
+                "kp_freeze|KP|2017|2100|A freeze on North Korea's tests|North Korea's missile and nuclear tests unsettle the region. A freeze would be the first step toward talks on its arsenal.|nk=-20 deter=6 perf=2 pacific=2"
+                        + "|Send an envoy|d|0.35||-|nk=-3|nk=4;;A summit with Pyongyang|d|0.35||-|-|nk=5 for=-0.2;;Sanctions relief for a freeze|d|0.45|sanction<=2|-|-|nk=4",
+                "kp_remains|KP|2017|2100|Bring home the remains of fallen soldiers|About 5,300 Americans missing from the Korean War are believed to lie in the North.|perf=0.6 g25=2"
+                        + "|Talks through the UN Command|d|0.55||-|-|-",
+                "tw_arms|TW|2017|2100|Arm Taiwan to deter an invasion|Taiwan needs missiles, mines and drones that make an invasion too costly.|twt=-8 deter=6 rel:CN=-12 rel:TW=10"
+                        + "|Approve an arms package|m|1|arms@TW>=1|-|-|-;;Send trainers|m|0.8||-|deter=2 rel:CN=-4|-",
+                "tw_trade|TW|2020|2100|A trade agreement with Taiwan|Taiwan makes most of the world's advanced chips. Beijing objects to any agreement that treats it as a country.|econ=0.05 tech=0.1 rel:CN=-8 rel:TW=6"
+                        + "|Open talks|d|0.7||-|-|-;;Sign it|d|0.6||-|-|rel:TW=-3",
+                "in_defense|IN|2017|2100|A defense partnership with India|India is the largest democracy and a counterweight to China.|pacific=5 rel:IN=12"
+                        + "|A state visit|d|0.65||-|-|-;;Jet engines and drones for India|m|0.75|arms@IN>=1|-|-|-",
+                "in_trade|IN|2017|2100|A trade deal with India|India's tariffs are among the world's highest. A deal would open its market.|econ=0.1 farm=4 rel:IN=8"
+                        + "|Talks in New Delhi|d|0.6||-|-|-;;Close the deal|d|0.5||-|-|rel:IN=-4",
+                "pk_nukes|PK|2001|2100|Keep Pakistan's nuclear weapons secure|Pakistan's arsenal is growing, and militants operate near its border.|terror=-6 sec=0.2 rel:PK=4"
+                        + "|Intelligence cooperation|i|0.6||-|-|-;;Security aid|d|0.7|aid@PK>=1|-|-|-",
+                "il_gaza|IL|2023|2100|A ceasefire in Gaza and the hostages home|The war in Gaza has divided Americans and the region. A deal that brings the hostages home would end it.|gaza=-20 rally=1 perf=1.5 g17=1 g18=3 redsea=-6"
+                        + "|Send an envoy|d|0.5||-|gaza=-3|-;;Press both sides|d|0.5||-|-|rel:IL=-5;;A deal through Qatar and Egypt|d|0.5||-|-|gaza=4",
+                "il_saudi|IL|2017|2100|Normal relations between Israel and Saudi Arabia|A deal would remake the Middle East. Riyadh wants a defense pact and a path to a Palestinian state.|proxy=-10 iran=-5 for=0.4 perf=2 rel:SA=10 rel:IL=8"
+                        + "|Send an envoy|d|0.45||-|-|-;;A summit with both|d|0.4||-|-|for=-0.1;;Ratify a defense pact with Riyadh|d|0.35||-|-|-",
+                "ir_deal|IR|2017|2100|A new nuclear deal with Iran|Iran is closer than ever to a bomb. A deal trades sanctions relief for limits and inspections.|iran=-25 oil=-6 for=0.3 rel:IR=20"
+                        + "|Indirect talks|d|0.45||-|iran=-3|iran=3;;Offer sanctions relief|d|0.5|sanction<=2|-|-|rel:IR=-5;;Sign the agreement|d|0.45||-|-|iran=5",
+                "ir_proxies|IR|2017|2100|Stop the attacks on American troops|Iran-backed militias fire rockets and drones at American bases in Iraq and Syria.|proxy=-15 sec=0.3 rel:IR=-5"
+                        + "|A warning through intermediaries|d|0.55||-|-|-;;Strike the militias|m|0.7||def=0.005|proxy=-4 rel:IR=-6|proxy=5",
+                "sa_oil|SA|2017|2100|Saudi Arabia pumps more oil|The kingdom is the world's swing producer. More barrels mean lower gas prices.|oil=-8 prices=0.2 rel:SA=4"
+                        + "|Call Riyadh|d|0.6||-|-|-;;A summit in the Gulf|d|0.55||-|-|-",
+                "sa_pact|SA|2017|2100|A defense pact with Saudi Arabia|Riyadh wants a treaty, nuclear help and more arms; critics point to its human-rights record.|iran=-5 deter=3 rel:SA=15 rights=-0.2"
+                        + "|Negotiate|d|0.55||-|-|-;;Approve a major arms package|m|0.85|arms@SA>=2|-|-|-;;Senate ratification|d|0.35||-|-|-",
+                "tr_jets|TR|2019|2100|Bring Turkey back into the F-35 program|Turkey bought Russian air defenses and was expelled from the program. A deal would mend a NATO rift.|nato=5 rel:TR=10 rel:RU=-4"
+                        + "|Talks in Ankara|d|0.45||-|-|rel:TR=-4;;A jet deal|m|0.6|arms@TR>=1|-|-|-",
+                "eg_gaza|EG|2017|2100|Keep aid flowing into Gaza through Egypt|The crossing at Rafah is the main route for food and medicine into Gaza.|gaza=-6 rel:EG=6 g18=1"
+                        + "|Call Cairo|d|0.75||-|-|-;;Aid for Egypt's economy|d|0.8|aid@EG>=1|-|-|-",
+                "qa_hostages|QA|2017|2100|Qatar brokers hostage releases|Qatar talks to groups America won't. It has brokered several releases.|gaza=-4 perf=0.8 rel:QA=4"
+                        + "|Call Doha|d|0.75||-|-|-",
+                "iq_militias|IQ|2017|2100|Iraq reins in the militias|Iran-aligned militias are part of Iraq's security forces. Baghdad says it wants them under control.|proxy=-10 rel:IQ=8 terror=-3"
+                        + "|Security aid|d|0.7|aid@IQ>=1|-|-|-;;Advisers for the Iraqi army|m|0.75|troops@IQ>=2|-|-|-",
+                "iq_exit|IQ|2021|2100|Leave Iraq on good terms|Baghdad has asked the coalition to leave. A negotiated exit keeps ties and the fight against ISIS.|def=-0.005 rel:IQ=6 proxy=-3"
+                        + "|Talks in Baghdad|d|0.65||-|-|-",
+                "sy_new|SY|2025|2100|Bring Syria's new government in from the cold|The fall of the old regime in late 2024 opened a chance to end sanctions and the refugee crisis.|rel:SY=20 migr=-6 terror=-3"
+                        + "|Lift the sanctions|d|1|sanction<=1|-|-|-;;Restore relations|d|0.65||-|-|-",
+                "ve_vote|VE|2017|2100|Free and fair elections in Venezuela|Millions have fled Venezuela. A real election could bring many home and its oil back to market.|rel:VE=30 migr=-10 oil=-3 g14=4"
+                        + "|Tighten the sanctions|d|1|sanction>=2|-|-|-;;Secret talks|d|0.3||-|-|rel:VE=-5;;A transition deal|d|0.3||-|-|migr=4",
+                "ve_oil|VE|2017|2100|Licenses for American oil companies|Venezuela has the world's largest proven oil reserves. Licenses let companies pump and export.|oil=-3 rel:VE=8 g14=-1"
+                        + "|Talks on licenses|d|0.6||-|-|-",
+                "cu_normal|CU|2015|2100|Normal relations with Cuba|The embargo has lasted since 1962. Ending it needs Congress; reopening an embassy does not.|rel:CU=30 for=0.2 g14=-5 farm=3"
+                        + "|Full diplomatic ties|d|1|ties>=2|-|-|-;;Ease the embargo|d|0.5|sanction<=2|-|-|g14=-1",
+                "cu_prisoners|CU|2017|2100|Freedom for Cuba's political prisoners|Hundreds remain in prison after the protests of 2021.|rights=0.2 g14=2 rel:CU=4"
+                        + "|Talks through the Vatican|d|0.45||-|-|-",
+                "pa_canal|PA|2017|2100|Secure the Panama Canal|A Hong Kong company runs ports at both ends of the canal. A sale to American investors would settle worries about China.|sec=0.2 econ=0.05 rel:PA=-2 rel:CN=-4"
+                        + "|Call Panama City|d|0.7||-|-|-;;Back an American buyer for the ports|d|0.6||-|-|rel:PA=-3",
+                "pl_base|PL|2017|2100|A permanent American base in Poland|Warsaw has offered to pay for one. Moscow sees it as a threat.|nato=5 deter=4 rel:PL=12 rel:RU=-8"
+                        + "|Talks in Warsaw|d|0.75||-|-|-;;Station a brigade|m|1|troops>=5|-|-|-",
+                "dk_greenland|DK|2019|2100|A security agreement for Greenland|Greenland sits on the shortest route for missiles between Russia and America, and on rare earths.|sec=0.2 deter=2 rel:DK=4"
+                        + "|Talks with Copenhagen and Nuuk|d|0.55||-|-|rel:DK=-5;;Expand the base at Pituffik|m|0.85|troops>=2|def=0.005|-|-",
+                "dk_buy|DK|2019|2100|Buy Greenland|Denmark and Greenland say it is not for sale. America tried to buy it in 1946.|perf=1 sec=0.3 rel:DK=-10"
+                        + "|Make an offer|d|0.04||-|-|rel:DK=-20 perf=-0.8 for=-0.3",
+                "au_forces|AU|2017|2100|More American forces in Australia|Rotations through Darwin put forces closer to the South China Sea.|pacific=6 rel:AU=5 rel:CN=-4"
+                        + "|Talks in Canberra|d|0.8||-|-|-;;Rotate more forces through|m|1|troops>=2|-|-|-",
+                "ph_sea|PH|2017|2100|Back the Philippines in the South China Sea|Chinese coast guard ships ram and spray Filipino boats near disputed reefs.|pacific=5 rel:CN=-8 rel:PH=10"
+                        + "|Joint patrols|m|0.8|troops>=2|-|-|-;;Reaffirm the defense treaty|d|0.85||-|-|-",
+                "vn_partner|VN|2017|2100|A strategic partnership with Vietnam|The old enemy now worries about China most.|pacific=4 econ=0.05 rel:VN=10 rel:CN=-3"
+                        + "|A state visit|d|0.7||-|-|-;;A trade and security deal|d|0.6||-|-|-",
+                "id_jets|ID|2017|2100|Indonesia buys American jets|The largest Muslim-majority country buys arms from everyone.|pacific=3 econ=0.05 rel:ID=6"
+                        + "|An arms package|m|0.8|arms>=1|-|-|-",
+                "ng_terror|NG|2014|2100|Help Nigeria fight Boko Haram|The group has kidnapped thousands, many of them schoolchildren.|terror=-4 rel:NG=8"
+                        + "|Military aid|m|1|milaid>=1|-|-|-;;Advisers and intelligence|i|0.6||-|-|-",
+                "za_closer|ZA|2017|2100|Bring South Africa closer|South Africa sits with China and Russia in BRICS.|rel:ZA=12 for=0.1"
+                        + "|Aid and investment|d|0.7|aid>=1|-|-|-;;A summit|d|0.55||-|-|-",
+                "br_amazon|BR|2017|2100|A deal to protect the Amazon|Deforestation has slowed; Brazil wants money to keep it down.|energy=0.15 rel:BR=8"
+                        + "|A conservation fund|d|0.7|aid>=1|-|-|-;;A summit|d|0.6||-|-|-",
+                "ar_swap|AR|2018|2100|A lifeline for Argentina's economy|Argentina has defaulted nine times. A Treasury swap line backs its reforms.|rel:AR=12 fin=0.05"
+                        + "|A swap line from the Treasury|d|0.8||def=0.005|-|-",
+                "hu_drift|HU|2017|2100|Keep Hungary anchored in the West|Hungary has blocked European aid to Ukraine and welcomed Chinese investment.|nato=3 rel:HU=6 rel:RU=-3"
+                        + "|Talks in Budapest|d|0.55||-|-|-",
+                "fi_nato|FI|2023|2100|Bring Finland into NATO's plans|Finland joined NATO in 2023 and has a long border with Russia.|nato=4 deter=3 rel:FI=6"
+                        + "|Joint exercises|m|0.85|troops>=2|-|-|-",
+                "jo_stable|JO|2017|2100|Keep Jordan stable|Jordan hosts more than a million refugees and borders Israel, Syria and Iraq.|terror=-2 migr=-3 rel:JO=6"
+                        + "|Aid for Jordan|d|0.85|aid>=1|-|-|-",
+                "ae_chips|AE|2023|2100|AI chips for the Emirates, with safeguards|The UAE is building AI data centers and wants American chips; Washington wants Chinese technology kept out.|tech=0.1 econ=0.05 rel:AE=8 rel:CN=-3"
+                        + "|Negotiate safeguards|d|0.65||-|-|-",
+                // ---- history ----
+                "ru_recognize|RU|1933|1933|Recognize the Soviet Union|America has refused to recognize the Soviet government since 1917. Trade, and a common front against Japan, are on the table.|rel:RU=25 farm=2 for=0.1"
+                        + "|Talks with Moscow's envoy|d|0.75||-|-|-;;Open an embassy|d|1|ties>=2|-|-|-",
+                "gb_fight|GB|1940|1945|Keep Britain in the fight|Britain stands nearly alone against Germany and is running out of dollars to buy arms.|nato=6 rel:GB=20 sec=0.3"
+                        + "|Military aid|m|1|milaid>=2|-|-|-;;Destroyers for bases|m|0.8||def=0.01|-|-",
+                "mx_neighbor|MX|1933|1945|The Good Neighbor|No more Marines in Latin America: respect and trade instead.|rel:MX=15 rel:BR=8 rel:AR=6 for=0.1"
+                        + "|A state visit|d|0.75||-|-|-;;A trade agreement|d|0.65||-|-|-",
+                "jp_war|JP|1937|1941|Keep Japan out of a wider war|Japan's war in China is spreading. An oil embargo would bite, and might push Tokyo to strike.|rel:JP=10 sec=0.3"
+                        + "|Talks in Washington|d|0.35||-|-|-;;An oil embargo as leverage|d|0.3|sanction>=2|-|-|rel:JP=-15",
+                "ru_hotline|RU|1957|1962|A hotline to the Kremlin|A misunderstanding could start a nuclear war. A direct line could stop one.|deter=4 sec=0.2"
+                        + "|Talks|d|0.7||-|-|-",
+                "ru_salt|RU|1965|1989|An arms control treaty with the Soviets|Both sides have thousands of warheads aimed at each other. A treaty would cap the race.|deter=6 sec=0.4 rel:RU=10 def=-0.01"
+                        + "|Talks in Geneva|d|0.55||-|-|-;;A summit|d|0.5||-|-|rel:RU=-4;;Senate ratification|d|0.5||-|-|-",
+                "ru_coldwar|RU|1985|1991|An end to the Cold War|Moscow has a reformer in charge and an economy in trouble.|deter=8 rel:RU=25 nato=4 perf=2 def=-0.02"
+                        + "|A summit|d|0.5||-|-|-;;Deep arms cuts|d|0.5||-|-|-;;Help for reform|d|0.6|aid>=1|-|-|-",
+                "cn_open|CN|1969|1978|Open relations with China|The two countries have not spoken officially since 1949, and China and the Soviets are at odds.|rel:CN=30 rel:RU=-5 for=0.4 perf=1.5"
+                        + "|Secret contacts through Pakistan|i|0.6||-|-|-;;A presidential visit to Beijing|d|0.6||-|-|-;;Full diplomatic relations|d|1|ties>=2|-|-|-",
+                "eg_peace|EG|1973|1981|Peace between Egypt and Israel|Two wars in seven years. Cairo is ready to talk; the price is the Sinai.|gaza=-10 for=0.5 perf=2 rel:EG=20 rel:IL=5"
+                        + "|Shuttle diplomacy|d|0.5||-|-|-;;A summit at Camp David|d|0.45||-|-|for=-0.2;;Aid to both sides|d|0.8|aid>=2|def=0.01|-|-",
+                "ir_hostages|IR|1979|1981|Bring the hostages home|Fifty-two Americans are held at the embassy in Tehran.|perf=3 rally=2 rel:IR=5"
+                        + "|Talks through Algeria|d|0.4||-|-|-;;Unfreeze Iran's assets|d|0.6||-|-|-",
+                "de_berlin|DE|1949|1989|Keep West Berlin free|The city is an island inside East Germany, and Moscow keeps testing the West.|nato=6 deter=4 rel:DE=10"
+                        + "|Keep troops in Germany|m|1|troops>=20|-|-|-;;A visit to Berlin|d|0.8||-|-|-",
+                "jp_cars|JP|1981|1993|A deal on Japanese car and chip exports|Japan's exports are booming and American factories are closing.|jobs=0.2 st:MI=1.5 rel:JP=-5"
+                        + "|Talks in Tokyo|d|0.6||-|-|-;;Limits on exports|d|0.55||-|-|rel:JP=-5",
+                "vn_normal|VN|1985|2000|Normal relations with Vietnam|Twenty years after the war, Hanoi wants trade and families want answers about the missing.|rel:VN=25 g25=1 econ=0.02"
+                        + "|Account for the missing|d|0.65||-|-|-;;Lift the embargo|d|0.7|sanction<=1|-|-|-;;Full diplomatic ties|d|1|ties>=2|-|-|-",
+                // ---- any country, by where it stands ----
+                "gen_ease|*A|1933|2100|Ease tensions with {C}|Talks lower the odds that a crisis turns into a war.|rel:{C}=15 deter=1"
+                        + "|Open a channel|d|0.6||-|-|-;;A meeting of foreign ministers|d|0.5||-|-|rel:{C}=-4",
+                "gen_contain|*A|1933|2100|Contain {C}|Its neighbors worry about its reach. Standing with them keeps its influence from spreading.|deter=3 for=0.05 rel:{C}=-3"
+                        + "|Rally the neighbors|d|0.6||-|-|-;;Sanctions with allies|d|0.55|sanction>=1|-|rel:{C}=-4|-",
+                "gen_prisoners|*A|1933|2100|Bring home Americans held in {C}|Americans are held there on charges their families call political.|perf=1.5 rally=0.5 rel:{C}=3"
+                        + "|Quiet talks through a third country|d|0.5||-|-|-;;A prisoner exchange|j|0.6||-|-|for=-0.05",
+                "gen_closer|*N|1933|2100|Bring {C} closer|A neutral country can be won over with attention and help.|rel:{C}=15 for=0.05"
+                        + "|A state visit|d|0.7||-|-|-;;Aid and investment|d|0.75|aid>=1|-|-|-",
+                "gen_contracts|*N|1933|2100|Win the contracts in {C}|American firms are competing with rivals to build its ports, power plants and networks.|econ=0.03 jobs=0.05 rel:{C}=6"
+                        + "|A trade mission|d|0.7||-|-|-;;Loans for the projects|d|0.6|aid>=1|-|-|-",
+                "gen_vote|*N|1945|2100|{C}'s vote at the United Nations|Its vote can swing resolutions that matter to Washington.|for=0.1 rel:{C}=5"
+                        + "|Lobby its foreign minister|d|0.65||-|-|-",
+                "gen_trade|*P|1933|2100|A trade agreement with {C}|Lower tariffs on both sides.|econ=0.05 rel:{C}=10"
+                        + "|Talks|d|0.7||-|-|-;;Sign the agreement|d|0.6||-|-|-",
+                "gen_security|*P|1933|2100|Closer security ties with {C}|Joint exercises and shared intelligence make a partner more useful in a crisis.|deter=2 rel:{C}=8"
+                        + "|Joint exercises|m|0.8||def=0.005|-|-;;Share intelligence|i|0.7||-|-|-",
+                "gen_burden|*T|1947|2100|{C} carries more of the burden|Allies should pay more for their own defense.|def=-0.005 nato=1 rel:{C}=-2"
+                        + "|Press at a summit|d|0.6||-|-|rel:{C}=-4",
+                "gen_exercise|*T|1933|2100|Joint exercises with {C}|Drills keep allied forces able to fight together.|deter=2 nato=1 rel:{C}=5"
+                        + "|Plan the exercises|m|0.85||def=0.005|-|-;;Hold them|m|0.8||-|-|-",
+                "gen_reaffirm|*T|1933|2100|Reaffirm the alliance with {C}|A joint statement reminds friends and rivals alike that the commitment holds.|rel:{C}=8 deter=1"
+                        + "|A summit statement|d|0.8||-|-|-"};
+    }
+
+    /**
+     * Objectives: concrete goals with each country, each a few steps long. A step is tried from the Situation Room;
+     * it may need a tool in place first (military aid, sanctions, troops), costs something when tried, and works or
+     * fails on odds set by the step, the relationship and the people doing it. Three failures stall an objective for
+     * half a year. Every country has two to four objectives in its era.
+     */
+    static final class Objectives {
+        private static List<ObjectiveDef> defs;
+
+        private Objectives() {
+        }
+
+        public static List<ObjectiveDef> defs() {
+            if (defs == null) {
+                List<ObjectiveDef> l = new ArrayList<ObjectiveDef>();
+                for (String row : ObjectiveTable.ROWS) l.add(new ObjectiveDef(row));
+                defs = l;
+            }
+            return defs;
+        }
+
+        public static ObjectiveDef def(Objective o) {
+            String id = o.id.contains(":") ? o.id.substring(0, o.id.indexOf(':')) : o.id;
+            for (ObjectiveDef d : defs()) if (d.id.equals(id)) return d;
+            return null;
+        }
+
+        static boolean has(World w, String id) {
+            for (Objective o : w.objectives) if (o.id.equals(id)) return true;
+            return false;
+        }
+
+        /** Once a year: objectives whose time has come are added; stalled ones reopen; every country gets at least two. */
+        public static void refresh(Game g) {
+            World w = g.world;
+            int y = yearNow(g);
+            if (w.objectivesYear == y) return;
+            w.objectivesYear = y;
+            for (ObjectiveDef d : defs()) {
+                if (d.generic() || y < d.from || y > d.to) continue;
+                int c = ctIdx(d.who);
+                if (c < 0 || gone(g, c) || has(w, d.id)) continue;
+                add(w, d.id, c);
+            }
+            for (int c = 0; c < NC; c++) {
+                if (gone(g, c)) continue;
+                int n = 0;
+                for (Objective o : w.objectives) if (o.country == c && inEra(g, o)) n++;
+                if (n >= 2) continue;
+                String code = "*" + "NPTA".charAt(align(g, c));
+                List<ObjectiveDef> fit = new ArrayList<ObjectiveDef>();
+                for (ObjectiveDef d : defs()) if (d.who.equals(code) && y >= d.from && y <= d.to) fit.add(d);
+                for (int i = 0; i < fit.size() && n < 2; i++) {         // each country starts at a different template
+                    String id = fit.get((c + i) % fit.size()).id + ":" + CT_ID[c];
+                    if (!has(w, id)) { add(w, id, c); n++; }
+                }
+            }
+            for (Objective o : w.objectives) if (o.status == 2 && g.week >= o.tryAfter) { o.status = 0; o.fails = 0; }
+        }
+
+        static void add(World w, String id, int c) {
+            Objective o = new Objective();
+            o.id = id; o.country = c;
+            w.objectives.add(o);
+        }
+
+        static boolean inEra(Game g, Objective o) {
+            ObjectiveDef d = def(o);
+            int y = yearNow(g);
+            return d != null && y >= d.from && y <= d.to;
+        }
+
+        /** A country's objectives for this era. */
+        public static List<Objective> of(Game g, int c) {
+            List<Objective> l = new ArrayList<Objective>();
+            for (Objective o : g.world.objectives) if (o.country == c && (inEra(g, o) || o.status == 1)) l.add(o);
+            return l;
+        }
+
+        public static String name(Game g, Objective o) { return def(o).name.replace("{C}", cnameIn(g, o.country)); }
+
+        public static String why(Game g, Objective o) { return def(o).why.replace("{C}", cnameIn(g, o.country)); }
+
+        public static String[] step(Objective o) { ObjectiveDef d = def(o); return o.step < d.steps.length ? d.steps[o.step] : null; }
+
+        /** Why the next step can't be tried now, or null. */
+        public static String cannot(Game g, Objective o) {
+            if (o.status == 1) return "Achieved.";
+            if (o.status == 2) return "Stalled after three failures; it can be tried again after " + dateStr(o.tryAfter * 7) + ".";
+            if (g.week < o.tryAfter) return "Give it time: the next try can come after " + dateStr(o.tryAfter * 7) + ".";
+            if (atWar(g, o.country)) return "Not while the two countries are at war.";
+            String[] s = step(o);
+            return s == null ? "Achieved." : unmet(g, o.country, s[3]);
+        }
+
+        /** The odds the next step works, after the relationship and the people working on it. */
+        public static double odds(Game g, Objective o) {
+            String[] s = step(o);
+            double base = Double.parseDouble(s[2]);
+            if (base >= 1) return 1;
+            return Diplo.p(g, s[1], base + g.world.rel[o.country] / 500);
+        }
+
+        /** Tries the next step, and says what happened. */
+        public static String attempt(Game g, Objective o) {
+            String no = cannot(g, o);
+            if (no != null) return no;
+            String[] s = step(o);
+            String code = CT_ID[o.country];
+            fx(g, s[4], code);
+            boolean ok = g.rng.nextDouble() < odds(g, o);
+            if (!ok) {
+                fx(g, s[6], code);
+                o.fails++;
+                o.tryAfter = g.week + 4;
+                if (o.fails >= 3) { o.status = 2; o.tryAfter = g.week + 26; }
+                g.log(NK_WORLD, name(g, o) + ": " + s[0].toLowerCase() + " fails", null, 0.9);
+                return s[0] + " didn't work." + (o.status == 2 ? " After three failures this is stalled for six months." : " You can try again in a month.");
+            }
+            fx(g, s[5], code);
+            o.step++;
+            o.fails = 0;
+            o.tryAfter = g.week + 1;
+            if (o.step < def(o).steps.length) return s[0] + ": it worked. Next: " + def(o).steps[o.step][0].toLowerCase() + ".";
+            o.status = 1;
+            fx(g, def(o).payoff, code);
+            g.world.done++;
+            g.world.deals++;
+            g.world.record.add(dateStr(g.day()) + ": " + name(g, o));
+            g.log(NK_GOOD, "Achieved: " + name(g, o).toLowerCase(), why(g, o), 2.2);
+            return "Achieved: " + name(g, o) + ".";
+        }
+
+        static void fx(Game g, String fx, String code) {
+            if (fx == null || fx.isEmpty() || fx.equals("-")) return;
+            Diplo.fx(g, fx.replace("{C}", code));
+        }
+
+        // ---- requirements: the tools a step needs in place ----
+
+        /** What a requirement such as "milaid>=2" or "troops@PL>=5" still needs, or null if it's met. */
+        static String unmet(Game g, int c, String req) {
+            if (req == null || req.isEmpty()) return null;
+            int op = req.indexOf(">=") >= 0 ? req.indexOf(">=") : req.indexOf("<=");
+            boolean atLeast = req.indexOf(">=") >= 0;
+            String key = req.substring(0, op);
+            double v = Double.parseDouble(req.substring(op + 2));
+            int at = key.indexOf('@');
+            if (at >= 0) { c = ctIdx(key.substring(at + 1)); key = key.substring(0, at); }
+            if (c < 0) return null;
+            double now = value(g, c, key);
+            if (atLeast ? now >= v : now <= v) return null;
+            return "First: " + describe(g, c, key, v, atLeast) + ".";
+        }
+
+        static double value(Game g, int c, String key) {
+            World w = g.world;
+            switch (key) {
+                case "milaid": return w.milAid[c];
+                case "arms": return w.arms[c];
+                case "aid": return w.aid[c];
+                case "sanction": return w.sanction[c];
+                case "troops": return w.troopsIn[c];
+                case "ties": return w.ties[c];
+                case "tariff": return w.tariff[c];
+                default: return w.rel[c];
+            }
+        }
+
+        static String describe(Game g, int c, String key, double v, boolean atLeast) {
+            String n = cnameIn(g, c);
+            switch (key) {
+                case "milaid": return "military aid to " + n + " at " + MIL_AID[(int) v].toLowerCase() + " or more";
+                case "arms": return v >= 2 ? "a major arms package for " + n : "arms sales to " + n + " approved";
+                case "aid": return "foreign aid to " + n + (v >= 2 ? " at a substantial level" : "");
+                case "sanction": return atLeast ? "sanctions on " + n + " at level " + (int) v + " or more" : "sanctions on " + n + " eased to level " + (int) v + " or less";
+                case "troops": return "at least " + Math.round(v * 1000) + " American troops in " + n;
+                case "ties": return "full diplomatic relations with " + n;
+                case "tariff": return "tariffs on " + n + " brought down";
+                default: return "better relations with " + n;
+            }
+        }
+    }
+
+    /**
+     * The tools of foreign policy, country by country: military aid, arms sales, troops and bases, peacekeeping,
+     * diplomatic ties, trade agreements, defense treaties and covert action. Each changes relations, the hot spots,
+     * the budget and the politics at home; treaties and trade deals need Congress.
+     */
+    static final class Statecraft {
+        private Statecraft() {
+        }
+
+        /** Diplomatic ties that were broken off in history: country, first year without, last year without. */
+        static final String[] NO_TIES = {"CU:1961:2014", "IR:1980:2100", "KP:1948:2100", "CN:1949:1978", "VN:1975:1994", "SY:2012:2024", "VE:2019:2100", "IQ:1991:2003", "RU:1933:1933"};
+        /** American troops based abroad at the start of each era (thousands): "from|to|CC=n ...". */
+        static final String[] BASES = {"1946|1949|DE=100 JP=115 GB=20 IT=15", "1950|1989|DE=250 JP=46 GB=25 IT=12 KR=40 TR=10 PH=15",
+                "1990|2008|DE=70 JP=45 GB=12 IT=12 KR=37 TR=2 SA=5", "2009|2021|DE=35 JP=54 GB=10 IT=12 KR=28 TR=2 QA=8 AE=3 PL=4 AU=1",
+                "2022|2100|DE=35 JP=54 GB=10 IT=12 KR=28 TR=2 QA=10 AE=3.5 SA=2.7 PL=10 IQ=2.5 SY=2 AU=2 PH=0.5 DK=0.2 FI=0.5"};
+        /** Military aid and arms in the modern era: "from|CC=aid:arms ...". */
+        static final String[] SUPPORT = {"2022|UA=3:1 IL=3:2 TW=1:1 EG=2:1 JO=1:1 SA=0:1 AE=0:1 PL=1:1", "2001|IL=3:2 EG=2:1 JO=1:1 SA=0:1 AE=0:1 TW=0:1",
+                "1980|IL=3:2 EG=2:1 SA=0:1 PK=1:0", "1948|GB=1:1 TR=1:1"};
+
+        // ---- the start of a game ----
+
+        /** For a save from before statecraft: empty tools, ties and bases as the era had them, and the year's objectives. */
+        public static void upgrade(Game g) {
+            World w = g.world;
+            w.milAid = new int[NC]; w.arms = new int[NC]; w.ties = new int[NC]; w.pact = new int[NC]; w.peace = new int[NC]; w.cvProg = new int[NC]; w.cvDue = new int[NC];
+            w.troopsIn = new double[NC]; w.unrest = new double[NC]; w.toppled = new boolean[NC]; w.authorized = new int[NC];
+            w.refugees = 20;
+            w.objectives = new java.util.ArrayList<Objective>();
+            w.objectivesYear = -1;
+            setup(g);
+            Objectives.refresh(g);
+        }
+
+        public static void setup(Game g) {
+            World w = g.world;
+            int y = g.era.year;
+            for (int c = 0; c < NC; c++) w.ties[c] = 2;
+            for (String s : NO_TIES) {
+                String[] t = s.split(":");
+                int c = ctIdx(t[0]);
+                if (c >= 0 && y >= Integer.parseInt(t[1]) && y <= Integer.parseInt(t[2])) w.ties[c] = 0;
+            }
+            if (y >= 1979) w.ties[CC_TW] = 1;                              // unofficial ties since the switch to Beijing
+            for (String s : BASES) {
+                String[] t = s.split("\\|");
+                if (y < Integer.parseInt(t[0]) || y > Integer.parseInt(t[1])) continue;
+                for (String kv : t[2].split(" ")) { int c = ctIdx(kv.split("=")[0]); if (c >= 0) w.troopsIn[c] = Double.parseDouble(kv.split("=")[1]); }
+            }
+            for (String s : SUPPORT) {
+                String[] t = s.split("\\|");
+                if (y < Integer.parseInt(t[0])) continue;
+                for (String kv : t[1].split(" ")) {
+                    int c = ctIdx(kv.split("=")[0]);
+                    String[] v = kv.split("=")[1].split(":");
+                    if (c >= 0) { w.milAid[c] = Integer.parseInt(v[0]); w.arms[c] = Integer.parseInt(v[1]); }
+                }
+                break;
+            }
+            for (int c = 0; c < NC; c++) w.unrest[c] = c == CC_SY && y >= 2011 && y < 2025 ? 70 : c == CC_IQ && y >= 2004 ? 45 : c == CC_VE && y >= 2017 ? 40 : c == CC_NG && y >= 2010 ? 35 : 15;
+        }
+
+        /** The troop step nearest a country's current level. */
+        public static int troopStep(World w, int c) {
+            int best = 0;
+            for (int i = 0; i < TROOP_STEP.length; i++) if (Math.abs(TROOP_STEP[i] - w.troopsIn[c]) < Math.abs(TROOP_STEP[best] - w.troopsIn[c])) best = i;
+            return best;
+        }
+
+        /** Countries a country's enemies care about: Russia for Ukraine and Europe's East, China for Taiwan, the Philippines and Japan, Iran for Israel and the Gulf. */
+        static int rivalOf(int c) {
+            if (c == CC_UA || c == CC_PL || c == CC_FI) return CC_RU;
+            if (c == CC_TW || c == CC_PH || c == CC_JP || c == CC_VN || c == CC_IN) return CC_CN;
+            if (c == CC_IL || c == CC_SA || c == CC_AE || c == CC_IQ) return CC_IR;
+            if (c == CC_KR) return CC_KP;
+            return -1;
+        }
+
+        static boolean autocracy(int c) { return c == CC_SA || c == CC_AE || c == CC_QA || c == CC_EG || c == CC_VN || c == CC_JO; }
+
+        static void rel(World w, int c, double v) { if (c >= 0) w.rel[c] = clamp(w.rel[c] + v, -100, 100); }
+
+        // ---- the tools ----
+
+        public static String setMilAid(Game g, int c, int level) {
+            World w = g.world;
+            if (atWar(g, c)) return "Not to a country the United States is fighting.";
+            int d = level - w.milAid[c];
+            if (d == 0) return null;
+            w.milAid[c] = level;
+            g.econ.fiscal += d * 0.012;
+            rel(w, c, 6 * d);
+            rel(w, rivalOf(c), -4 * d);
+            if (d > 0 && autocracy(c)) g.issueAdj[PI_RIGHTS] = clamp(g.issueAdj[PI_RIGHTS] - 0.03 * d, -1.5, 1.5);
+            g.log(NK_WORLD, (d > 0 ? "The president increases military aid to " : "The president cuts military aid to ") + cnameIn(g, c), null, 1.0);
+            return "Military aid to " + cnameIn(g, c) + ": " + MIL_AID[level].toLowerCase() + ".";
+        }
+
+        public static String setArms(Game g, int c, int level) {
+            World w = g.world;
+            if (atWar(g, c)) return "Not to a country the United States is fighting.";
+            int d = level - w.arms[c];
+            if (d == 0) return null;
+            w.arms[c] = level;
+            rel(w, c, 8 * d);
+            rel(w, rivalOf(c), -5 * d);
+            if (d > 0) { g.issueAdj[PI_JOBS] = clamp(g.issueAdj[PI_JOBS] + 0.03 * d, -1.5, 1.5); if (autocracy(c)) g.issueAdj[PI_RIGHTS] = clamp(g.issueAdj[PI_RIGHTS] - 0.05 * d, -1.5, 1.5); }
+            if (c == CC_TW && d > 0) { w.twt = clamp(w.twt + 2 * d, 0, 100); w.deter = clamp(w.deter + 2 * d, 0, 100); }
+            g.log(NK_WORLD, d > 0 ? "The administration approves arms sales to " + cnameIn(g, c) : "The administration halts arms sales to " + cnameIn(g, c), null, 1.0);
+            return "Arms sales to " + cnameIn(g, c) + ": " + ARMS[level].toLowerCase() + ".";
+        }
+
+        /** Bases troops in a country: deterrence and a closer ally, a cost, and an adversary that notices. */
+        public static String setTroops(Game g, int c, int step) {
+            World w = g.world;
+            if (atWar(g, c)) return "Troops fighting a war are managed in the Wars tab.";
+            if (align(g, c) == AL_ADVERSARY) return cname(g, c) + " won't host American forces.";
+            double now = w.troopsIn[c], to = TROOP_STEP[step], d = to - now;
+            if (Math.abs(d) < 0.01) return null;
+            w.troopsIn[c] = to;
+            g.econ.fiscal += d * 0.0015;
+            rel(w, c, d > 0 ? Math.min(10, d * 0.4) : Math.max(-10, d * 0.4));
+            rel(w, rivalOf(c), d > 0 ? -Math.min(8, d * 0.3) : Math.min(5, -d * 0.2));
+            int rg = CT_REGION[c];
+            if (rg == RG_EUROPE) w.nato = clamp(w.nato + clamp(d * 0.15, -6, 6), 0, 100);
+            if (rg == RG_ASIA) { w.pacific = clamp(w.pacific + clamp(d * 0.15, -6, 6), 0, 100); if (c == CC_TW || c == CC_JP || c == CC_PH) w.deter = clamp(w.deter + clamp(d * 0.2, -6, 6), 0, 100); }
+            if (c == CC_TW && d > 0) w.twt = clamp(w.twt + d * 0.6, 0, 100);         // Beijing sees troops on Taiwan as a provocation
+            g.log(NK_WORLD, d > 0 ? Math.round(d * 1000) + " more American troops go to " + cnameIn(g, c) : Math.round(-d * 1000) + " American troops leave " + cnameIn(g, c), null, 1.1);
+            return "American forces in " + cnameIn(g, c) + ": " + TROOP_NAME[step].toLowerCase() + ".";
+        }
+
+        /** Peacekeepers: only where there is a conflict to keep apart, under the UN or with allies. */
+        public static String setPeace(Game g, int c, boolean on) {
+            World w = g.world;
+            if (on && w.unrest[c] < 35 && !(c == CC_UA && w.uaStage >= 3)) return cnameIn(g, c) + " has no conflict for peacekeepers to keep apart.";
+            if (on && atWar(g, c)) return "Not while American forces are fighting there.";
+            w.peace[c] = on ? 1 : 0;
+            g.econ.fiscal += on ? 0.006 : -0.006;
+            if (on) { w.unrest[c] = Math.max(0, w.unrest[c] - 8); g.issueAdj[PI_FOREIGN] = clamp(g.issueAdj[PI_FOREIGN] + 0.05, -1.5, 1.5); }
+            g.log(NK_WORLD, on ? "American troops join a peacekeeping mission in " + cnameIn(g, c) : "American peacekeepers leave " + cnameIn(g, c), null, 1.0);
+            return on ? "Peacekeepers go to " + cnameIn(g, c) + "." : "The peacekeepers come home.";
+        }
+
+        /** Diplomatic ties: full, downgraded or severed. Recognizing Taiwan as a country is the most explosive version. */
+        public static String setTies(Game g, int c, int level) {
+            World w = g.world;
+            int d = level - w.ties[c];
+            if (d == 0) return null;
+            w.ties[c] = level;
+            if (c == CC_TW && level == 2 && yearNow(g) >= 1979) {
+                rel(w, CC_CN, -60);
+                rel(w, CC_TW, 30);
+                w.twt = clamp(w.twt + 30, 0, 100);
+                w.ties[CC_CN] = Math.min(w.ties[CC_CN], 1);
+                g.econ.finShock -= 1.5;
+                g.log(NK_BIG, "UNITED STATES RECOGNIZES TAIWAN AS AN INDEPENDENT COUNTRY", "Beijing recalls its ambassador and puts its forces on alert across the Strait. Markets fall.", 4);
+                return "You recognize Taiwan. Beijing calls it a declaration of hostility.";
+            }
+            rel(w, c, d * (level == 2 ? 15 : 12));
+            if (level == 0) { w.sanction[c] = Math.max(w.sanction[c], 1); g.issueAdj[PI_FOREIGN] = clamp(g.issueAdj[PI_FOREIGN] - 0.05, -1.5, 1.5); }
+            String what = level == 2 ? "The United States restores full diplomatic relations with " : level == 1 ? "The United States downgrades relations with " : "The United States breaks off relations with ";
+            g.log(level == 2 ? NK_GOOD : NK_WORLD, what + cnameIn(g, c), null, 1.6);
+            return what + cnameIn(g, c) + ".";
+        }
+
+        // ---- agreements that need Congress ----
+
+        /**
+         * Expected yes votes in one chamber: each bloc's lean is the merit of the question for your party and for the
+         * other, how hawkish the bloc is, and a modest pull from your standing and your relationship with it.
+         */
+        static double yes(Game g, int chamber, double partyPull, double otherPull, double hawkPull) {
+            double y = 0;
+            for (Bloc b : g.cong.blocs) {
+                if (b.chamber != chamber) continue;
+                double l = (b.party == g.party ? partyPull * b.loyalty : otherPull - 0.6 * g.era.polarization) + hawkPull * (b.hawk - 0.45) + (g.approval - 50) / 50 + (b.rel - 50) / 100;
+                y += b.seats * logistic(l);
+            }
+            return y;
+        }
+
+        /** How much harder free trade is to sell in Congress: little in the postwar consensus, a lot since the China shock. */
+        static double protectionism(Game g) { int y = yearNow(g); return y >= 2016 ? 0.75 : y >= 1993 ? 0.3 : 0.1; }
+
+        /** The odds Congress approves a trade agreement with a country. */
+        public static double tradeOdds(Game g, int c) {
+            double m = align(g, c) == AL_ADVERSARY ? -4 : w(g).rel[c] / 100 - protectionism(g);
+            double h = yes(g, HOUSE, 1.1 + m, 0 + m, 0), s = yes(g, SENATE, 1.1 + m, 0 + m, 0);
+            return logistic((h - 218) / 9) * logistic((s - 50.5) / 3);
+        }
+
+        /** A trade agreement: a majority in both chambers. */
+        public static String tradeDeal(Game g, int c) {
+            World w = g.world;
+            if (w.pact[c] > 0) return "There's already a trade agreement with " + cnameIn(g, c) + ".";
+            if (atWar(g, c)) return "Not with a country the United States is fighting.";
+            if (g.rng.nextDouble() >= tradeOdds(g, c)) {
+                rel(w, c, -4);
+                g.log(NK_BAD, "Congress rejects the trade agreement with " + cnameIn(g, c), null, 1.4);
+                return "Congress votes it down.";
+            }
+            w.pact[c] = 1;
+            rel(w, c, 10);
+            g.econ.polGdp += 0.01 * Math.min(1, tradeOf(g, c) / 200);
+            g.econ.farm = clamp(g.econ.farm + 2, 30, 160);
+            g.log(NK_GOOD, "Congress approves a trade agreement with " + cnameIn(g, c), null, 1.6);
+            return "Congress approves the trade agreement.";
+        }
+
+        static World w(Game g) { return g.world; }
+
+        /** A country already fighting, or claimed by, a nuclear power: a treaty would commit America to that fight. */
+        static boolean exposed(Game g, int c) { World w = g.world; return (c == CC_UA && w.modern && w.uaStage == 2) || (c == CC_TW && yearNow(g) >= 1979); }
+
+        /** The odds two-thirds of the Senate ratifies a defense treaty with a country. */
+        public static double treatyOdds(Game g, int c) {
+            double m = align(g, c) == AL_ADVERSARY ? -4 : w(g).rel[c] / 80 - (exposed(g, c) ? 1.8 : 0) - (CT_REGION[c] == RG_MIDEAST ? 0.6 : 0)
+                    - (nuke(g, c) ? 0.3 : 0) - (yearNow(g) >= 1990 ? 0.3 : 0);
+            double s = yes(g, SENATE, 1.2 + m, 0.4 + m, 0.8);
+            return logistic((s - 66.5) / 3);
+        }
+
+        /** A defense treaty: two-thirds of the Senate. The country becomes a treaty ally, and an attack on it is an attack on America. */
+        public static String defensePact(Game g, int c) {
+            World w = g.world;
+            if (align(g, c) == AL_TREATY) return cname(g, c) + " is already a treaty ally.";
+            if (align(g, c) == AL_ADVERSARY) return "The Senate won't consider a defense treaty with an adversary.";
+            if (w.rel[c] < 40) return cname(g, c) + " isn't interested in an alliance with the United States. Relations need to be warmer (40 or better).";
+            if (g.rng.nextDouble() >= treatyOdds(g, c)) {
+                rel(w, c, -6);
+                g.log(NK_BAD, "The Senate rejects a defense treaty with " + cnameIn(g, c), "It fell short of the two-thirds a treaty needs.", 2);
+                return "The Senate falls short of two-thirds.";
+            }
+            if (w.align != null) w.align[c] = AL_TREATY;
+            rel(w, c, 15);
+            rel(w, rivalOf(c), -15);
+            w.deter = clamp(w.deter + 3, 0, 100);
+            if (CT_REGION[c] == RG_EUROPE) w.nato = clamp(w.nato + 4, 0, 100);
+            if (CT_REGION[c] == RG_ASIA) w.pacific = clamp(w.pacific + 4, 0, 100);
+            g.log(NK_BIG, ("The Senate ratifies a defense treaty with " + cnameIn(g, c)).toUpperCase(), "An attack on " + cnameIn(g, c) + " is now an attack on the United States.", 3);
+            return "The Senate ratifies the treaty.";
+        }
+
+        // ---- covert action ----
+
+        public static double covertOdds(Game g, int c, int kind) {
+            double base = CV2_ODDS[kind] - power(g, c) * 0.02 + (kind == CV2_COUP ? g.world.unrest[c] / 250 : 0);
+            return Diplo.p(g, "i", base);
+        }
+
+        public static double leakOdds(Game g, int kind) { return CV2_LEAK[kind] * (1.3 - Cabinet.pq(g, P_CIA) * 0.6); }
+
+        public static String startCovert(Game g, int c, int kind) {
+            World w = g.world;
+            if (w.cvProg[c] > 0) return "A program in " + cnameIn(g, c) + " is already under way.";
+            if (align(g, c) == AL_TREATY && kind >= CV2_ARM) return "The CIA won't arm rebels against a treaty ally.";
+            w.cvProg[c] = kind + 1;
+            w.cvDue[c] = g.week + CV2_WEEKS[kind];
+            g.world.covert++;
+            return "You sign the finding. The CIA expects results within " + CV2_WEEKS[kind] + " weeks.";
+        }
+
+        static void covertResult(Game g, int c) {
+            World w = g.world;
+            int kind = w.cvProg[c] - 1;
+            w.cvProg[c] = 0;
+            boolean ok = g.rng.nextDouble() < covertOdds(g, c, kind), leak = g.rng.nextDouble() < leakOdds(g, kind);
+            String n = cnameIn(g, c);
+            if (leak) {
+                w.exposed++;
+                rel(w, c, -15);
+                g.scandal += 1.5 + kind;
+                g.issueAdj[PI_FOREIGN] = clamp(g.issueAdj[PI_FOREIGN] - 0.1, -1.5, 1.5);
+                g.log(NK_BIG, ("Report: CIA behind a secret operation in " + n).toUpperCase(), "The administration won't comment. " + cname(g, c) + " calls it an act of war.", 3);
+            }
+            if (!ok) { g.log(NK_WORLD, "Intelligence officials say a covert effort in " + n + " has failed", null, leak ? 1 : 0.4); return; }
+            switch (kind) {
+                case CV2_INFLUENCE: rel(w, c, 6); w.unrest[c] = clamp(w.unrest[c] + 4, 0, 100); break;
+                case CV2_CYBER:
+                    if (c == CC_IR) w.iran = clamp(w.iran - 15, 0, 100);
+                    if (c == CC_KP) w.nk = clamp(w.nk - 10, 0, 100);
+                    if (c == CC_CN || c == CC_RU) w.cyber = clamp(w.cyber + 8, 0, 100);
+                    break;
+                case CV2_ARM: w.unrest[c] = clamp(w.unrest[c] + 25, 0, 100); w.refugees = clamp(w.refugees + 4, 0, 100); break;
+                default: topple(g, c, "covert action"); break;
+            }
+            if (kind != CV2_COUP) g.log(NK_WORLD, "Officials say quietly that a covert program in " + n + " has worked", null, 0.5);
+        }
+
+        /** A government falls to American action: a transitional authority friendly to Washington, and a country in turmoil. */
+        public static void topple(Game g, int c, String how) {
+            World w = g.world;
+            w.toppled[c] = true;
+            w.leader[c] = "a transitional authority";
+            w.ltitle[c] = "Transitional government";
+            if (w.align != null) w.align[c] = AL_PARTNER;
+            w.rel[c] = 35;
+            w.sanction[c] = 0;
+            w.ties[c] = 2;
+            w.unrest[c] = clamp(w.unrest[c] + 35, 0, 100);
+            w.refugees = clamp(w.refugees + 8, 0, 100);
+            for (int o = 0; o < NC; o++) if (align(g, o) == AL_ADVERSARY && o != c) rel(w, o, -10);
+            g.log(NK_BIG, ("The government of " + cnameIn(g, c) + " falls").toUpperCase(), "A transitional authority takes over after " + how + ". Fighting and looting are reported in the capital.", 4);
+        }
+
+        // ---- the week ----
+
+        public static void week(Game g) {
+            World w = g.world;
+            for (int c = 0; c < NC; c++) {
+                if (w.cvProg[c] > 0 && g.week >= w.cvDue[c]) covertResult(g, c);
+                // aid at work in the hot spots
+                if (c == CC_UA && w.milAid[c] > 0 && w.uaStage == 2) w.ukr = clamp(w.ukr + 0.06 * w.milAid[c], 0, 100);
+                if (c == CC_TW && w.milAid[c] > 0) w.deter = clamp(w.deter + 0.02 * w.milAid[c], 0, 100);
+                // unrest settles slowly, faster with peacekeepers
+                w.unrest[c] = clamp(w.unrest[c] + (15 - w.unrest[c]) * (w.peace[c] > 0 ? 0.03 : 0.006), 0, 100);
+                if (w.unrest[c] > 60) w.refugees = clamp(w.refugees + 0.03 * (w.unrest[c] - 60) / 10, 0, 100);
+            }
+            // refugees go somewhere: Europe's politics, and the southern border
+            w.refugees = clamp(w.refugees + (20 - w.refugees) * 0.01, 0, 100);
+            if (w.refugees > 35) { w.nato = clamp(w.nato - 0.02, 0, 100); w.migr = clamp(w.migr + 0.01 * (w.refugees - 35), 0, 100); }
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    //  StatecraftData (resolutedesk.world.StatecraftData): The settings of each foreign-policy tool: aid and arms levels, troop levels, ties, and the covert programs.
+    // ---------------------------------------------------------------------
+    public static final String[] MIL_AID = {"None", "Some", "Substantial", "Major"};
+    public static final String[] ARMS = {"None", "Approved", "A major package"};
+    public static final String[] TIES = {"Severed", "Downgraded", "Full"};
+    /** Troop levels a president can base in a country, thousands. */
+    public static final double[] TROOP_STEP = {0, 2, 5, 20, 60};
+    public static final String[] TROOP_NAME = {"None", "Advisers (2,000)", "A brigade (5,000)", "A division (20,000)", "A corps (60,000)"};
+    /** Covert programs: name, odds, chance of leaking, weeks to play out. */
+    public static final int CV2_INFLUENCE = 0, CV2_CYBER = 1, CV2_ARM = 2, CV2_COUP = 3;
+    public static final String[] CV2_NAME = {"An influence campaign", "Cyber sabotage", "Arm the opposition", "Regime change"};
+    public static final String[] CV2_DESC = {"Money and messages for friendly parties and press.", "Disable military or nuclear systems from a distance.",
+            "Guns and training for armed groups fighting the government.", "Help the opposition and the army bring the government down."};
+    public static final double[] CV2_ODDS = {0.6, 0.55, 0.45, 0.25}, CV2_LEAK = {0.2, 0.2, 0.35, 0.45};
+    public static final int[] CV2_WEEKS = {8, 6, 12, 16};
+
     /** Summits: a bilateral one is played in three rounds; the big annual ones are a single choice. */
     static final class Summit {
         static final String[][] ASKS = {
@@ -19139,11 +20170,18 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         private static final long serialVersionUID = 1L;
         public String id, name;
         public int enemy = -1, ally = -1;
-        public int stage;                          // 0 not begun, 2 fighting, 3 won, 4 lost or abandoned, 5 ended by agreement
+        public int stage;                          // WS_* in WarData: 0 not begun, 2 fighting, then how it ended (won, lost, agreed, timetable, handed over, declared)
         public int strategy = 1;                   // 0 hold the line, 1 balanced, 2 on the offensive, 3 seek a settlement
         public double front = 50, troops, kia, support = 60, talks, weeks;
         public double need, drift, lethal, cost, stakes;
         public int started = -1, ended = -1;
+        // wars of choice (version 2): what kind of war, whether Congress authorized it, and how it is being ended
+        public int kind = -1;                      // -1 a war of history; otherwise WK_* in WarData
+        public boolean authorized;                 // Congress voted to authorize force
+        public int timetable = -1, timetableStart = -1, handoff = -1;   // weeks a withdrawal timetable or a handover ends
+        public double troops0;                     // troops when a timetable was set
+        public boolean wpVoted;                    // Congress has voted under the War Powers Resolution
+        public double legit;                       // the support a war of choice settles toward: higher if authorized and against a real enemy
     }
 
     // ---------------------------------------------------------------------
@@ -19159,12 +20197,383 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
 
     public static final String[] STRATEGY = {"Hold the line", "Balanced", "On the offensive", "Seek a settlement"};
 
-    public static final String[] WAR_STAGE = {"Not begun", "", "Fighting", "Won", "Lost", "Ended by agreement"};
+    /** Where a war stands. Wars of choice can also end on a timetable, by handing over, or by declaring victory. */
+    public static final int WS_NONE = 0, WS_FIGHTING = 2, WS_WON = 3, WS_LOST = 4, WS_AGREED = 5, WS_TIMETABLE = 6, WS_HANDED = 7, WS_DECLARED = 8;
+    public static final String[] WAR_STAGE = {"Not begun", "", "Fighting", "Won", "Lost", "Ended by agreement", "Withdrawn on a timetable", "Handed over", "Victory declared"};
+
+    /** The kinds of war a president can start: strikes from the air and sea, a blockade, a no-fly zone, an invasion, and the occupation that follows. */
+    public static final int WK_STRIKES = 0, WK_BLOCKADE = 1, WK_NOFLY = 2, WK_INVASION = 3, WK_OCCUPATION = 4;
+    public static final String[] WK_NAME = {"Air and missile strikes", "A naval blockade", "A no-fly zone", "An invasion", "An occupation"};
+    public static final String[] WK_DESC = {"Strike military targets from the air and sea. Few American troops at risk; the enemy will look for ways to hit back.",
+            "Stop ships going in or out until the government gives in. An act of war: it squeezes the economy, and the price of anything they export.",
+            "Keep the government's aircraft out of the sky to protect civilians. Cheap, but pilots can be shot down, and it can drag you in deeper.",
+            "Send in ground forces to remove the government. If it falls, you own what comes next: an occupation, and very likely an insurgency.",
+            "Hold the country while a new government takes over. Insurgents fight on; casualties mount; support at home wears thin."};
+    /**
+     * Front-line progress a week at full strength against an enemy of no military power (it falls as their power rises;
+     * an occupation loses ground instead); deaths per 1,000 troops a week; cost (% of GDP per 1,000 troops a year).
+     */
+    public static final double[] WK_PACE = {4, 2.5, 1.5, 26, -0.06}, WK_LETHAL = {0.01, 0.005, 0.012, 0.08, 0.05}, WK_COST = {0.01, 0.008, 0.01, 0.007, 0.007};
+    public static final double[] WK_FRONT = {50, 40, 55, 30, 50};
 
     /** The wars under way on inauguration day: "year|id:front:troops:support:talks ...". */
     public static final String[] WAR_START = {"1945|ww2e:94:5500:88:0 ww2p:70:3500:90:0", "1953|korea:50:300:40:60", "1965|vietnam:45:23:70:0", "1969|vietnam:45:536:38:20",
             "1973|vietnam:50:24:30:92", "2005|iraq:45:150:45:0 afghan:60:20:70:0", "2009|iraq:62:140:35:60 afghan:48:34:55:0", "2013|afghan:50:66:35:30",
             "2017|afghan:50:8.4:40:10 isis:55:5:70:0", "2021|afghan:45:2.5:40:80"};
+
+    /**
+     * Wars of choice: strikes, a blockade, a no-fly zone or an invasion, against any country, at any time. Each comes
+     * with hard consequences (casualties, markets and oil, refugees, terror, allies, protests at home) and an invasion
+     * that succeeds becomes an occupation, usually with an insurgency. Wars end in many ways: winning, a settlement,
+     * a timetable, handing over, declaring victory, or simply leaving.
+     */
+    static final class Wars {
+        private Wars() {
+        }
+
+        static boolean oilProducer(int c) { return c == CC_IR || c == CC_IQ || c == CC_SA || c == CC_QA || c == CC_AE || c == CC_VE || c == CC_RU; }
+
+        static boolean bigProducer(int c) { return c == CC_SA || c == CC_RU; }
+
+        /** Troops the generals ask for (thousands). */
+        public static double need(Game g, int c, int kind) {
+            double p = power(g, c);
+            return kind == WK_STRIKES ? 4 + 1.5 * p : kind == WK_BLOCKADE ? 8 + 3 * p : kind == WK_NOFLY ? 6 + p : 40 + 30 * p;
+        }
+
+        public static String warName(Game g, int c, int kind) {
+            String n = cnameIn(g, c);
+            return kind == WK_STRIKES ? "The air war against " + n : kind == WK_BLOCKADE ? "The blockade of " + n : kind == WK_NOFLY ? "The no-fly zone over " + n
+                    : kind == WK_INVASION ? "The invasion of " + n : "The occupation of " + n;
+        }
+
+        /** Why this war can't be started, or null. */
+        public static String cannot(Game g, int c, int kind) {
+            World w = g.world;
+            if (gone(g, c)) return cname(g, c) + " doesn't exist in this era.";
+            for (War x : w.wars) if (x.stage == WS_FIGHTING && x.enemy == c && x.kind == kind) return "That war is already under way.";
+            if (kind == WK_INVASION && nuke(g, c)) return "The Joint Chiefs won't plan an invasion of a nuclear power. Strikes and a blockade are still on the table, at grave risk.";
+            if (kind == WK_NOFLY && w.unrest[c] < 40) return "There's no fighting inside " + cnameIn(g, c) + " for a no-fly zone to stop.";
+            return null;
+        }
+
+        /** What the country's people and markets expect to happen, for the warning before you go ahead. */
+        public static String expect(Game g, int c, int kind) {
+            StringBuilder s = new StringBuilder();
+            s.append("About ").append(thousands(Math.round(need(g, c, kind) * 1000))).append(" troops. ");
+            if (oilProducer(c) && kind != WK_NOFLY) s.append("Oil prices will jump. ");
+            if (power(g, c) >= 6) s.append("Markets will fall hard. ");
+            if (nuke(g, c)) s.append("A nuclear-armed enemy: DEFCON 2, and the war could spiral. ");
+            if (CT_REGION[c] == RG_MIDEAST || CT_REGION[c] == RG_SOUTHASIA) s.append("Expect terror attacks in revenge. ");
+            if (kind == WK_INVASION) s.append("If the government falls, you own the occupation. ");
+            int pr = protector(g, c);
+            if (kind == WK_INVASION && pr >= 0) s.append(cname(g, pr)).append(" has promised to fight for ").append(cnameIn(g, c)).append(nuke(g, pr) ? ", and it has the bomb. " : ". ");
+            if (align(g, c) == AL_TREATY) s.append("Attacking a treaty ally would shatter the alliances. ");
+            else if (align(g, c) == AL_PARTNER) s.append("Attacking a partner will alarm every ally. ");
+            if (!authorized(g, c)) s.append("Congress hasn't authorized it.");
+            return s.toString().trim();
+        }
+
+        public static boolean authorized(Game g, int c) { return g.world.authorized[c] > 0 && g.week - g.world.authorized[c] < 52; }
+
+        /** Goes to war. */
+        public static String start(Game g, int c, int kind) {
+            String no = cannot(g, c, kind);
+            if (no != null) return no;
+            World w = g.world;
+            War x = new War();
+            x.id = "choice:" + CT_ID[c] + ":" + kind + ":" + g.week;
+            x.kind = kind; x.enemy = c; x.name = warName(g, c, kind);
+            x.need = need(g, c, kind); x.troops = x.need;
+            x.drift = pace(g, c, kind);
+            x.lethal = WK_LETHAL[kind] * (kind == WK_INVASION && protector(g, c) >= 0 ? 4 : 1); x.cost = WK_COST[kind];
+            x.authorized = authorized(g, c);
+            x.stakes = 0.7 + (w.rel[c] < -50 ? 0.2 : 0) + (x.authorized ? 0.2 : 0);
+            int al = align(g, c);
+            x.legit = clamp(38 + (x.authorized ? 14 : 0) + (w.rel[c] < -50 ? 8 : w.rel[c] < 0 ? 3 : -10) - (al == AL_TREATY ? 30 : al == AL_PARTNER ? 15 : 0) - (nuke(g, c) ? 15 : 0), 5, 70);
+            x.support = clamp(x.legit + 2 + (g.approval - 50) * 0.2, 8, 85);
+            x.front = WK_FRONT[kind]; x.stage = WS_FIGHTING; x.started = g.week; x.strategy = 1;
+            w.wars.add(x);
+            g.warsStarted++;
+            g.log(NK_BIG, ("President " + g.pres.last + " orders " + WK_NAME[kind].toLowerCase().replace("an invasion", "the invasion of " + cnameIn(g, c))
+                    .replace("a naval blockade", "a naval blockade of " + cnameIn(g, c)).replace("air and missile strikes", "strikes on " + cnameIn(g, c))
+                    .replace("a no-fly zone", "a no-fly zone over " + cnameIn(g, c))).toUpperCase(), x.authorized ? "Congress has authorized the use of force." : "The White House says the president has the authority to act on his own.", 5);
+            shock(g, x);
+            g.econ.war = warSpend(w);
+            return x.name + " begins. Run it from the Wars tab.";
+        }
+
+        /**
+         * How fast the front moves at full strength. A small country's army collapses in weeks; a large one fights for
+         * months. An occupation slowly loses ground to the insurgency unless troops and strategy hold it.
+         */
+        public static double pace(Game g, int c, int kind) {
+            double p = power(g, c);
+            boolean ground = kind == WK_INVASION || kind == WK_OCCUPATION, guarded = ground && protector(g, c) >= 0;
+            if (kind == WK_OCCUPATION) return WK_PACE[kind] - 0.015 * p - (guarded ? 0.15 : 0);
+            double v = WK_PACE[kind] / (1 + (kind == WK_INVASION ? 0.6 : 0.3) * p);
+            if (p >= 7) v = v * 0.5 - 0.15;              // a great power fights back everywhere it can
+            if (nuke(g, c)) v = v * 0.3 - 0.25;          // and a nuclear one has nothing it values at real risk
+            if (guarded) v = v * 0.1 - 0.6;              // its protector's armies join the fight: a stalemate at best
+            return v;
+        }
+
+        /** The great power that would fight for a country if American troops invaded it, or -1. */
+        public static int protector(Game g, int c) {
+            int y = yearNow(g);
+            if (c == CC_KP && y >= 1950) return CC_CN;
+            if (c == CC_CU && y >= 1960 && y < 1992) return CC_RU;
+            if (c == CC_SY && y >= 2015) return CC_RU;
+            return -1;
+        }
+
+        /** Whether a war could escalate into a clash with a nuclear power: the enemy itself, or the protector of an invaded country. */
+        static boolean nuclearRisk(Game g, War x) {
+            int pr = x.kind == WK_INVASION || x.kind == WK_OCCUPATION ? protector(g, x.enemy) : -1;
+            return nuke(g, x.enemy) || pr >= 0 && nuke(g, pr);
+        }
+
+        /**
+         * The support a war of choice settles toward: its legitimacy at the start, less about six points for every
+         * tenfold rise in American deaths, and a slow weariness once it has gone on for six months.
+         */
+        public static double supportTarget(War x) {
+            return x.legit - 6 * Math.log10(1 + x.kia / 10) - 0.05 * Math.max(0, x.weeks - 26);
+        }
+
+        static double warSpend(World w) { double s = 0; for (War x : w.wars) if (x.stage == WS_FIGHTING) s += x.troops * x.cost; return s; }
+
+        /** The first shock: rally, markets, oil, allies, refugees, terror and protest. */
+        static void shock(Game g, War x) {
+            World w = g.world;
+            int c = x.enemy, al = align(g, c), kind = x.kind;
+            double p = power(g, c);
+            if (nuke(g, c)) { g.perf -= 4; g.stress = Math.min(100, g.stress + 15); }     // fear, not a rally
+            else g.rally += x.authorized ? 3 + p * 0.3 : 1 + p * 0.15;
+            g.econ.finShock -= 0.2 * p + (nuke(g, c) ? 2 : 0);
+            if (oilProducer(c) && kind != WK_NOFLY) Diplo.oil(g, (kind == WK_STRIKES ? 6 : kind == WK_BLOCKADE ? 10 : 12) * (bigProducer(c) ? 2 : 1) * g.econ.priceLevel);
+            w.rel[c] = -100; w.ties[c] = 0; w.sanction[c] = 3;
+            if (!x.authorized) { for (int o = 0; o < NC; o++) if (align(g, o) == AL_TREATY) Statecraft.rel(w, o, -4); w.nato = clamp(w.nato - 3, 0, 100); }
+            if (al == AL_TREATY) { w.nato = clamp(w.nato - 25, 0, 100); w.pacific = clamp(w.pacific - 20, 0, 100); for (int o = 0; o < NC; o++) if (o != c && align(g, o) == AL_TREATY) Statecraft.rel(w, o, -30); }
+            else if (al == AL_PARTNER) for (int o = 0; o < NC; o++) if (CT_REGION[o] == CT_REGION[c] && o != c) Statecraft.rel(w, o, -10);
+            int[] bloc = {CC_RU, CC_CN, CC_IR, CC_KP, CC_VE, CC_CU, CC_SY};
+            for (int o : bloc) if (o != c && !gone(g, o) && (c == CC_RU || c == CC_CN || c == CC_IR || c == CC_KP || c == CC_VE || c == CC_CU || c == CC_SY)) Statecraft.rel(w, o, -8);
+            w.refugees = clamp(w.refugees + (kind == WK_INVASION ? 15 : 3), 0, 100);
+            w.unrest[c] = clamp(w.unrest[c] + (kind == WK_INVASION ? 30 : 10), 0, 100);
+            if (CT_REGION[c] == RG_MIDEAST || CT_REGION[c] == RG_SOUTHASIA) w.terror = clamp(w.terror + (kind == WK_INVASION ? 15 : 8), 0, 100);
+            if (CT_REGION[c] == RG_AMERICAS) w.migr = clamp(w.migr + (kind == WK_INVASION ? 10 : 4), 0, 100);
+            if (g.home != null) g.home.protest = clamp(g.home.protest + (x.authorized ? 5 : 12), 0, 100);
+            if (nuke(g, c) || p >= 8) w.defcon = Math.min(w.defcon, nuke(g, c) ? 2 : 3);
+            int pr = kind == WK_INVASION ? protector(g, c) : -1;
+            if (pr >= 0) {
+                Statecraft.rel(w, pr, -40);
+                if (nuke(g, pr)) w.defcon = Math.min(w.defcon, 2);
+                g.log(NK_BIG, (cname(g, pr) + " sends its forces to defend " + cnameIn(g, c)).toUpperCase(), "American commanders now face " + cnameIn(g, pr) + "'s army as well.", 4);
+            }
+            g.issueSal[PI_SECURITY] = Math.min(2.2, g.issueSal[PI_SECURITY] + 0.4);
+            if (!x.authorized && g.cong != null) for (Bloc b : g.cong.blocs) if (b.party != g.party) b.rel = Math.max(0, b.rel - 5);
+        }
+
+        // ---- each week of a war of choice ----
+
+        /** The consequences of a war of choice this week, and its timetable or handover. Returns true if the war ended. */
+        public static boolean step(Game g, War x) {
+            World w = g.world;
+            int c = x.enemy;
+            double intensity = x.need > 0 ? x.troops / x.need : 0;
+            if (x.kind != WK_OCCUPATION) x.drift = pace(g, c, x.kind) * Math.min(1.3, intensity);
+            boolean mideast = CT_REGION[c] == RG_MIDEAST || CT_REGION[c] == RG_SOUTHASIA;
+            w.terror = clamp(w.terror + 0.03 * intensity * (mideast ? 2 : 1), 0, 100);
+            w.refugees = clamp(w.refugees + (x.kind == WK_INVASION || x.kind == WK_OCCUPATION ? 0.12 : 0.02) * intensity, 0, 100);
+            if (g.home != null) g.home.protest = clamp(g.home.protest + (x.support < 45 ? 0.08 : 0) + x.lethal * intensity, 0, 100);
+            g.perf -= 0.007 * Math.max(0, 55 - x.support);                          // an unpopular war drags on the president
+            if (!x.authorized && x.support < 45) for (int o = 0; o < NC; o++) if (align(g, o) == AL_TREATY) Statecraft.rel(w, o, -0.05);
+            if (oilProducer(c) && (x.kind == WK_BLOCKADE || x.kind == WK_INVASION || x.kind == WK_OCCUPATION)) Diplo.oil(g, 0.15 * g.econ.priceLevel);
+            if (x.kind == WK_OCCUPATION) w.unrest[c] = clamp(w.unrest[c] + (50 - x.front) * 0.01, 0, 100);
+            if (nuclearRisk(g, x) && g.rng.nextDouble() < 0.015 * intensity) { spiral(g, x); return true; }
+            // Congress and the War Powers Resolution
+            if (!x.authorized && x.weeks >= 9 && !x.wpVoted && g.cong != null) {
+                x.wpVoted = true;
+                if (!Hill.majority(g, HOUSE, g.party) || !Hill.majority(g, SENATE, g.party) || x.support < 45) {
+                    Decision d = Decisions.add(g, D_WARPOWERS, "Congress orders the troops home", "Under the War Powers Resolution, both chambers have voted to end " + x.name.toLowerCase()
+                            + " within thirty days. The war was never authorized.", new String[]{"Veto it and fight on", "Sign it and bring the troops home"},
+                            new String[]{"Counsel: \"You can veto it; they probably can't override. But expect hearings, and worse.\"", "Chief of staff: \"The country is tired of this. Take the exit Congress is offering.\""});
+                    d.war = x;
+                }
+            }
+            // a timetable or a handover winding the war down
+            if (x.timetable >= 0) {
+                double span = Math.max(1, x.timetable - x.timetableStart), left = Math.max(0, x.timetable - g.week);
+                x.troops = x.troops0 * left / span;
+                x.front = clamp(x.front - 0.05, 0, 100);
+                if (g.week >= x.timetable) { finish(g, x, WS_TIMETABLE); return true; }
+            }
+            if (x.handoff >= 0) {
+                x.troops = Math.max(x.troops * 0.85, x.need * 0.2);
+                if (g.week >= x.handoff) { finish(g, x, WS_HANDED); return true; }
+            }
+            return false;
+        }
+
+        /** The front reaches 100: strikes and no-fly zones meet their goals, a blockade wins concessions, and an invasion topples the government. */
+        public static boolean victory(Game g, War x) {
+            if (x.kind == WK_INVASION) {
+                int c = x.enemy;
+                Statecraft.topple(g, c, "the invasion");
+                x.kind = WK_OCCUPATION;
+                x.name = warName(g, c, WK_OCCUPATION);
+                x.front = 50;
+                x.drift = pace(g, c, WK_OCCUPATION);
+                x.lethal = WK_LETHAL[WK_OCCUPATION] * (protector(g, c) >= 0 ? 3 : 1);
+                g.rally += 3;
+                g.perf += 2;
+                Decisions.info(g, "The government has fallen", "American forces hold the capital, and a transitional authority is in charge. Now comes the hard part: insurgents are already attacking, "
+                        + "and the country will need years of help. You can hand over to the new government once it can hold its ground, set a timetable, or stay.");
+                return false;
+            }
+            finish(g, x, x.kind == WK_BLOCKADE ? WS_AGREED : WS_WON);
+            return true;
+        }
+
+        /** A war with a nuclear power spirals: the worst losses of the war, a crash, and a ceasefire the world imposes. */
+        static void spiral(Game g, War x) {
+            World w = g.world;
+            double dead = 3000 + g.rng.nextDouble() * 3000;
+            x.kia += dead;
+            w.kia += (int) Math.round(dead);
+            w.defcon = 1;
+            g.econ.finShock -= 5;
+            Diplo.oil(g, 20 * g.econ.priceLevel);
+            g.perf -= 8;
+            g.log(NK_BIG, (x.name + " spirals out of control").toUpperCase(), "Thousands of Americans are killed in a single day of escalation. The world's leaders force a ceasefire.", 6);
+            History.end(g, x, WS_AGREED);
+            w.defcon = 2;
+        }
+
+        // ---- ending a war ----
+
+        /** Brings a war to an end, with what each way of ending it means for the president. */
+        static void finish(Game g, War x, int how) {
+            World w = g.world;
+            int c = x.enemy;
+            double f = x.front;
+            History.end(g, x, how);
+            if (how == WS_TIMETABLE) { if (f >= 55) g.perf += 1; else { g.perf -= 1.5; w.unrest[c] = clamp(w.unrest[c] + 15, 0, 100); w.deter = clamp(w.deter - 3, 0, 100); } }
+            if (how == WS_HANDED) { g.perf += 1; if (f < 70) w.unrest[c] = clamp(w.unrest[c] + 20, 0, 100); }
+            if (how == WS_DECLARED) {
+                if (f >= 70) { g.perf += 1; g.rally += 1; }
+                else { g.perf -= 2; w.deter = clamp(w.deter - 6, 0, 100); for (int o = 0; o < NC; o++) if (align(g, o) == AL_TREATY) Statecraft.rel(w, o, -4); }
+            }
+            if (how == WS_WON) won(g, x);
+            if (x.kind >= 0) { w.rel[c] = Math.max(w.rel[c], -60); if (!w.toppled[c]) w.sanction[c] = Math.max(1, w.sanction[c] - 1); }
+            g.econ.war = warSpend(w);
+        }
+
+        /** What winning buys: strikes set back the weapons programs, a no-fly zone calms the fighting, and enemies learn to fear you. */
+        static void won(Game g, War x) {
+            World w = g.world;
+            int c = x.enemy;
+            if (x.kind < 0 || c < 0) return;
+            w.deter = clamp(w.deter + 4, 0, 100);
+            if (x.kind == WK_STRIKES && c == CC_IR) { w.iran = clamp(w.iran - 30, 0, 100); w.proxy = clamp(w.proxy + 8, 0, 100); }
+            if (x.kind == WK_STRIKES && c == CC_KP) w.nk = clamp(w.nk - 20, 0, 100);
+            if (x.kind == WK_STRIKES && c == CC_SY) w.unrest[c] = clamp(w.unrest[c] + 10, 0, 100);
+            if (x.kind == WK_NOFLY) { w.unrest[c] = clamp(w.unrest[c] - 25, 0, 100); w.refugees = clamp(w.refugees - 5, 0, 100); }
+            if (x.kind == WK_OCCUPATION) { w.unrest[c] = clamp(w.unrest[c] - 30, 0, 100); w.rel[c] = Math.max(w.rel[c], 40); }
+        }
+
+        public static String declareVictory(Game g, War x) {
+            if (x.stage != WS_FIGHTING) return null;
+            boolean real = x.front >= 70;
+            finish(g, x, WS_DECLARED);
+            return real ? "You declare victory and bring the troops home. Most of the country agrees." : "You declare victory and leave. Few believe it, and allies and enemies take note.";
+        }
+
+        public static String timetable(Game g, War x, int weeks) {
+            if (x.stage != WS_FIGHTING) return null;
+            x.timetable = g.week + weeks;
+            x.timetableStart = g.week;
+            x.troops0 = x.troops;
+            x.support = clamp(x.support + 4, 0, 100);
+            g.log(NK_WORLD, "The president sets a date to bring the troops home from " + x.name.toLowerCase().replace("the ", ""), "The last troops are to leave by " + dateStr(x.timetable * 7) + ".", 1.8);
+            return "The last troops leave by " + dateStr(x.timetable * 7) + ". The enemy can count the days too.";
+        }
+
+        /** Who can take over: the new government after an occupation, allies or the UN otherwise. */
+        public static String successor(War x) { return x.kind == WK_OCCUPATION ? "the new government's forces" : "allies and UN peacekeepers"; }
+
+        public static String cannotHand(War x) { return x.front < 55 ? "Nobody can take over until the front is steadier (55 or better)." : x.handoff >= 0 ? "The handover is under way." : null; }
+
+        public static String handoff(Game g, War x) {
+            String no = cannotHand(x);
+            if (no != null || x.stage != WS_FIGHTING) return no;
+            x.handoff = g.week + 8;
+            g.log(NK_WORLD, x.name + ": American forces begin handing over to " + successor(x), null, 1.6);
+            return "The handover to " + successor(x) + " takes about two months.";
+        }
+
+        public static String escalate(Game g, War x) {
+            if (x.stage != WS_FIGHTING) return null;
+            History.setTroops(g, x, Math.min(x.need * 1.6, x.troops * 1.5));
+            History.setStrategy(g, x, 2);
+            x.front = clamp(x.front + 4, 0, 100);
+            x.support = clamp(x.support - 4, 0, 100);
+            if (nuke(g, x.enemy)) g.world.defcon = Math.max(1, g.world.defcon - 1);
+            g.log(NK_BIG, ("President " + g.pres.last + " escalates " + x.name.toLowerCase()).toUpperCase(), null, 2.5);
+            return "More troops, a harder offensive, and higher casualties.";
+        }
+
+        // ---- Congress ----
+
+        /**
+         * The odds Congress authorizes force: likely against a hostile regime, hard against anyone else, close to
+         * impossible against a friend. Since the 1970s it takes sixty senators to get past a filibuster.
+         */
+        public static double authorizeOdds(Game g, int c) {
+            World w = g.world;
+            double host = w.rel[c] < -70 ? 0.8 : w.rel[c] < -40 ? 0.3 : w.rel[c] < 0 ? -1.5 : -2.8;
+            int al = align(g, c);
+            if (al == AL_TREATY) host -= 2.5; else if (al == AL_PARTNER) host -= 1;
+            if (nuke(g, c)) host -= 0.9;
+            if (yearNow(g) >= 2004) host -= 0.2;   // after Iraq, Congress is warier
+            double h = Statecraft.yes(g, HOUSE, 1.2 + host, host - 0.3, 1.8), s = Statecraft.yes(g, SENATE, 1.2 + host, host - 0.3, 1.8);
+            int sNeed = yearNow(g) >= 1975 ? 60 : 51;
+            return logistic((h - 218) / 9) * logistic((s - sNeed + 0.5) / 3);
+        }
+
+        /** Asks Congress to authorize the use of force against a country. */
+        public static String authorize(Game g, int c) {
+            World w = g.world;
+            if (authorized(g, c)) return "Congress has already authorized force against " + cnameIn(g, c) + ".";
+            String n = cnameIn(g, c);
+            if (g.rng.nextDouble() < authorizeOdds(g, c)) {
+                w.authorized[c] = Math.max(1, g.week);
+                for (War x : w.wars) if (x.stage == WS_FIGHTING && x.enemy == c) { x.authorized = true; x.legit = clamp(x.legit + 12, 5, 70); x.support = clamp(x.support + 10, 0, 100); }
+                g.log(NK_BIG, ("Congress authorizes the use of force against " + n).toUpperCase(), null, 3.5);
+                g.rally += 1;
+                return "Congress votes to authorize force against " + n + ".";
+            }
+            g.perf -= 0.5;
+            for (War x : w.wars) if (x.stage == WS_FIGHTING && x.enemy == c) x.support = clamp(x.support - 8, 0, 100);
+            g.log(NK_BIG, ("Congress refuses to authorize force against " + n).toUpperCase(), null, 3);
+            return "Congress refuses.";
+        }
+
+        /** Your answer to a War Powers resolution: veto it and fight on, or bring the troops home within thirty days. */
+        public static void warPowers(Game g, Decision d, int k) {
+            War x = d.war;
+            if (x == null || x.stage != WS_FIGHTING) return;
+            if (k == 1) { timetable(g, x, 4); return; }
+            g.cong.vetoes++;
+            g.perf -= 0.5;
+            if (g.ex != null) g.ex.impPressure += 8;
+            x.support = clamp(x.support - 3, 0, 100);
+            g.log(NK_BIG, "PRESIDENT VETOES THE WAR POWERS RESOLUTION; THE WAR GOES ON", "Critics in Congress call it a constitutional crisis.", 3);
+        }
+
+        /** What the hands-off president does with a War Powers resolution: obeys it if the war is going badly. */
+        public static int auto(Game g, Decision d) { return d.war != null && d.war.front < 55 ? 1 : 0; }
+    }
 
     /** The state of the world in a game: the countries, their leaders and relations, the flashpoints and the wars. */
     static final class World implements Serializable {
@@ -19194,6 +20603,16 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         public double tradeK = 1;
         public List<War> wars;
         public int worldYear = -1, pressYear = -1;
+        // statecraft (version 2): the tools of foreign policy, country by country (see Statecraft)
+        public int[] milAid = new int[NC], arms = new int[NC], ties = new int[NC], pact = new int[NC], peace = new int[NC];
+        public int[] cvProg = new int[NC], cvDue = new int[NC];      // a covert program under way (CV2_* + 1, or 0) and the week it resolves
+        public double[] troopsIn = new double[NC];                    // American troops based there, thousands
+        public double[] unrest = new double[NC];                      // instability inside the country, 0-100
+        public boolean[] toppled = new boolean[NC];                   // its government fell to American action
+        public int[] authorized = new int[NC];                        // the week Congress authorized force against it, or 0
+        public double refugees = 20;                                  // people displaced by conflict, heading for Europe and the border (0-100)
+        public List<Objective> objectives = new ArrayList<Objective>();
+        public int objectivesYear = -1, done, wars0;
     }
 
     // ---------------------------------------------------------------------

@@ -22,7 +22,7 @@ src/main/java/resolutedesk/
   congress/           members, blocs, bills, legislation, relationships and favors, the budget, the midterms
   policy/             about 150 policies, the channels that change them, and the outcomes they produce
   executive/          staff and cabinet, orders and rules, the courts, scandals, the vice president
-  world/              countries, diplomacy, summits, crises, operations and wars
+  world/              countries, diplomacy, summits, crises, operations, statecraft, objectives and wars
   history/            eras and the turning points of history
   home/               events at home, disasters, the president's party and the opposition
   press/              press conferences, speeches, posts, polls and news outlets
@@ -87,6 +87,15 @@ slowly drifting public mood, each fading at its own rate. Partisanship then sque
 1990 there is a soft floor near 30 and a ceiling near 70, tighter as polarization rises, and a floor that
 levels off rather than giving way. Before 1990 there is no floor. Rallies are added after the squeeze, so
 they break through the ceiling.
+
+**Wars** (`history.History` and `world.Wars`) share one model. Each `world.War` has a front from 0 (defeat)
+to 100 (victory), troops against what the generals ask for, a strategy, casualties, support at home and
+progress in talks. History's wars come from a table; a war of choice is made by `Wars.start` and carries a
+kind (strikes, blockade, no-fly zone, invasion or occupation). Its pace falls with the enemy's military
+power, and a nuclear power or a great-power protector all but stops it. Support settles toward the war's
+legitimacy at the start (authorized or not, against an enemy or a friend), less about six points per
+tenfold rise in deaths, and an unpopular war drags on approval every week. An invasion that reaches 100
+topples the government (`world.Statecraft.topple`) and becomes an occupation with a new front.
 
 **Relationships with Congress** (`congress.Relations`) replace political capital. Nothing is spent but time:
 each deal takes an hour of the president's week, and the hours come from Hill meetings on the calendar.

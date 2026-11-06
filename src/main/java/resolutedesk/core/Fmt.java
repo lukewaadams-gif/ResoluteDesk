@@ -11,6 +11,9 @@ public final class Fmt {
 
     public static String pct0(double v) { return Math.round(v * 100) + "%"; }
 
+    /** Odds in words that never promise certainty: "under 1%", "about 40%", "over 99%". */
+    public static String chance(double p) { return p < 0.005 ? "under 1%" : p > 0.995 ? "over 99%" : "about " + Math.round(p * 100) + "%"; }
+
     public static String pct1(double v) { return String.format("%.1f%%", v * 100); }
 
     public static String signed1(double v) { if (Math.abs(v) < 0.05) return "0.0"; return (v >= 0 ? "+" : "") + String.format("%.1f", v); }

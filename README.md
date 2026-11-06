@@ -217,6 +217,29 @@ Open the Situation Room from the Oval Office, or press 7.
   - NATO and Asia-Pacific alliance cohesion, deterrence in the Taiwan Strait, and DEFCON.
 - **The world feeds back:** oil prices, supply chains and markets, your standing on foreign policy, national security and immigration, and American casualties.
 
+### Statecraft and wars of choice (new in version 2)
+
+The Statecraft tab of the Situation Room, or the button under any country on the world map.
+
+- **Objectives with every country:** 85 of them, two to four for each country in every era, from a ceasefire in Ukraine and a deal on Iran's nuclear program to AUKUS submarines, Venezuelan elections, the Panama Canal, Berlin and the hostages in Tehran.
+  - Each has two to four steps, with odds that depend on the relationship and on the people working on it.
+  - Some steps need a tool in place first, such as military aid at a given level or a brigade in Poland.
+  - A failure costs a month; three in a row stall the objective for half a year.
+- **The tools short of war, country by country:**
+  - Military aid and arms sales at three levels. They warm a friend, anger its rival, and cost money; arming an autocracy costs you on human rights.
+  - American forces based there, from advisers to a corps of 60,000. They deter rivals, and Beijing treats troops on Taiwan as a provocation.
+  - Diplomatic ties: full, downgraded or severed. Recognizing Taiwan as a country is the most explosive version.
+  - Peacekeepers where there's a conflict to keep apart.
+  - Trade agreements, which need both chambers, and defense treaties, which need two-thirds of the Senate. They're harder in today's protectionist Congress, and a country already at war with a nuclear power can't get a treaty through.
+  - Four covert programs: an influence campaign, cyber sabotage, arming the opposition and regime change. Each has odds of working and of leaking, and a leak is a scandal.
+- **Wars of choice against any country, at any time:** strikes, a naval blockade, a no-fly zone or an invasion.
+  - A warning first: the troops it will take, what happens to oil and markets, terror and refugees, how allies will react, and whether Congress has authorized it.
+  - Ask Congress for an authorization to use force first, or don't. Without one, Congress can vote under the War Powers Resolution to order the troops home, and you can sign or veto.
+  - A small country's army collapses in weeks; a large one fights for months. Nobody plans an invasion of a nuclear power, and strikes on one risk a spiral that kills thousands in a day. Invade North Korea and China fights for it, as it did in 1950.
+  - An invasion that topples the government becomes an occupation, usually with an insurgency.
+  - Consequences: casualties, oil shocks, refugees, terror threats, protests at home, damaged alliances, and support at home that falls about six points with every tenfold rise in American deaths. An unpopular war drags on your approval for as long as it lasts.
+  - Many ways out: win, reach a settlement, withdraw now, set a timetable of six months or a year, hand over to the new government or to allies, declare victory (believable only if the front holds), or escalate.
+
 ### The home front and the press (update 5)
 
 Open the Press Briefing Room from the Oval Office, or press 8. The daily brief is in the Situation Room.
@@ -287,7 +310,7 @@ Version 2 arrives in stages, each one playable:
 1. **The code, reorganized** (done). The game is now a multi-file Java project with one package per mechanic, tests and build tools (see [The code](#the-code)). This stage also fixes the bug that gave many cabinet members and staff the same surname.
 2. **The transition and your team** (done). Ten weeks from Election Day to the inauguration to choose your cabinet and staff from shortlists, with vetting, leaks and early Senate whip counts. A new approval model with real presidents' range, from honeymoons in the 60s to lows in the 20s and rallies near 90%. Political capital gives way to relationships you build: goodwill with blocs, leaders and committee chairs, and favors owed.
 3. **Policies and their real-world effects** (done). About 150 policies in 12 areas, changed through bills, executive orders, agency rules or the budget. Each changes measurable outcomes over months and years, and each has an impacts panel with winners, losers, timing, precedents and how sure the evidence is. A map of the whole system shows what affects what.
-4. **Foreign policy and war.** Concrete objectives with at least 20 countries, a full set of tools from arms sales to covert action, wars of choice against any country, many ways to end a war, and realistic consequences.
+4. **Foreign policy and war** (done). Objectives with all 40 countries, a full set of tools from arms sales to covert action, wars of choice against any country, many ways to end a war, and realistic consequences (see [Statecraft and wars of choice](#statecraft-and-wars-of-choice-new-in-version-2)).
 5. **News and runaway storylines.** Hundreds of new stories, and stories that grow with your choices and can take over a presidency.
 6. **Watch mode priorities and the 2029 setup.** Presets and sliders for the computer president, and sliders for the world you inherit in 2029.
 7. **New art.** Lit, textured rooms, detailed portraits, and a new interface with real typefaces.
@@ -313,6 +336,7 @@ Version 2 arrives in stages, each one playable:
 | ![A press conference](screenshots/press-conference.png) | ![Building a speech](screenshots/building-a-speech.png) |
 | ![Your party](screenshots/your-party.png) | ![A domestic event](screenshots/a-domestic-event.png) |
 | ![Every inauguration](screenshots/eras.png) | ![The tour](screenshots/the-tour.png) |
+| ![Statecraft](screenshots/statecraft.png) | ![A war of choice](screenshots/a-war-of-choice.png) |
 | ![The world in 1942](screenshots/the-world-1942.png) | ![A war](screenshots/a-war.png) |
 | ![The Hill in 1942](screenshots/the-hill-1942.png) | ![The cabinet in 1942](screenshots/the-cabinet-1942.png) |
 | ![A turning point](screenshots/a-turning-point.png) | ![The campaign](screenshots/the-campaign.png) |
