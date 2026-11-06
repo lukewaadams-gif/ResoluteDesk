@@ -16,6 +16,7 @@ import resolutedesk.congress.Bloc;
 import resolutedesk.congress.Hill;
 import resolutedesk.history.History;
 import resolutedesk.model.Game;
+import resolutedesk.sim.Auto;
 import resolutedesk.sim.Decision;
 import resolutedesk.sim.Decisions;
 
@@ -369,6 +370,6 @@ public final class Wars {
         g.log(NK_BIG, "PRESIDENT VETOES THE WAR POWERS RESOLUTION; THE WAR GOES ON", "Critics in Congress call it a constitutional crisis.", 3);
     }
 
-    /** What the hands-off president does with a War Powers resolution: obeys it if the war is going badly. */
-    public static int auto(Game g, Decision d) { return d.war != null && d.war.front < 55 ? 1 : 0; }
+    /** What the hands-off president does with a War Powers resolution: obeys it if the war is going badly (sooner for a dove). */
+    public static int auto(Game g, Decision d) { return d.war != null && d.war.front < Auto.plan(g).giveUpFront() ? 1 : 0; }
 }

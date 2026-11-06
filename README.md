@@ -30,6 +30,7 @@ Version 2 is under way; see [Coming in version 2](#coming-in-version-2).
 - **Scenarios and custom conditions:**
   - Five twists on the real starting point: a recession, a war abroad, divided government, a landslide mandate, or an inflation shock.
   - Set approval, unemployment, inflation, growth and your party's seats yourself.
+  - **The world you inherit in 2029** (new in version 2): set the popular-vote margin of the 2028 election (a bigger win, a bigger mandate), the deficit, the balance of the Supreme Court (justices who retire are replaced by made-up ones), and the tension in the Taiwan Strait, between Russia and Ukraine (from a peace agreement to all-out war) and in the Middle East. Leave any of them alone to keep the projection.
   - Easy, Normal and Hard.
 - **Your president and running mate:** play the real winner, the runner-up or another contender of the day (about 35 politicians of today and 55 of the past), or create your own. You choose the name, party, home state, age and background, and spend points on strengths.
 - **The transition** (new in version 2): start the day after the election, with the weeks until the inauguration to choose a government.
@@ -315,6 +316,9 @@ The eras are on the **New presidency** screen. The campaign is in the Press Brie
 - **Achievements:** 32 of them, and a Hall of Fame of every presidency you finish.
 - **A tour of the Oval Office** the first time you play.
 - **Watch mode:** the game governs on its own at three speeds, and you take back the controls whenever you like. **Watch history** on the title screen hands a random era to the real president.
+  - **Priorities** (new in version 2): before it starts, choose how the computer governs. Pick a preset (Steady hand, Big agenda, Deal-maker, Hawk, Dove or On the road) or set six sliders: legislative ambition (one bill at a time to four), bipartisanship, foreign policy (dove to hawk: how readily it uses force and how long it fights a war going badly), executive orders, travel and campaigning, and caution.
+  - **Your agenda:** check the bills you want sent to Congress, in the order you want them. Otherwise the computer chooses.
+  - **Stop for big decisions:** bills to sign or veto, shutdowns and the debt limit, crises and war, court rulings, scandals, storylines and the campaign. When one reaches your desk, watch mode waits for you, then carries on.
 - **From Battleground 2028:** take office as the winner of a Battleground 2028 game. Their face, ratings and running mate come across, with the Congress the election produced and the economy they inherit. The desktop versions read the other game's saves on the same computer; the browser versions read them in the same browser and site.
 
 ## Coming in version 2
@@ -326,7 +330,7 @@ Version 2 arrives in stages, each one playable:
 3. **Policies and their real-world effects** (done). About 150 policies in 12 areas, changed through bills, executive orders, agency rules or the budget. Each changes measurable outcomes over months and years, and each has an impacts panel with winners, losers, timing, precedents and how sure the evidence is. A map of the whole system shows what affects what.
 4. **Foreign policy and war** (done). Objectives with all 40 countries, a full set of tools from arms sales to covert action, wars of choice against any country, many ways to end a war, and realistic consequences (see [Statecraft and wars of choice](#statecraft-and-wars-of-choice-new-in-version-2)).
 5. **News and runaway storylines** (done). 541 stories of their era and sixteen storylines that grow with your choices and can take over a presidency (see [The news and runaway storylines](#the-news-and-runaway-storylines-new-in-version-2)).
-6. **Watch mode priorities and the 2029 setup.** Presets and sliders for the computer president, and sliders for the world you inherit in 2029.
+6. **Watch mode priorities and the 2029 setup** (done). Presets, sliders, a bill list and stops for big decisions in watch mode; sliders for the 2028 result, the deficit, the Court and three hot spots in 2029.
 7. **New art.** Lit, textured rooms, detailed portraits, and a new interface with real typefaces.
 
 ## Screenshots
@@ -352,6 +356,7 @@ Version 2 arrives in stages, each one playable:
 | ![Every inauguration](screenshots/eras.png) | ![The tour](screenshots/the-tour.png) |
 | ![Statecraft](screenshots/statecraft.png) | ![A war of choice](screenshots/a-war-of-choice.png) |
 | ![The paper and its storylines](screenshots/the-paper-storylines.png) | ![A storyline](screenshots/a-storyline.png) |
+| ![Watch mode priorities](screenshots/watch-mode.png) | ![The world you inherit in 2029](screenshots/setup-2029.png) |
 | ![The world in 1942](screenshots/the-world-1942.png) | ![A war](screenshots/a-war.png) |
 | ![The Hill in 1942](screenshots/the-hill-1942.png) | ![The cabinet in 1942](screenshots/the-cabinet-1942.png) |
 | ![A turning point](screenshots/a-turning-point.png) | ![The campaign](screenshots/the-campaign.png) |

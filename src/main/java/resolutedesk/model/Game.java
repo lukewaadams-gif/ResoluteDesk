@@ -17,6 +17,7 @@ import resolutedesk.executive.Exec;
 import resolutedesk.home.Home;
 import resolutedesk.policy.PolicyState;
 import resolutedesk.sim.Decision;
+import resolutedesk.sim.WatchPlan;
 import resolutedesk.stories.StoryState;
 import resolutedesk.transition.Transition;
 import resolutedesk.world.World;
@@ -64,6 +65,7 @@ public final class Game implements Serializable {
     public StoryState stories;                 // the era's news, and the storylines under way
     public int tut = -1;                       // the tutorial's step (-1: off)
     public boolean watch;                      // watch mode: the game plays itself
+    public WatchPlan plan = new WatchPlan();   // how the computer governs in watch mode
     public int watchSpeed = 1;
     public int okCount, failCount;             // crises and events that went well or badly
     public double justice;                     // the running record on equal justice

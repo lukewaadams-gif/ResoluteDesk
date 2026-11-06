@@ -79,6 +79,12 @@ Things that need the president come back as `sim.Decision`s in the inbox, each w
 advisers' views and odds. `sim.Decisions` knows what every kind of decision does, and how the
 hands-off president would choose, which is what watch mode and the simulations use.
 
+The hands-off president follows the game's `sim.WatchPlan`: six priorities from 0 to 1 that set how many bills
+it keeps moving, how bipartisan they are, how readily it uses force, how often it signs orders and travels, and how
+cautious it is, plus an optional ordered list of bills and the kinds of decision watch mode stops for. Every
+priority's middle value reproduces the behavior the game had before the plan existed, so the simulations and
+their calibration are unchanged by default.
+
 ## Two models worth knowing
 
 **Approval** (`opinion.Approval`) heads each week toward a target in two parts. The fundamentals are the

@@ -70,6 +70,7 @@ import resolutedesk.ui.TextAction;
 import resolutedesk.ui.Toast;
 import resolutedesk.ui.TransitionUI;
 import resolutedesk.ui.USMap;
+import resolutedesk.ui.Watch;
 
 /** The game window: input, screens, widgets and the main loop. */
 public class ResoluteDesk extends JPanel implements ActionListener, MouseListener, MouseMotionListener, KeyListener, MouseWheelListener {
@@ -237,6 +238,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 case SC_HALL: Legacy.hall(this, g); break;
                 case SC_IMPORT: BgImport.draw(this, g); break;
                 case SC_TRANS: TransitionUI.draw(this, g); break;
+                case SC_WATCH: Watch.draw(this, g); break;
                 default: break;
             }
         } catch (RuntimeException ex) {
@@ -348,6 +350,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             case SC_OVAL: Oval.key(this, e); break;
             case SC_ROOM: Rooms.key(this, e); break;
             case SC_TRANS: TransitionUI.key(this, e); break;
+            case SC_WATCH: Watch.key(this, e); break;
             case SC_PAPER: if (k == KeyEvent.VK_ESCAPE || k == KeyEvent.VK_SPACE) go(SC_OVAL); break;
             case SC_SETUP: case SC_PICK: case SC_CREATE: case SC_VP:
                 if (k == KeyEvent.VK_ESCAPE) Screens.back(this);

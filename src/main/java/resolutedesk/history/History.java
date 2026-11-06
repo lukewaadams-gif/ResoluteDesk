@@ -21,8 +21,10 @@ import resolutedesk.executive.Cabinet;
 import resolutedesk.home.Home;
 import resolutedesk.home.HomeFront;
 import resolutedesk.model.Game;
+import resolutedesk.sim.Auto;
 import resolutedesk.sim.Decision;
 import resolutedesk.sim.Decisions;
+import resolutedesk.sim.WatchPlan;
 import resolutedesk.ui.Flag;
 import resolutedesk.world.Diplo;
 import resolutedesk.world.War;
@@ -364,14 +366,16 @@ public final class History {
     }
 
     /** What a hands-off president does with a war: send what the generals ask while the public backs it, look for a way out when it doesn't. */
+    /** The hands-off president's war: troops and strategy every four weeks. A dove draws down sooner as support falls; a hawk later. */
     public static void autoWar(Game g) {
         if (g.world == null || g.world.wars == null || g.week % 4 != 0) return;
+        double quit = 30 - (Auto.plan(g).p[WatchPlan.P_HAWK] - 0.5) * 30;
         for (War x : g.world.wars) {
             if (x.stage != 2) continue;
-            double target = x.support < 30 ? x.troops * 0.85 : x.front < 85 ? x.need * 1.25 : x.need;
+            double target = x.support < quit ? x.troops * 0.85 : x.front < 85 ? x.need * 1.25 : x.need;
             if (x.stakes >= 3) target = x.need * 1.4;
             setTroops(g, x, x.troops + (target - x.troops) * 0.25);
-            int s = x.support < 35 && x.stakes < 2 ? 3 : x.front < 40 && x.support > 50 ? 2 : 1;
+            int s = x.support < quit + 5 && x.stakes < 2 ? 3 : x.front < 40 && x.support > 50 ? 2 : 1;
             if (x.stakes >= 3 && x.front < 90) s = 2;
             setStrategy(g, x, s);
         }

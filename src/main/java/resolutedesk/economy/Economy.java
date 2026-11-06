@@ -46,6 +46,7 @@ public final class Economy {
         if (!Double.isNaN(s.cUnemp)) e.unemp = s.cUnemp;
         if (!Double.isNaN(s.cInfl)) e.infl = s.cInfl;
         if (!Double.isNaN(s.cGdp)) e.gdp = s.cGdp;
+        if (!Double.isNaN(s.cDeficit)) e.deficit = s.cDeficit;
         e.og = -(e.unemp - e.nairu) / 0.5;
         double old = e.og - (e.gdp - e.potential);
         for (int i = 0; i < 53; i++) e.ogHist[i] = old + (e.og - old) * i / 52.0;

@@ -99,6 +99,34 @@ public final class Courts {
 
     public static int count(Game g, int party) { int n = 0; for (Justice j : g.ex.court) if (j.party == party) n++; return n; }
 
+    /**
+     * Sets the balance of the Court for a projected era: the longest-serving justices on the other side retire before
+     * the game begins and are replaced by made-up justices of the side the player chose.
+     */
+    public static void reshape(Game g, int republicans) {
+        Random r = new Random(g.set.seed * 31 + 7);
+        int n = g.ex.court.size();
+        republicans = Math.max(0, Math.min(n, republicans));
+        while (count(g, REP) < republicans) replaceOldest(g, r, DEM, REP);
+        while (count(g, REP) > republicans) replaceOldest(g, r, REP, DEM);
+    }
+
+    static void replaceOldest(Game g, Random r, int from, int to) {
+        Justice old = null;
+        for (Justice j : g.ex.court) if (j.party == from && (old == null || j.born < old.born)) old = j;
+        if (old == null) return;
+        g.ex.court.remove(old);
+        Justice j = new Justice();
+        boolean f = genFemale(r, 0.5);
+        j.name = genFirst(r, f) + " " + genLast(r);
+        j.party = to; j.real = false;
+        j.ideo = (to == REP ? 1 : -1) * (0.55 + r.nextDouble() * 0.3);
+        j.born = yr(g) - 50 - r.nextInt(10);
+        j.face = face(j.name, r, to);
+        if (j.face.look != null) Cabinet.femaleLook(j.face.look, f, r);
+        g.ex.court.add(j);
+    }
+
     public static List<Justice> shortlist(Game g) {
         Random r = new Random(g.set.seed * 7 + g.ex.scotusVacancies * 1013);
         List<Justice> l = new ArrayList<Justice>();

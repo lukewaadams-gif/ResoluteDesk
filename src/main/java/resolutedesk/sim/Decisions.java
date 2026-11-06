@@ -17,6 +17,8 @@ import static resolutedesk.world.Countries.*;
 import static resolutedesk.world.CrisisData.*;
 import static resolutedesk.world.WorldData.*;
 
+import java.util.ArrayList;
+import java.util.List;
 import resolutedesk.ResoluteDesk;
 import resolutedesk.campaign.Reelection;
 import resolutedesk.congress.Bill;
@@ -127,15 +129,17 @@ public final class Decisions {
             case D_CRA: case D_EMERG_END: return 0;
             case D_IMPEACH: return 0;
             case D_WORLD: {
+                WatchPlan pl = Auto.plan(g);
                 String[] o = CR_OPTS[d.a].split(";;");
                 int best = 0; double bv = -9;
-                for (int i = 0; i < o.length; i++) { String[] t = o[i].split("\\|"); double q = Diplo.p(g, t[2], Double.parseDouble(t[3])); double v = q - (t[2].equals("m") ? 0.12 : 0) - (q >= 1 ? 0.45 : 0); if (v > bv) { bv = v; best = i; } }
+                for (int i = 0; i < o.length; i++) { String[] t = o[i].split("\\|"); double q = Diplo.p(g, t[2], Double.parseDouble(t[3])); double v = q - (t[2].equals("m") ? pl.forcePenalty() : 0) - (q >= 1 ? pl.surePenalty() : 0); if (v > bv) { bv = v; best = i; } }
                 return best;
             }
             case D_HOME: {
+                WatchPlan pl = Auto.plan(g);
                 String[] o = EV_OPTS[d.a].split(";;");
                 int best = 0; double bv = -9;
-                for (int i = 0; i < o.length; i++) { String[] t = o[i].split("\\|"); double q = Diplo.p(g, t[2], Double.parseDouble(t[3])); double v = q - (q >= 1 ? 0.45 : 0); if (v > bv) { bv = v; best = i; } }
+                for (int i = 0; i < o.length; i++) { String[] t = o[i].split("\\|"); double q = Diplo.p(g, t[2], Double.parseDouble(t[3])); double v = q - (q >= 1 ? pl.surePenalty() : 0); if (v > bv) { bv = v; best = i; } }
                 return best;
             }
             case D_HIST: return History.auto(g, d.a);
@@ -185,7 +189,7 @@ public final class Decisions {
         x.deleg[DG_PEOPLE] = true;
         Cabinet.fill(g);
         if (x.court.size() < 9 && x.nomineeJ == null) Courts.nominateJustice(g, Courts.shortlist(g).get(1));
-        if (g.week % 9 == 4) {
+        if (g.week % Auto.plan(g).orderWeeks() == 4 % Auto.plan(g).orderWeeks()) {
             int best = -1;
             for (int i = 0; i < AD_ID.length; i++) {
                 if (AD_KIND[i] == K_EMERG || !Actions.available(g, i) || AD_LEAN[i] >= 0 && AD_LEAN[i] != g.party) continue;
@@ -211,12 +215,13 @@ public final class Decisions {
         History.autoWar(g);
     }
 
-    /** Sends the president's next agenda bill to Congress when fewer than two are moving. */
+    /** Sends the president's next agenda bill to Congress when fewer than the plan allows are moving. */
     public static void autoAgenda(Game g) {
+        WatchPlan pl = Auto.plan(g);
         int active = 0;
         for (Bill b : g.cong.bills) if (b.ours && b.stage > ST_DRAFT && b.stage < ST_LAW && b.stage != ST_DEAD) active++;
-        if (active >= 2) return;
-        for (BillDef d : HillUI.agenda(g)) {
+        if (active >= pl.activeBills()) return;
+        for (BillDef d : agendaFor(g, pl)) {
             if (d.lean >= 0 && d.lean != g.party) continue;
             if (HillUI.inPlay(g, d)) continue;
             boolean tried = false;
@@ -224,11 +229,29 @@ public final class Decisions {
             if (tried) continue;
             Bill b = Legis.draft(g, d);
             b.recon = d.budget && Legis.reconOk(g, b);
+            if (pl.p[WatchPlan.P_BIPARTISAN] > 0.75) { b.size = Math.min(b.size, 0.75); b.scope = Math.min(b.scope, 0.35); }   // trimmed to win votes across the aisle
             if (Legis.chance(g, b, HOUSE, false) * Legis.chance(g, b, SENATE, false) < 0.05) { b.size = 0.6; b.scope = 0.2; }
             if (Legis.chance(g, b, HOUSE, false) * Legis.chance(g, b, SENATE, false) < 0.03) continue;
             Legis.introduce(g, b);
             return;
         }
+    }
+
+    /**
+     * The bills the computer will try, in order: the plan's own list if the player made one; otherwise the agenda,
+     * with bipartisan bills first for a plan that wants them, or the party's own first (the usual order).
+     */
+    static List<BillDef> agendaFor(Game g, WatchPlan pl) {
+        List<BillDef> all = HillUI.agenda(g);
+        List<BillDef> l = new ArrayList<BillDef>();
+        if (!pl.bills.isEmpty()) {
+            for (String id : pl.bills) for (BillDef d : all) if (d.id.equals(id)) l.add(d);
+            return l;
+        }
+        if (pl.p[WatchPlan.P_BIPARTISAN] <= 0.75) return all;
+        for (BillDef d : all) if (d.lean < 0) l.add(d);
+        for (BillDef d : all) if (d.lean >= 0) l.add(d);
+        return l;
     }
 
     public static void apply(Game g, Decision d, int k) {

@@ -85,6 +85,7 @@ import resolutedesk.sim.Auto;
 import resolutedesk.sim.Decision;
 import resolutedesk.sim.Decisions;
 import resolutedesk.sim.Setup;
+import resolutedesk.sim.WatchPlan;
 import resolutedesk.sim.Week;
 import resolutedesk.stories.Stories;
 import resolutedesk.stories.StoryDef;
@@ -135,6 +136,7 @@ public final class Diagnostics {
         }
         if (what.equals("ui")) ui(a.length > 2 ? a[2] : "shots");
         if (what.equals("policies")) policySim(a.length > 2 ? Integer.parseInt(a[2]) : 2025, a.length > 3 ? Integer.parseInt(a[3]) : 104);
+        if (what.equals("watch")) watchSim(a.length > 2 ? Integer.parseInt(a[2]) : 2025, a.length > 3 ? Integer.parseInt(a[3]) : 1, a.length > 4 ? Integer.parseInt(a[4]) : 104);
         if (what.equals("stories")) storySim(a.length > 2 ? Integer.parseInt(a[2]) : 2025, a.length > 3 ? Integer.parseInt(a[3]) : 104);
         if (what.equals("wars")) warSim(a.length > 2 ? Integer.parseInt(a[2]) : 2025, a.length > 3 ? Integer.parseInt(a[3]) : 80);
         if (what.equals("transition")) transitionSim(a.length > 2 ? Integer.parseInt(a[2]) : 2025, a.length > 3 ? Integer.parseInt(a[3]) : 52);
@@ -453,6 +455,31 @@ public final class Diagnostics {
         System.out.println(b);
     }
 
+    /**
+     * Watch mode with a preset plan (and for a projected era, a world set with the setup sliders): what the computer
+     * sent to Congress, the orders it signed, how often it traveled, and where things stood every half year.
+     */
+    static void watchSim(int year, int preset, int weeks) {
+        Settings s = new Settings();
+        Era e = era(year);
+        s.year = year; s.seed = 55; s.presId = eraRoster(e).get(0).id; s.vpId = defaultVp(e, candById(s.presId));
+        if (e.fictional) { s.cMargin = 8; s.cCourtR = 4; s.cTaiwan = 85; s.cUkraine = 20; s.cMideast = 70; s.cDeficit = 4; }
+        Game g = Setup.newGame(s);
+        g.plan.use(preset);
+        StringBuilder b = new StringBuilder("=== watch " + year + " " + WatchPlan.PRESET[preset] + ": " + g.plan.activeBills() + " bills, orders every " + g.plan.orderWeeks() + " weeks, road every " + g.plan.roadWeeks()
+                + "  court R " + Courts.count(g, REP) + " twt " + fmt0(g.world.twt) + " ua " + g.world.uaStage + " iran " + fmt0(g.world.iran) + " deficit " + fmt1(g.econ.deficit) + " mandate " + fmt1(g.cong.mandate) + "\n");
+        int trips = 0;
+        for (int k = 0; k < weeks && !g.over; k++) {
+            Auto.week(g);
+            for (int i = 0; i < NSLOT; i++) if (isTrip(g.act[i])) trips++;
+            Week.resolve(g); Decisions.autoAll(g);
+            if (g.week % 26 == 0) b.append("  wk").append(g.week).append(": approval ").append(fmt1(g.approval)).append(" bills ").append(g.cong.bills.size()).append(" laws ").append(g.cong.laws)
+                    .append(" orders ").append(g.ex.actions.size()).append(" trips ").append(trips).append(" kia ").append(g.world.kia).append(" twt ").append(fmt0(g.world.twt)).append("\n");
+        }
+        for (Bill bl : g.cong.bills) if (bl.ours) b.append("    * ").append(bl.name).append(": ").append(STAGE[bl.stage]).append("\n");
+        System.out.println(b);
+    }
+
     /** The era's news and its storylines over a presidency left to the hands-off president: every story, and how each storyline went. */
     static void storySim(int year, int weeks) {
         Game g = newGame(91, year, null, 0);
@@ -588,6 +615,8 @@ public final class Diagnostics {
         u.go(SC_HOME); shot(u, dir, "home");
         u.setup = new Settings();
         Screens.showEra(u); u.go(SC_SETUP); shot(u, dir, "setup");
+        u.setup.cMargin = 6.5; u.setup.cCourtR = 5; u.setup.cTaiwan = 80; shot(u, dir, "setup_2029_set");
+        u.setup = new Settings();
         u.setup.year = 2025;
         u.go(SC_PICK); Screens.pickParty = REP; Screens.sel = 0; shot(u, dir, "pick");
         Creator.begin(u, DEM); shot(u, dir, "create");
@@ -606,6 +635,9 @@ public final class Diagnostics {
         policyShots(u, dir);
         worldShots(u, dir);
         storyShots(u, dir);
+        u.game.plan.use(1); u.game.plan.bills.add(HillUI.agenda(u.game).get(0).id); u.game.plan.stop[0] = true; u.game.plan.stop[2] = true;
+        u.go(SC_WATCH); shot(u, dir, "watch_plan");
+        u.game.plan = new WatchPlan(); u.go(SC_OVAL);
         HillUI.tab = 1; HillUI.draftSel = 1; HillUI.draft = Legis.draft(u.game, HillUI.agenda(u.game).get(1)); shot(u, dir, "hill_draft");
         HillUI.tab = 0; HillUI.chairCh = 1; shot(u, dir, "hill_senate_chairs");
         for (Bill b : u.game.cong.bills) if (b.stage == ST_LAW) { Legis.toDesk(u.game, b); break; }

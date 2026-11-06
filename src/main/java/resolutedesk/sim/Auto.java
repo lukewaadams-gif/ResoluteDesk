@@ -10,17 +10,24 @@ import resolutedesk.campaign.Reelection;
 import resolutedesk.model.Game;
 import resolutedesk.ui.Rooms;
 
-/** What a hands-off president does each week: used by the test harness and by watch mode. */
+/** What a hands-off president does each week, following the watch plan: used by the test harness and by watch mode. */
 public final class Auto {
     public static void week(Game g) {
         int w = g.week;
+        WatchPlan pl = plan(g);
         if (w % 4 == 0) Week.routine(g);
-        if (w % 8 == 3) Rooms.roadWeek(g);
+        if (w % pl.roadWeeks() == 3 % pl.roadWeeks()) Rooms.roadWeek(g);
         if (g.stamina < 35) Rooms.restWeek(g);
         if (Reelection.season(g)) campaign(g);
         if (w % 6 == 1) Decisions.autoAgenda(g);
         Decisions.autoWhip(g);
         Decisions.autoExec(g);
+    }
+
+    /** The game's watch plan, made if an old save has none. */
+    public static WatchPlan plan(Game g) {
+        if (g.plan == null) g.plan = new WatchPlan();
+        return g.plan;
     }
 
     /** In the fall of an election year: two stops a week in the closest big states. */

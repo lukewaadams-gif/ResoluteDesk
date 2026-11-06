@@ -17,6 +17,7 @@ import resolutedesk.congress.Hill;
 import resolutedesk.congress.Relations;
 import resolutedesk.economy.Economy;
 import resolutedesk.executive.Cabinet;
+import resolutedesk.executive.Courts;
 import resolutedesk.history.History;
 import resolutedesk.home.HomeFront;
 import resolutedesk.model.Game;
@@ -26,6 +27,7 @@ import resolutedesk.policy.Policies;
 import resolutedesk.stories.Stories;
 import resolutedesk.transition.Transitions;
 import resolutedesk.world.Diplo;
+import resolutedesk.world.World;
 
 /** Starting a new presidency from the settings chosen before the game. */
 public final class Setup {
@@ -72,6 +74,7 @@ public final class Setup {
         Relations.elected(g, margin(g));
         Cabinet.setup(g);
         Diplo.setup(g);
+        inherit(g);
         Approval.init(g);
         HomeFront.setup(g);
         Policies.setup(g);
@@ -81,6 +84,32 @@ public final class Setup {
         if (s.transition) Transitions.begin(g);         // the oath comes when the transition ends
         else inaugurate(g);
         return g;
+    }
+
+    /**
+     * The world a game inherits, where the player has set it (a projected era's sliders): the balance of the
+     * Supreme Court and the tension in the Taiwan Strait, Ukraine and the Middle East.
+     */
+    static void inherit(Game g) {
+        Settings s = g.set;
+        if (s.cCourtR >= 0) Courts.reshape(g, s.cCourtR);
+        World w = g.world;
+        if (!Double.isNaN(s.cTaiwan)) {
+            w.twt = s.cTaiwan;
+            w.twStage = s.cTaiwan >= 85 ? 2 : s.cTaiwan >= 55 ? 1 : 0;
+            w.deter = clamp(75 - s.cTaiwan * 0.35, 30, 80);
+        }
+        if (!Double.isNaN(s.cUkraine)) {
+            double v = s.cUkraine;
+            w.uaStage = v < 25 ? 0 : v < 55 ? 1 : 2;
+            w.talks = v < 25 ? 100 : v < 55 ? 60 : Math.max(5, 40 - (v - 55));
+            w.ukr = v < 55 ? 60 : clamp(75 - (v - 55) * 0.8, 20, 75);
+            w.ruGain = v < 55 ? 20 : 20 + (v - 55) * 0.4;
+        }
+        if (!Double.isNaN(s.cMideast)) {
+            double v = s.cMideast;
+            w.iran = v; w.gaza = v * 0.9; w.proxy = v * 0.8; w.redsea = v * 0.8; w.terror = 25 + v * 0.3;
+        }
     }
 
     /** Noon on Inauguration Day: the transition's choices take office, and the first news of the presidency. */

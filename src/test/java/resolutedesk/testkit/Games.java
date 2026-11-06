@@ -27,7 +27,11 @@ public final class Games {
     }
 
     public static Game start(long seed, int year, String presId, int scenario) {
-        if (!ready) { Elect.init(); ready = true; }
+        return start(settings(seed, year, presId, scenario));
+    }
+
+    /** The settings for a new game, to change before starting it. */
+    public static Settings settings(long seed, int year, String presId, int scenario) {
         Settings s = new Settings();
         s.year = year;
         s.seed = seed;
@@ -35,6 +39,11 @@ public final class Games {
         Era e = era(year);
         s.presId = presId != null ? presId : eraRoster(e).get(0).id;
         s.vpId = defaultVp(e, candById(s.presId));
+        return s;
+    }
+
+    public static Game start(Settings s) {
+        if (!ready) { Elect.init(); ready = true; }
         return Setup.newGame(s);
     }
 

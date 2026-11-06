@@ -228,7 +228,7 @@ public final class Screens {
         u.stepper(g, bx + 200, y, ph < 0 ? "House: era" : "House: " + ph, () -> s.cHouse = Math.max(120, (s.cHouse < 0 ? 218 : s.cHouse) - 5), () -> s.cHouse = Math.min(330, (s.cHouse < 0 ? 218 : s.cHouse) + 5), "Your party's seats in the House (218 is a majority).", 110);
         u.stepper(g, bx + 380, y, ps < 0 ? "Senate: era" : "Senate: " + ps, () -> s.cSenate = Math.max(25, (s.cSenate < 0 ? 50 : s.cSenate) - 1), () -> s.cSenate = Math.min(75, (s.cSenate < 0 ? 50 : s.cSenate) + 1), "Your party's senators (50 plus the vice president is a majority).", 110);
         y += 44;
-        u.button(g, bx + 18, y, 200, 30, "Reset to the era", B_GHOST, () -> { s.cApproval = Double.NaN; s.cUnemp = Double.NaN; s.cInfl = Double.NaN; s.cGdp = Double.NaN; s.cHouse = -1; s.cSenate = -1; });
+        u.button(g, bx + 18, y, 200, 30, "Reset to the era", B_GHOST, () -> resetConditions(s));
         y += 50;
         double hw = (bw - 36 - 8) / 2;
         u.button(g, bx + 18, y, hw, 30, (s.tutorial ? "[x] " : "[  ] ") + "A tour of the Oval Office", B_GHOST, () -> s.tutorial = !s.tutorial, "A one-minute tour when you take office.");
@@ -236,10 +236,55 @@ public final class Screens {
                 "Start the day after the election, with ten weeks to choose your cabinet and staff from shortlists. Otherwise your team picks them for you.");
         y += 44;
         wrap(g, cur.blurb, bx + 18, y, bw - 36, F_XS, C_DIM);
-        // the era at a glance
+        // the era at a glance, or for a projected era, the world you inherit
         double cx = bx + bw + 16, cw = DW - 48 - cx;
+        if (cur.fictional) inherit(u, g, s, cur, cx, cw);
+        else glance(u, g, cur, cx, cw);
+        u.button(g, 48, 832, 180, 44, "Back", B_GHOST, () -> u.go(SC_HOME));
+        u.button(g, DW - 48 - 300, 832, 300, 44, "Choose your president", B_GOLD, () -> { sel = -1; Cand w = era(s.year).winnerId != null ? candById(era(s.year).winnerId) : null; pickParty = w != null ? w.party : DEM; u.go(SC_PICK); });
+    }
+
+    static void resetConditions(Settings s) {
+        s.cApproval = Double.NaN; s.cUnemp = Double.NaN; s.cInfl = Double.NaN; s.cGdp = Double.NaN; s.cHouse = -1; s.cSenate = -1;
+        s.cMargin = Double.NaN; s.cDeficit = Double.NaN; s.cCourtR = -1; s.cTaiwan = Double.NaN; s.cUkraine = Double.NaN; s.cMideast = Double.NaN;
+    }
+
+    /**
+     * A projected era's right-hand panel: the 2028 result, the deficit, the balance of the Supreme Court and the
+     * tension in three hot spots, each the projection's own until the player moves it.
+     */
+    static void inherit(ResoluteDesk u, Graphics2D g, Settings s, Era cur, double cx, double cw) {
+        u.panel(g, cx, 124, cw, 690, "The world you inherit");
+        double y = 170;
+        wrap(g, "A projected " + cur.year + ": set how the " + (cur.year - 1) + " election went and what is waiting for you. Leave a setting alone to keep the projection.", cx + 18, y, cw - 36, F_XS, C_DIM);
+        y += 44;
+        label(g, "The " + (cur.year - 1) + " election", cx + 18, y, C_GOLD); y += 14;
+        y = slim(u, g, cx, cw, y, "Popular-vote margin", s.cMargin, 2.5, -3, 15, " pts", v -> s.cMargin = v, "A bigger win means a bigger mandate and a longer honeymoon in Congress.");
+        text(g, "House and Senate seats are set in the middle panel.", cx + 18, y + 6, F_T, C_FAINT); y += 26;
+        label(g, "Washington", cx + 18, y, C_GOLD); y += 14;
+        y = slim(u, g, cx, cw, y, "Deficit", s.cDeficit, cur.deficit, 0, 12, "% of GDP", v -> s.cDeficit = v, "The budget deficit you inherit.");
+        int era = 0; for (String j : courtIn(cur)) if (j.split("\\|")[2].equals("R")) era++;
+        final int eraR = era;
+        int r = s.cCourtR < 0 ? era : s.cCourtR;
+        text(g, "Supreme Court", cx + 18, y + 16, F_S, C_TEXT);
+        u.stepper(g, cx + 150, y, r + " R - " + (9 - r) + " D", () -> s.cCourtR = Math.max(0, (s.cCourtR < 0 ? eraR : s.cCourtR) - 1), () -> s.cCourtR = Math.min(9, (s.cCourtR < 0 ? eraR : s.cCourtR) + 1),
+                "Justices appointed by Republican and Democratic presidents. A change means justices retired before " + cur.year + " and made-up justices took their seats.", 110);
+        textR(g, s.cCourtR < 0 ? "projection" : "set", cx + cw - 18, y + 16, F_XSB, s.cCourtR < 0 ? C_DIM : C_GOLD);
+        y += 44;
+        label(g, "Tensions abroad", cx + 18, y, C_GOLD); y += 14;
+        y = slim(u, g, cx, cw, y, "China and Taiwan", s.cTaiwan, 55, 0, 100, "", v -> s.cTaiwan = v, "0 is calm across the Strait; 85 and up, Beijing is drilling around the island.");
+        y = slim(u, g, cx, cw, y, "Russia and Ukraine", s.cUkraine, 70, 0, 100, "", v -> s.cUkraine = v, "Under 25, a peace agreement; under 55, a ceasefire; above that, the war goes on.");
+        y = slim(u, g, cx, cw, y, "The Middle East", s.cMideast, 45, 0, 100, "", v -> s.cMideast = v, "Iran's nuclear program, Gaza, Red Sea shipping and attacks by Iran's proxies.");
+        y += 8;
+        label(g, "The projection", cx + 18, y, C_FAINT); y += 22;
+        String[][] rows = {{"Unemployment", fmt1(cur.unemp) + "%"}, {"Inflation", fmt1(cur.infl) + "%"}, {"Growth", fmt1(cur.gdp) + "%"}, {"Debt held by the public", Math.round(cur.debt) + "% of GDP"}};
+        for (String[] row : rows) { text(g, row[0], cx + 18, y, F_XS, C_TEXT); textR(g, row[1], cx + cw - 18, y, F_XSB, Color.white); y += 20; }
+    }
+
+    /** A real era's right-hand panel: the economy, Congress and the Court on inauguration day, and any war under way. */
+    static void glance(ResoluteDesk u, Graphics2D g, Era cur, double cx, double cw) {
         u.panel(g, cx, 124, cw, 690, cur.year + " at a glance");
-        y = 170;
+        double y = 170;
         String[][] rows = {{"Unemployment", fmt1(cur.unemp) + "%"}, {"Inflation", fmt1(cur.infl) + "%"}, {"Growth", fmt1(cur.gdp) + "%"}, {"Fed funds rate", fmt1(cur.fed) + "%"},
                 {"10-year Treasury", fmt1(cur.tenYr) + "%"}, {"Stocks (S&P index)", thousands(Math.round(cur.stocks))}, {"Gas", "$" + fmt2(cur.gas)},
                 {"Debt held by the public", Math.round(cur.debt) + "% of GDP"}, {"Deficit", fmt1(cur.deficit) + "% of GDP"}, {"Fed chair", cur.fedChair}, {"Outgoing president", cur.predecessor}};
@@ -260,8 +305,16 @@ public final class Screens {
                 for (String wsp : WAR_START) if (wsp.startsWith(cur.year + "|")) for (String tok : wsp.substring(5).split(" ")) { text(g, "At war: " + WAR_NAME[warIndex(tok.split(":")[0])].replace("The ", "the "), cx + 18, y, F_XS, C_AMBER); y += 20; }
             }
         } else wrap(g, "Depends on who won: your party starts with about 232 House seats and 51 senators as a Democrat, or 229 and 52 as a Republican.", cx + 18, y, cw - 36, F_XS, C_TEXT);
-        u.button(g, 48, 832, 180, 44, "Back", B_GHOST, () -> u.go(SC_HOME));
-        u.button(g, DW - 48 - 300, 832, 300, 44, "Choose your president", B_GOLD, () -> { sel = -1; Cand w = era(s.year).winnerId != null ? candById(era(s.year).winnerId) : null; pickParty = w != null ? w.party : DEM; u.go(SC_PICK); });
+    }
+
+    /** A slider in the narrow panel: the era's value in grey until it's moved, then the player's in gold. */
+    static double slim(ResoluteDesk u, Graphics2D g, double cx, double cw, double y, String name, double v, double def, double lo, double hi, String unit, DoubleAction set, String tip) {
+        boolean custom = !Double.isNaN(v);
+        double val = custom ? v : def;
+        text(g, name, cx + 18, y + 16, F_XS, C_TEXT);
+        u.slider(g, cx + 150, y + 12, cw - 260, (val - lo) / (hi - lo), custom ? C_GOLD : C_FAINT, x -> set.on(Math.round((lo + x * (hi - lo)) * 10) / 10.0), tip);
+        textR(g, (custom ? "" : "~") + fmt1(val) + unit, cx + cw - 18, y + 16, F_XSB, custom ? C_GOLD : C_DIM);
+        return y + 32;
     }
 
     static double condition(ResoluteDesk u, Graphics2D g, double bx, double bw, double y, String name, double v, double def, double lo, double hi, String unit, DoubleAction set, Runnable reset) {

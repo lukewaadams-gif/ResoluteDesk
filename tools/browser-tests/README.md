@@ -16,6 +16,7 @@ by counting the JavaScript errors the page raised, which should be zero.
 | `policy.js` | the Cabinet Room: a policy and its impacts, a bill, an executive order, outcomes and the system map |
 | `statecraft.js` | statecraft and a war of choice: military aid, an objective, covert action, a vote in Congress, an invasion, a timetable, saving and resuming |
 | `stories.js` | the era's news: the paper's sections, a storyline's decision, the developing-stories panel, the daily brief, saving and resuming |
+| `watch.js` | watch mode's plan (a preset, a bill list, a stop for bills to sign) until it stops for a decision; then a 2029 game with the Court, the election and tensions abroad set |
 | `history.js` | a 1961 presidency: the tour, a war, re-election, election night, the verdict, the Hall of Fame, the import screen and watch mode |
 
 They need Node and Playwright (`npm install -g playwright`):

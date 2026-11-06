@@ -123,8 +123,8 @@ public final class Oval {
         else u.button(g, DW - 190, 10, 170, 36, game.watch ? "Watching..." : "End week  >", game.watch ? B_NORM : B_GOLD, () -> { if (game.watch) game.watch = false; else endWeek(u); }, game.watch ? "Watch mode is on: click to take the controls back." : "Play out this week. (Space)");
         u.button(g, DW - 252, 10, 54, 36, "Save", B_GHOST, () -> SaveGame.save(u, SaveGame.SLOT), "Save the game");
         if (!game.over) u.button(g, DW - 378, 10, 58, 36, game.watch ? Watch.SPEED[clampi(game.watchSpeed, 0, 2)] : "Watch", game.watch ? B_PRIMARY : B_GHOST,
-                () -> { if (game.watch) game.watchSpeed = (game.watchSpeed + 1) % 3; else { game.watch = true; game.tut = -1; Watch.timer = 0; } },
-                game.watch ? "Watch speed: click to change. Click 'Watching...' to stop." : "Watch mode: the game plays itself, week after week, until you take back the controls.");
+                () -> { if (game.watch) game.watchSpeed = (game.watchSpeed + 1) % 3; else u.go(SC_WATCH); },
+                game.watch ? "Watch speed: click to change. Click 'Watching...' to stop." : "Watch mode: choose how the computer governs, then watch it play until you take back the controls.");
         u.button(g, DW - 314, 10, 54, 36, "Menu", B_GHOST, () -> u.modal("Leave the Oval Office?", "Your game is saved automatically every week.", new String[]{"Stay", "Main menu"},
                 new Runnable[]{null, () -> { SaveGame.save(u, SaveGame.AUTO); u.go(SC_HOME); }}, null));
     }

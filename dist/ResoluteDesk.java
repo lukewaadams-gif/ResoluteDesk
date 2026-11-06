@@ -249,6 +249,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 case SC_HALL: Legacy.hall(this, g); break;
                 case SC_IMPORT: BgImport.draw(this, g); break;
                 case SC_TRANS: TransitionUI.draw(this, g); break;
+                case SC_WATCH: Watch.draw(this, g); break;
                 default: break;
             }
         } catch (RuntimeException ex) {
@@ -360,6 +361,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             case SC_OVAL: Oval.key(this, e); break;
             case SC_ROOM: Rooms.key(this, e); break;
             case SC_TRANS: TransitionUI.key(this, e); break;
+            case SC_WATCH: Watch.key(this, e); break;
             case SC_PAPER: if (k == KeyEvent.VK_ESCAPE || k == KeyEvent.VK_SPACE) go(SC_OVAL); break;
             case SC_SETUP: case SC_PICK: case SC_CREATE: case SC_VP:
                 if (k == KeyEvent.VK_ESCAPE) Screens.back(this);
@@ -5229,6 +5231,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             }
             if (what.equals("ui")) ui(a.length > 2 ? a[2] : "shots");
             if (what.equals("policies")) policySim(a.length > 2 ? Integer.parseInt(a[2]) : 2025, a.length > 3 ? Integer.parseInt(a[3]) : 104);
+            if (what.equals("watch")) watchSim(a.length > 2 ? Integer.parseInt(a[2]) : 2025, a.length > 3 ? Integer.parseInt(a[3]) : 1, a.length > 4 ? Integer.parseInt(a[4]) : 104);
             if (what.equals("stories")) storySim(a.length > 2 ? Integer.parseInt(a[2]) : 2025, a.length > 3 ? Integer.parseInt(a[3]) : 104);
             if (what.equals("wars")) warSim(a.length > 2 ? Integer.parseInt(a[2]) : 2025, a.length > 3 ? Integer.parseInt(a[3]) : 80);
             if (what.equals("transition")) transitionSim(a.length > 2 ? Integer.parseInt(a[2]) : 2025, a.length > 3 ? Integer.parseInt(a[3]) : 52);
@@ -5547,6 +5550,31 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             System.out.println(b);
         }
 
+        /**
+         * Watch mode with a preset plan (and for a projected era, a world set with the setup sliders): what the computer
+         * sent to Congress, the orders it signed, how often it traveled, and where things stood every half year.
+         */
+        static void watchSim(int year, int preset, int weeks) {
+            Settings s = new Settings();
+            Era e = era(year);
+            s.year = year; s.seed = 55; s.presId = eraRoster(e).get(0).id; s.vpId = defaultVp(e, candById(s.presId));
+            if (e.fictional) { s.cMargin = 8; s.cCourtR = 4; s.cTaiwan = 85; s.cUkraine = 20; s.cMideast = 70; s.cDeficit = 4; }
+            Game g = Setup.newGame(s);
+            g.plan.use(preset);
+            StringBuilder b = new StringBuilder("=== watch " + year + " " + WatchPlan.PRESET[preset] + ": " + g.plan.activeBills() + " bills, orders every " + g.plan.orderWeeks() + " weeks, road every " + g.plan.roadWeeks()
+                    + "  court R " + Courts.count(g, REP) + " twt " + fmt0(g.world.twt) + " ua " + g.world.uaStage + " iran " + fmt0(g.world.iran) + " deficit " + fmt1(g.econ.deficit) + " mandate " + fmt1(g.cong.mandate) + "\n");
+            int trips = 0;
+            for (int k = 0; k < weeks && !g.over; k++) {
+                Auto.week(g);
+                for (int i = 0; i < NSLOT; i++) if (isTrip(g.act[i])) trips++;
+                Week.resolve(g); Decisions.autoAll(g);
+                if (g.week % 26 == 0) b.append("  wk").append(g.week).append(": approval ").append(fmt1(g.approval)).append(" bills ").append(g.cong.bills.size()).append(" laws ").append(g.cong.laws)
+                        .append(" orders ").append(g.ex.actions.size()).append(" trips ").append(trips).append(" kia ").append(g.world.kia).append(" twt ").append(fmt0(g.world.twt)).append("\n");
+            }
+            for (Bill bl : g.cong.bills) if (bl.ours) b.append("    * ").append(bl.name).append(": ").append(STAGE[bl.stage]).append("\n");
+            System.out.println(b);
+        }
+
         /** The era's news and its storylines over a presidency left to the hands-off president: every story, and how each storyline went. */
         static void storySim(int year, int weeks) {
             Game g = newGame(91, year, null, 0);
@@ -5682,6 +5710,8 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             u.go(SC_HOME); shot(u, dir, "home");
             u.setup = new Settings();
             Screens.showEra(u); u.go(SC_SETUP); shot(u, dir, "setup");
+            u.setup.cMargin = 6.5; u.setup.cCourtR = 5; u.setup.cTaiwan = 80; shot(u, dir, "setup_2029_set");
+            u.setup = new Settings();
             u.setup.year = 2025;
             u.go(SC_PICK); Screens.pickParty = REP; Screens.sel = 0; shot(u, dir, "pick");
             Creator.begin(u, DEM); shot(u, dir, "create");
@@ -5700,6 +5730,9 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             policyShots(u, dir);
             worldShots(u, dir);
             storyShots(u, dir);
+            u.game.plan.use(1); u.game.plan.bills.add(HillUI.agenda(u.game).get(0).id); u.game.plan.stop[0] = true; u.game.plan.stop[2] = true;
+            u.go(SC_WATCH); shot(u, dir, "watch_plan");
+            u.game.plan = new WatchPlan(); u.go(SC_OVAL);
             HillUI.tab = 1; HillUI.draftSel = 1; HillUI.draft = Legis.draft(u.game, HillUI.agenda(u.game).get(1)); shot(u, dir, "hill_draft");
             HillUI.tab = 0; HillUI.chairCh = 1; shot(u, dir, "hill_senate_chairs");
             for (Bill b : u.game.cong.bills) if (b.stage == ST_LAW) { Legis.toDesk(u.game, b); break; }
@@ -5828,6 +5861,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             if (!Double.isNaN(s.cUnemp)) e.unemp = s.cUnemp;
             if (!Double.isNaN(s.cInfl)) e.infl = s.cInfl;
             if (!Double.isNaN(s.cGdp)) e.gdp = s.cGdp;
+            if (!Double.isNaN(s.cDeficit)) e.deficit = s.cDeficit;
             e.og = -(e.unemp - e.nairu) / 0.5;
             double old = e.og - (e.gdp - e.potential);
             for (int i = 0; i < 53; i++) e.ogHist[i] = old + (e.og - old) * i / 52.0;
@@ -6918,6 +6952,34 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         static int yr(Game g) { return dateOf(g.day())[0]; }
 
         public static int count(Game g, int party) { int n = 0; for (Justice j : g.ex.court) if (j.party == party) n++; return n; }
+
+        /**
+         * Sets the balance of the Court for a projected era: the longest-serving justices on the other side retire before
+         * the game begins and are replaced by made-up justices of the side the player chose.
+         */
+        public static void reshape(Game g, int republicans) {
+            Random r = new Random(g.set.seed * 31 + 7);
+            int n = g.ex.court.size();
+            republicans = Math.max(0, Math.min(n, republicans));
+            while (count(g, REP) < republicans) replaceOldest(g, r, DEM, REP);
+            while (count(g, REP) > republicans) replaceOldest(g, r, REP, DEM);
+        }
+
+        static void replaceOldest(Game g, Random r, int from, int to) {
+            Justice old = null;
+            for (Justice j : g.ex.court) if (j.party == from && (old == null || j.born < old.born)) old = j;
+            if (old == null) return;
+            g.ex.court.remove(old);
+            Justice j = new Justice();
+            boolean f = genFemale(r, 0.5);
+            j.name = genFirst(r, f) + " " + genLast(r);
+            j.party = to; j.real = false;
+            j.ideo = (to == REP ? 1 : -1) * (0.55 + r.nextDouble() * 0.3);
+            j.born = yr(g) - 50 - r.nextInt(10);
+            j.face = face(j.name, r, to);
+            if (j.face.look != null) Cabinet.femaleLook(j.face.look, f, r);
+            g.ex.court.add(j);
+        }
 
         public static List<Justice> shortlist(Game g) {
             Random r = new Random(g.set.seed * 7 + g.ex.scotusVacancies * 1013);
@@ -8063,14 +8125,16 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         }
 
         /** What a hands-off president does with a war: send what the generals ask while the public backs it, look for a way out when it doesn't. */
+        /** The hands-off president's war: troops and strategy every four weeks. A dove draws down sooner as support falls; a hawk later. */
         public static void autoWar(Game g) {
             if (g.world == null || g.world.wars == null || g.week % 4 != 0) return;
+            double quit = 30 - (Auto.plan(g).p[WatchPlan.P_HAWK] - 0.5) * 30;
             for (War x : g.world.wars) {
                 if (x.stage != 2) continue;
-                double target = x.support < 30 ? x.troops * 0.85 : x.front < 85 ? x.need * 1.25 : x.need;
+                double target = x.support < quit ? x.troops * 0.85 : x.front < 85 ? x.need * 1.25 : x.need;
                 if (x.stakes >= 3) target = x.need * 1.4;
                 setTroops(g, x, x.troops + (target - x.troops) * 0.25);
-                int s = x.support < 35 && x.stakes < 2 ? 3 : x.front < 40 && x.support > 50 ? 2 : 1;
+                int s = x.support < quit + 5 && x.stakes < 2 ? 3 : x.front < 40 && x.support > 50 ? 2 : 1;
                 if (x.stakes >= 3 && x.front < 90) s = 2;
                 setStrategy(g, x, s);
             }
@@ -9403,6 +9467,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             if (g.world.wars == null) History.setup(g);
             if (g.world.milAid == null) Statecraft.upgrade(g);
             Stories.upgrade(g);
+            if (g.plan == null) g.plan = new WatchPlan();
             if (g.termWeeks <= 0 || g.term == 1 && g.termWeeks == 208 && g.era.inM != 0) g.termWeeks = termEnd(g);
             if (g.milestones == null) g.milestones = new ArrayList<String>();
             if (g.histOk == null) g.histOk = new ArrayList<String>();
@@ -10115,6 +10180,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         public StoryState stories;                 // the era's news, and the storylines under way
         public int tut = -1;                       // the tutorial's step (-1: off)
         public boolean watch;                      // watch mode: the game plays itself
+        public WatchPlan plan = new WatchPlan();   // how the computer governs in watch mode
         public int watchSpeed = 1;
         public int okCount, failCount;             // crises and events that went well or badly
         public double justice;                     // the running record on equal justice
@@ -10192,6 +10258,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         public double cApproval = Double.NaN, cUnemp = Double.NaN, cInfl = Double.NaN, cGdp = Double.NaN;
         public int cHouse = -1, cSenate = -1;      // the president's party's seats, or -1 for the era's
         public double cMargin = Double.NaN;        // the popular-vote margin won by, or NaN for the era's
+        // the world a projected era inherits (NaN or -1 for the era's own)
+        public double cDeficit = Double.NaN;       // % of GDP
+        public int cCourtR = -1;                   // justices appointed by Republican presidents
+        public double cTaiwan = Double.NaN, cUkraine = Double.NaN, cMideast = Double.NaN;   // tension, 0 (calm) to 100 (war or the brink of it)
         public long seed;
         public String bgLine;                      // a Battleground 2028 Hall of Fame line the president came from
     }
@@ -11871,17 +11941,24 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
 
     public static final String[] SPEECH_CLOSE = {"An optimistic vision", "A call to action", "A warning about the stakes"};
 
-    /** What a hands-off president does each week: used by the test harness and by watch mode. */
+    /** What a hands-off president does each week, following the watch plan: used by the test harness and by watch mode. */
     static final class Auto {
         public static void week(Game g) {
             int w = g.week;
+            WatchPlan pl = plan(g);
             if (w % 4 == 0) Week.routine(g);
-            if (w % 8 == 3) Rooms.roadWeek(g);
+            if (w % pl.roadWeeks() == 3 % pl.roadWeeks()) Rooms.roadWeek(g);
             if (g.stamina < 35) Rooms.restWeek(g);
             if (Reelection.season(g)) campaign(g);
             if (w % 6 == 1) Decisions.autoAgenda(g);
             Decisions.autoWhip(g);
             Decisions.autoExec(g);
+        }
+
+        /** The game's watch plan, made if an old save has none. */
+        public static WatchPlan plan(Game g) {
+            if (g.plan == null) g.plan = new WatchPlan();
+            return g.plan;
         }
 
         /** In the fall of an election year: two stops a week in the closest big states. */
@@ -12009,15 +12086,17 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 case D_CRA: case D_EMERG_END: return 0;
                 case D_IMPEACH: return 0;
                 case D_WORLD: {
+                    WatchPlan pl = Auto.plan(g);
                     String[] o = CR_OPTS[d.a].split(";;");
                     int best = 0; double bv = -9;
-                    for (int i = 0; i < o.length; i++) { String[] t = o[i].split("\\|"); double q = Diplo.p(g, t[2], Double.parseDouble(t[3])); double v = q - (t[2].equals("m") ? 0.12 : 0) - (q >= 1 ? 0.45 : 0); if (v > bv) { bv = v; best = i; } }
+                    for (int i = 0; i < o.length; i++) { String[] t = o[i].split("\\|"); double q = Diplo.p(g, t[2], Double.parseDouble(t[3])); double v = q - (t[2].equals("m") ? pl.forcePenalty() : 0) - (q >= 1 ? pl.surePenalty() : 0); if (v > bv) { bv = v; best = i; } }
                     return best;
                 }
                 case D_HOME: {
+                    WatchPlan pl = Auto.plan(g);
                     String[] o = EV_OPTS[d.a].split(";;");
                     int best = 0; double bv = -9;
-                    for (int i = 0; i < o.length; i++) { String[] t = o[i].split("\\|"); double q = Diplo.p(g, t[2], Double.parseDouble(t[3])); double v = q - (q >= 1 ? 0.45 : 0); if (v > bv) { bv = v; best = i; } }
+                    for (int i = 0; i < o.length; i++) { String[] t = o[i].split("\\|"); double q = Diplo.p(g, t[2], Double.parseDouble(t[3])); double v = q - (q >= 1 ? pl.surePenalty() : 0); if (v > bv) { bv = v; best = i; } }
                     return best;
                 }
                 case D_HIST: return History.auto(g, d.a);
@@ -12067,7 +12146,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             x.deleg[DG_PEOPLE] = true;
             Cabinet.fill(g);
             if (x.court.size() < 9 && x.nomineeJ == null) Courts.nominateJustice(g, Courts.shortlist(g).get(1));
-            if (g.week % 9 == 4) {
+            if (g.week % Auto.plan(g).orderWeeks() == 4 % Auto.plan(g).orderWeeks()) {
                 int best = -1;
                 for (int i = 0; i < AD_ID.length; i++) {
                     if (AD_KIND[i] == K_EMERG || !Actions.available(g, i) || AD_LEAN[i] >= 0 && AD_LEAN[i] != g.party) continue;
@@ -12093,12 +12172,13 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             History.autoWar(g);
         }
 
-        /** Sends the president's next agenda bill to Congress when fewer than two are moving. */
+        /** Sends the president's next agenda bill to Congress when fewer than the plan allows are moving. */
         public static void autoAgenda(Game g) {
+            WatchPlan pl = Auto.plan(g);
             int active = 0;
             for (Bill b : g.cong.bills) if (b.ours && b.stage > ST_DRAFT && b.stage < ST_LAW && b.stage != ST_DEAD) active++;
-            if (active >= 2) return;
-            for (BillDef d : HillUI.agenda(g)) {
+            if (active >= pl.activeBills()) return;
+            for (BillDef d : agendaFor(g, pl)) {
                 if (d.lean >= 0 && d.lean != g.party) continue;
                 if (HillUI.inPlay(g, d)) continue;
                 boolean tried = false;
@@ -12106,11 +12186,29 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 if (tried) continue;
                 Bill b = Legis.draft(g, d);
                 b.recon = d.budget && Legis.reconOk(g, b);
+                if (pl.p[WatchPlan.P_BIPARTISAN] > 0.75) { b.size = Math.min(b.size, 0.75); b.scope = Math.min(b.scope, 0.35); }   // trimmed to win votes across the aisle
                 if (Legis.chance(g, b, HOUSE, false) * Legis.chance(g, b, SENATE, false) < 0.05) { b.size = 0.6; b.scope = 0.2; }
                 if (Legis.chance(g, b, HOUSE, false) * Legis.chance(g, b, SENATE, false) < 0.03) continue;
                 Legis.introduce(g, b);
                 return;
             }
+        }
+
+        /**
+         * The bills the computer will try, in order: the plan's own list if the player made one; otherwise the agenda,
+         * with bipartisan bills first for a plan that wants them, or the party's own first (the usual order).
+         */
+        static List<BillDef> agendaFor(Game g, WatchPlan pl) {
+            List<BillDef> all = HillUI.agenda(g);
+            List<BillDef> l = new ArrayList<BillDef>();
+            if (!pl.bills.isEmpty()) {
+                for (String id : pl.bills) for (BillDef d : all) if (d.id.equals(id)) l.add(d);
+                return l;
+            }
+            if (pl.p[WatchPlan.P_BIPARTISAN] <= 0.75) return all;
+            for (BillDef d : all) if (d.lean < 0) l.add(d);
+            for (BillDef d : all) if (d.lean >= 0) l.add(d);
+            return l;
         }
 
         public static void apply(Game g, Decision d, int k) {
@@ -12264,6 +12362,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             Relations.elected(g, margin(g));
             Cabinet.setup(g);
             Diplo.setup(g);
+            inherit(g);
             Approval.init(g);
             HomeFront.setup(g);
             Policies.setup(g);
@@ -12273,6 +12372,32 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             if (s.transition) Transitions.begin(g);         // the oath comes when the transition ends
             else inaugurate(g);
             return g;
+        }
+
+        /**
+         * The world a game inherits, where the player has set it (a projected era's sliders): the balance of the
+         * Supreme Court and the tension in the Taiwan Strait, Ukraine and the Middle East.
+         */
+        static void inherit(Game g) {
+            Settings s = g.set;
+            if (s.cCourtR >= 0) Courts.reshape(g, s.cCourtR);
+            World w = g.world;
+            if (!Double.isNaN(s.cTaiwan)) {
+                w.twt = s.cTaiwan;
+                w.twStage = s.cTaiwan >= 85 ? 2 : s.cTaiwan >= 55 ? 1 : 0;
+                w.deter = clamp(75 - s.cTaiwan * 0.35, 30, 80);
+            }
+            if (!Double.isNaN(s.cUkraine)) {
+                double v = s.cUkraine;
+                w.uaStage = v < 25 ? 0 : v < 55 ? 1 : 2;
+                w.talks = v < 25 ? 100 : v < 55 ? 60 : Math.max(5, 40 - (v - 55));
+                w.ukr = v < 55 ? 60 : clamp(75 - (v - 55) * 0.8, 20, 75);
+                w.ruGain = v < 55 ? 20 : 20 + (v - 55) * 0.4;
+            }
+            if (!Double.isNaN(s.cMideast)) {
+                double v = s.cMideast;
+                w.iran = v; w.gaza = v * 0.9; w.proxy = v * 0.8; w.redsea = v * 0.8; w.terror = 25 + v * 0.3;
+            }
         }
 
         /** Noon on Inauguration Day: the transition's choices take office, and the first news of the presidency. */
@@ -12289,6 +12414,97 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                     + "Until each nominee is confirmed, a career official runs the department. Review or change any of them in the West Wing (press 5).");
             g.log(NK_ECON, "The new president inherits unemployment of " + fmt1(g.econ.unemp) + "% and inflation of " + fmt1(g.econ.infl) + "%", null, 1.5);
         }
+    }
+
+    /**
+     * How the computer governs in watch mode: six priorities from 0 to 1, the bills it sends to Congress and in what
+     * order, and the kinds of decision it stops for so the player can make them. The middle of every priority is the
+     * steady hand the game has always used, so a new plan plays exactly as watch mode did before.
+     */
+    static final class WatchPlan implements Serializable {
+        private static final long serialVersionUID = 1L;
+
+        /** The priorities: how many bills at once, how bipartisan, how hawkish, how many executive orders, how much travel, how cautious. */
+        public static final int P_AMBITION = 0, P_BIPARTISAN = 1, P_HAWK = 2, P_ORDERS = 3, P_TRAVEL = 4, P_CAUTION = 5, NPRIORITY = 6;
+        public static final String[] PRIORITY = {"Legislative ambition", "Bipartisanship", "Foreign policy", "Executive orders", "Travel and campaigning", "Caution"};
+        public static final String[][] PRIORITY_ENDS = {{"One bill at a time", "Four bills at once"}, {"Party-line bills", "Bills across the aisle"}, {"Dove", "Hawk"},
+                {"Rarely", "Every few weeks"}, {"Stay in Washington", "On the road"}, {"Takes risks", "Plays it safe"}};
+        public static final String[] PRIORITY_DESC = {"How many of your bills the computer keeps moving in Congress at once.",
+                "Whether it leads with your party's bills, sized to pass on party lines, or with bipartisan ones, trimmed to win votes across the aisle.",
+                "How readily it reaches for force in a crisis, and how long it keeps fighting a war that's going badly.",
+                "How often it signs an executive order from your party's library.",
+                "How often it spends a week on the road around the country.",
+                "Whether it takes the sure thing or the gamble with the bigger payoff."};
+
+        /** Ready-made plans. The last is whatever the player has set by hand. */
+        public static final String[] PRESET = {"Steady hand", "Big agenda", "Deal-maker", "Hawk", "Dove", "On the road", "Your own"};
+        public static final String[] PRESET_DESC = {"The cautious middle on everything: the way the game has always played itself.",
+                "Four bills at once, sized for your own party, and plenty of executive orders.",
+                "Bipartisan bills trimmed to pass, few orders, and safe choices.",
+                "Force is on the table in every crisis, and wars are fought to the end.",
+                "Diplomacy first; wars that go badly end early.",
+                "A week on the road every few weeks, and the campaign never stops.",
+                "Your own settings."};
+        static final double[][] PRESET_VALUES = {{0.5, 0.5, 0.5, 0.5, 0.5, 0.5}, {1, 0.2, 0.5, 0.85, 0.5, 0.4}, {0.5, 1, 0.4, 0.2, 0.5, 0.8},
+                {0.5, 0.4, 1, 0.6, 0.5, 0.4}, {0.5, 0.6, 0, 0.5, 0.5, 0.6}, {0.5, 0.5, 0.5, 0.5, 1, 0.5}};
+        public static final int CUSTOM = PRESET.length - 1;
+
+        /** The decisions watch mode can stop for: bills to sign, the budget, crises and war, the courts, scandal, storylines and the campaign. */
+        public static final int S_SIGN = 0, S_BUDGET = 1, S_WORLD = 2, S_COURT = 3, S_SCANDAL = 4, S_STORY = 5, S_CAMPAIGN = 6, NSTOP = 7;
+        public static final String[] STOP = {"Bills to sign or veto", "Shutdowns and the debt limit", "Crises, war and turning points", "Court rulings", "Scandals and impeachment",
+                "Storylines", "The campaign"};
+
+        public int preset;
+        public double[] p = {0.5, 0.5, 0.5, 0.5, 0.5, 0.5};
+        public List<String> bills = new ArrayList<String>();   // bill ids to send, in order; empty means the computer's own order
+        public boolean[] stop = new boolean[NSTOP];
+
+        /** Applies a ready-made plan. */
+        public void use(int k) {
+            preset = k;
+            if (k < CUSTOM) for (int i = 0; i < NPRIORITY; i++) p[i] = PRESET_VALUES[k][i];
+        }
+
+        /** Sets one priority by hand, which makes the plan the player's own. */
+        public void set(int i, double v) {
+            p[i] = Math.max(0, Math.min(1, v));
+            preset = CUSTOM;
+        }
+
+        /** Which kind of stop a decision falls under, or -1 if watch mode always decides it. */
+        public static int stopFor(int kind) {
+            switch (kind) {
+                case D_SIGN: return S_SIGN;
+                case D_SHUTDOWN: case D_DEBT: case D_CR: return S_BUDGET;
+                case D_WORLD: case D_HIST: case D_WARPOWERS: return S_WORLD;
+                case D_COURT: return S_COURT;
+                case D_SCANDAL: case D_IMPEACH: case D_SUBPOENA: case D_PARDON: return S_SCANDAL;
+                case D_STORY: return S_STORY;
+                case D_CAMPAIGN: return S_CAMPAIGN;
+                default: return -1;
+            }
+        }
+
+        /** Whether watch mode stops for this decision. */
+        public boolean stops(int kind) { int s = stopFor(kind); return s >= 0 && stop[s]; }
+
+        /** Bills kept moving at once: two in the middle, one to four at the ends. */
+        public int activeBills() { return 1 + (int) Math.round(p[P_AMBITION] * 3 - 0.5 + 1e-9); }
+
+        /** Weeks between executive orders: nine in the middle, every three weeks at most. */
+        public int orderWeeks() { return Math.max(3, (int) Math.round(17 - 16 * p[P_ORDERS])); }
+
+        /** Weeks between road trips: eight in the middle, every second week at most. */
+        public int roadWeeks() { return Math.max(2, (int) Math.round(14 - 12 * p[P_TRAVEL])); }
+
+        /** How much a military option is held back in a crisis: 0.12 in the middle, less for a hawk, more for a dove. */
+        public double forcePenalty() { return 0.12 - (p[P_HAWK] - 0.5) * 0.5; }
+
+        /** The front below which a war Congress wants ended is ended: 55 in the middle. */
+        public double giveUpFront() { return 55 - (p[P_HAWK] - 0.5) * 60; }
+
+        /** How much a sure but passive option is held back: 0.45 in the middle, less for a cautious plan. */
+        public double surePenalty() { return 0.45 - (p[P_CAUTION] - 0.5) * 0.6; }
     }
 
     /** The president's calendar plays out slot by slot; then the economy, opinion and the news move. */
@@ -14712,7 +14928,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             u.stepper(g, bx + 200, y, ph < 0 ? "House: era" : "House: " + ph, () -> s.cHouse = Math.max(120, (s.cHouse < 0 ? 218 : s.cHouse) - 5), () -> s.cHouse = Math.min(330, (s.cHouse < 0 ? 218 : s.cHouse) + 5), "Your party's seats in the House (218 is a majority).", 110);
             u.stepper(g, bx + 380, y, ps < 0 ? "Senate: era" : "Senate: " + ps, () -> s.cSenate = Math.max(25, (s.cSenate < 0 ? 50 : s.cSenate) - 1), () -> s.cSenate = Math.min(75, (s.cSenate < 0 ? 50 : s.cSenate) + 1), "Your party's senators (50 plus the vice president is a majority).", 110);
             y += 44;
-            u.button(g, bx + 18, y, 200, 30, "Reset to the era", B_GHOST, () -> { s.cApproval = Double.NaN; s.cUnemp = Double.NaN; s.cInfl = Double.NaN; s.cGdp = Double.NaN; s.cHouse = -1; s.cSenate = -1; });
+            u.button(g, bx + 18, y, 200, 30, "Reset to the era", B_GHOST, () -> resetConditions(s));
             y += 50;
             double hw = (bw - 36 - 8) / 2;
             u.button(g, bx + 18, y, hw, 30, (s.tutorial ? "[x] " : "[  ] ") + "A tour of the Oval Office", B_GHOST, () -> s.tutorial = !s.tutorial, "A one-minute tour when you take office.");
@@ -14720,10 +14936,55 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                     "Start the day after the election, with ten weeks to choose your cabinet and staff from shortlists. Otherwise your team picks them for you.");
             y += 44;
             wrap(g, cur.blurb, bx + 18, y, bw - 36, F_XS, C_DIM);
-            // the era at a glance
+            // the era at a glance, or for a projected era, the world you inherit
             double cx = bx + bw + 16, cw = DW - 48 - cx;
+            if (cur.fictional) inherit(u, g, s, cur, cx, cw);
+            else glance(u, g, cur, cx, cw);
+            u.button(g, 48, 832, 180, 44, "Back", B_GHOST, () -> u.go(SC_HOME));
+            u.button(g, DW - 48 - 300, 832, 300, 44, "Choose your president", B_GOLD, () -> { sel = -1; Cand w = era(s.year).winnerId != null ? candById(era(s.year).winnerId) : null; pickParty = w != null ? w.party : DEM; u.go(SC_PICK); });
+        }
+
+        static void resetConditions(Settings s) {
+            s.cApproval = Double.NaN; s.cUnemp = Double.NaN; s.cInfl = Double.NaN; s.cGdp = Double.NaN; s.cHouse = -1; s.cSenate = -1;
+            s.cMargin = Double.NaN; s.cDeficit = Double.NaN; s.cCourtR = -1; s.cTaiwan = Double.NaN; s.cUkraine = Double.NaN; s.cMideast = Double.NaN;
+        }
+
+        /**
+         * A projected era's right-hand panel: the 2028 result, the deficit, the balance of the Supreme Court and the
+         * tension in three hot spots, each the projection's own until the player moves it.
+         */
+        static void inherit(ResoluteDesk u, Graphics2D g, Settings s, Era cur, double cx, double cw) {
+            u.panel(g, cx, 124, cw, 690, "The world you inherit");
+            double y = 170;
+            wrap(g, "A projected " + cur.year + ": set how the " + (cur.year - 1) + " election went and what is waiting for you. Leave a setting alone to keep the projection.", cx + 18, y, cw - 36, F_XS, C_DIM);
+            y += 44;
+            label(g, "The " + (cur.year - 1) + " election", cx + 18, y, C_GOLD); y += 14;
+            y = slim(u, g, cx, cw, y, "Popular-vote margin", s.cMargin, 2.5, -3, 15, " pts", v -> s.cMargin = v, "A bigger win means a bigger mandate and a longer honeymoon in Congress.");
+            text(g, "House and Senate seats are set in the middle panel.", cx + 18, y + 6, F_T, C_FAINT); y += 26;
+            label(g, "Washington", cx + 18, y, C_GOLD); y += 14;
+            y = slim(u, g, cx, cw, y, "Deficit", s.cDeficit, cur.deficit, 0, 12, "% of GDP", v -> s.cDeficit = v, "The budget deficit you inherit.");
+            int era = 0; for (String j : courtIn(cur)) if (j.split("\\|")[2].equals("R")) era++;
+            final int eraR = era;
+            int r = s.cCourtR < 0 ? era : s.cCourtR;
+            text(g, "Supreme Court", cx + 18, y + 16, F_S, C_TEXT);
+            u.stepper(g, cx + 150, y, r + " R - " + (9 - r) + " D", () -> s.cCourtR = Math.max(0, (s.cCourtR < 0 ? eraR : s.cCourtR) - 1), () -> s.cCourtR = Math.min(9, (s.cCourtR < 0 ? eraR : s.cCourtR) + 1),
+                    "Justices appointed by Republican and Democratic presidents. A change means justices retired before " + cur.year + " and made-up justices took their seats.", 110);
+            textR(g, s.cCourtR < 0 ? "projection" : "set", cx + cw - 18, y + 16, F_XSB, s.cCourtR < 0 ? C_DIM : C_GOLD);
+            y += 44;
+            label(g, "Tensions abroad", cx + 18, y, C_GOLD); y += 14;
+            y = slim(u, g, cx, cw, y, "China and Taiwan", s.cTaiwan, 55, 0, 100, "", v -> s.cTaiwan = v, "0 is calm across the Strait; 85 and up, Beijing is drilling around the island.");
+            y = slim(u, g, cx, cw, y, "Russia and Ukraine", s.cUkraine, 70, 0, 100, "", v -> s.cUkraine = v, "Under 25, a peace agreement; under 55, a ceasefire; above that, the war goes on.");
+            y = slim(u, g, cx, cw, y, "The Middle East", s.cMideast, 45, 0, 100, "", v -> s.cMideast = v, "Iran's nuclear program, Gaza, Red Sea shipping and attacks by Iran's proxies.");
+            y += 8;
+            label(g, "The projection", cx + 18, y, C_FAINT); y += 22;
+            String[][] rows = {{"Unemployment", fmt1(cur.unemp) + "%"}, {"Inflation", fmt1(cur.infl) + "%"}, {"Growth", fmt1(cur.gdp) + "%"}, {"Debt held by the public", Math.round(cur.debt) + "% of GDP"}};
+            for (String[] row : rows) { text(g, row[0], cx + 18, y, F_XS, C_TEXT); textR(g, row[1], cx + cw - 18, y, F_XSB, Color.white); y += 20; }
+        }
+
+        /** A real era's right-hand panel: the economy, Congress and the Court on inauguration day, and any war under way. */
+        static void glance(ResoluteDesk u, Graphics2D g, Era cur, double cx, double cw) {
             u.panel(g, cx, 124, cw, 690, cur.year + " at a glance");
-            y = 170;
+            double y = 170;
             String[][] rows = {{"Unemployment", fmt1(cur.unemp) + "%"}, {"Inflation", fmt1(cur.infl) + "%"}, {"Growth", fmt1(cur.gdp) + "%"}, {"Fed funds rate", fmt1(cur.fed) + "%"},
                     {"10-year Treasury", fmt1(cur.tenYr) + "%"}, {"Stocks (S&P index)", thousands(Math.round(cur.stocks))}, {"Gas", "$" + fmt2(cur.gas)},
                     {"Debt held by the public", Math.round(cur.debt) + "% of GDP"}, {"Deficit", fmt1(cur.deficit) + "% of GDP"}, {"Fed chair", cur.fedChair}, {"Outgoing president", cur.predecessor}};
@@ -14744,8 +15005,16 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                     for (String wsp : WAR_START) if (wsp.startsWith(cur.year + "|")) for (String tok : wsp.substring(5).split(" ")) { text(g, "At war: " + WAR_NAME[warIndex(tok.split(":")[0])].replace("The ", "the "), cx + 18, y, F_XS, C_AMBER); y += 20; }
                 }
             } else wrap(g, "Depends on who won: your party starts with about 232 House seats and 51 senators as a Democrat, or 229 and 52 as a Republican.", cx + 18, y, cw - 36, F_XS, C_TEXT);
-            u.button(g, 48, 832, 180, 44, "Back", B_GHOST, () -> u.go(SC_HOME));
-            u.button(g, DW - 48 - 300, 832, 300, 44, "Choose your president", B_GOLD, () -> { sel = -1; Cand w = era(s.year).winnerId != null ? candById(era(s.year).winnerId) : null; pickParty = w != null ? w.party : DEM; u.go(SC_PICK); });
+        }
+
+        /** A slider in the narrow panel: the era's value in grey until it's moved, then the player's in gold. */
+        static double slim(ResoluteDesk u, Graphics2D g, double cx, double cw, double y, String name, double v, double def, double lo, double hi, String unit, DoubleAction set, String tip) {
+            boolean custom = !Double.isNaN(v);
+            double val = custom ? v : def;
+            text(g, name, cx + 18, y + 16, F_XS, C_TEXT);
+            u.slider(g, cx + 150, y + 12, cw - 260, (val - lo) / (hi - lo), custom ? C_GOLD : C_FAINT, x -> set.on(Math.round((lo + x * (hi - lo)) * 10) / 10.0), tip);
+            textR(g, (custom ? "" : "~") + fmt1(val) + unit, cx + cw - 18, y + 16, F_XSB, custom ? C_GOLD : C_DIM);
+            return y + 32;
         }
 
         static double condition(ResoluteDesk u, Graphics2D g, double bx, double bw, double y, String name, double v, double def, double lo, double hi, String unit, DoubleAction set, Runnable reset) {
@@ -16010,8 +16279,8 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             else u.button(g, DW - 190, 10, 170, 36, game.watch ? "Watching..." : "End week  >", game.watch ? B_NORM : B_GOLD, () -> { if (game.watch) game.watch = false; else endWeek(u); }, game.watch ? "Watch mode is on: click to take the controls back." : "Play out this week. (Space)");
             u.button(g, DW - 252, 10, 54, 36, "Save", B_GHOST, () -> SaveGame.save(u, SaveGame.SLOT), "Save the game");
             if (!game.over) u.button(g, DW - 378, 10, 58, 36, game.watch ? Watch.SPEED[clampi(game.watchSpeed, 0, 2)] : "Watch", game.watch ? B_PRIMARY : B_GHOST,
-                    () -> { if (game.watch) game.watchSpeed = (game.watchSpeed + 1) % 3; else { game.watch = true; game.tut = -1; Watch.timer = 0; } },
-                    game.watch ? "Watch speed: click to change. Click 'Watching...' to stop." : "Watch mode: the game plays itself, week after week, until you take back the controls.");
+                    () -> { if (game.watch) game.watchSpeed = (game.watchSpeed + 1) % 3; else u.go(SC_WATCH); },
+                    game.watch ? "Watch speed: click to change. Click 'Watching...' to stop." : "Watch mode: choose how the computer governs, then watch it play until you take back the controls.");
             u.button(g, DW - 314, 10, 54, 36, "Menu", B_GHOST, () -> u.modal("Leave the Oval Office?", "Your game is saved automatically every week.", new String[]{"Stay", "Main menu"},
                     new Runnable[]{null, () -> { SaveGame.save(u, SaveGame.AUTO); u.go(SC_HOME); }}, null));
         }
@@ -18327,7 +18596,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     //  ScreenIds (resolutedesk.ui.ScreenIds): The screens of the game.
     // ---------------------------------------------------------------------
     public static final int SC_HOME = 0, SC_SETUP = 1, SC_PICK = 2, SC_CREATE = 3, SC_OVAL = 4, SC_ROOM = 5, SC_PAPER = 6, SC_VP = 7,
-            SC_HALL = 8, SC_END = 9, SC_NIGHT = 10, SC_LEGACY = 11, SC_IMPORT = 12, SC_TRANS = 13;
+            SC_HALL = 8, SC_END = 9, SC_NIGHT = 10, SC_LEGACY = 11, SC_IMPORT = 12, SC_TRANS = 13, SC_WATCH = 14;
 
     /** Interface sounds, every one synthesised in code. */
     static final class Sfx implements Runnable {
@@ -19648,8 +19917,14 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         }
     }
 
-    /** Watch mode: the game governs on its own while the player looks on. */
+    /**
+     * Watch mode: the game governs on its own while the player looks on. Before it starts, the player sets the plan:
+     * a preset or six priorities, the bills to send and in what order, and the decisions to stop for.
+     */
     static final class Watch {
+        private Watch() {
+        }
+
         static final double[] SECONDS = {1.6, 0.8, 0.3};
         static final String[] SPEED = {"Slow", "Normal", "Fast"};
         static double timer;
@@ -19657,13 +19932,18 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         static void update(ResoluteDesk u, Game g, double dt) {
             if (!g.watch || g.over) return;
             if (u.screen == SC_PAPER) u.go(SC_OVAL);
-            if (u.modal != null) return;
+            if (u.modal != null || u.screen == SC_WATCH) return;
             if (!g.inbox.isEmpty()) {
                 Decision d = g.inbox.get(0);
+                if (Auto.plan(g).stops(d.kind)) {          // the plan wants the player to make this one
+                    Decisions.show(u, g);
+                    u.toast("Watch mode is waiting for your decision.", C_GOLD);
+                    return;
+                }
                 int k = Decisions.auto(g, d);
                 g.inbox.remove(0);
                 // the big calls get a toast; the small print (speech lines, press questions, summit rounds) doesn't
-                boolean big = d.kind == D_SIGN || d.kind == D_WORLD || d.kind == D_HIST || d.kind == D_CAMPAIGN || d.kind == D_IMPEACH || d.kind == D_SHUTDOWN || d.kind == D_DEBT || d.kind == D_DISASTER || d.kind == D_COURT;
+                boolean big = WatchPlan.stopFor(d.kind) >= 0 || d.kind == D_DISASTER;
                 if (big && d.opts != null && d.opts.length > 0) u.toast(d.title + ": " + d.opts[Math.max(0, Math.min(k, d.opts.length - 1))], C_GOLD);
                 Decisions.apply(g, d, k);
                 return;
@@ -19673,6 +19953,102 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             timer = 0;
             Auto.week(g);
             Oval.endWeek(u);
+        }
+
+        /** Starts watching with the plan as set. */
+        static void start(ResoluteDesk u, Game g) {
+            g.watch = true;
+            g.tut = -1;
+            timer = 0;
+            u.go(SC_OVAL);
+            u.toast("Watching. Click 'Watching...' to take back the controls.", C_GOLD);
+        }
+
+        // ---- the plan ----
+
+        public static void draw(ResoluteDesk u, Graphics2D g) {
+            Game game = u.game;
+            if (game == null) { u.go(SC_HOME); return; }
+            WatchPlan pl = Auto.plan(game);
+            Screens.header(u, g, "Watch Mode", "Choose how the computer governs, then watch it play. Take back the controls at any time.");
+            priorities(u, g, pl);
+            agenda(u, g, game, pl);
+            stops(u, g, game, pl);
+            u.button(g, 48, 832, 180, 44, "Back", B_GHOST, () -> u.go(SC_OVAL), "Esc");
+            u.button(g, DW - 48 - 300, 832, 300, 44, "Start watching", B_GOLD, () -> start(u, game), "Enter");
+        }
+
+        static void priorities(ResoluteDesk u, Graphics2D g, WatchPlan pl) {
+            double x = 48, w = 520;
+            u.panel(g, x, 124, w, 690, "How the computer governs");
+            double y = 160;
+            String[] top = {WatchPlan.PRESET[0], WatchPlan.PRESET[1], WatchPlan.PRESET[2]}, bottom = {WatchPlan.PRESET[3], WatchPlan.PRESET[4], WatchPlan.PRESET[5]};
+            u.segmented(g, x + 18, y, w - 36, 30, top, pl.preset < 3 ? pl.preset : -1, i -> pl.use(i), new String[]{WatchPlan.PRESET_DESC[0], WatchPlan.PRESET_DESC[1], WatchPlan.PRESET_DESC[2]});
+            u.segmented(g, x + 18, y + 36, w - 36, 30, bottom, pl.preset >= 3 && pl.preset < WatchPlan.CUSTOM ? pl.preset - 3 : -1, i -> pl.use(i + 3),
+                    new String[]{WatchPlan.PRESET_DESC[3], WatchPlan.PRESET_DESC[4], WatchPlan.PRESET_DESC[5]});
+            wrap(g, WatchPlan.PRESET[pl.preset] + ": " + WatchPlan.PRESET_DESC[pl.preset], x + 18, y + 90, w - 36, F_XS, pl.preset == WatchPlan.CUSTOM ? C_GOLD : C_DIM);
+            y += 128;
+            for (int i = 0; i < WatchPlan.NPRIORITY; i++) {
+                final int k = i;
+                text(g, WatchPlan.PRIORITY[i], x + 18, y, F_SB, Color.white);
+                u.slider(g, x + 18, y + 18, w - 36, pl.p[i], C_GOLD, v -> pl.set(k, Math.round(v * 20) / 20.0), WatchPlan.PRIORITY_DESC[i]);
+                text(g, WatchPlan.PRIORITY_ENDS[i][0], x + 18, y + 44, F_T, C_DIM);
+                textR(g, WatchPlan.PRIORITY_ENDS[i][1], x + w - 18, y + 44, F_T, C_DIM);
+                y += 76;
+            }
+        }
+
+        static void agenda(ResoluteDesk u, Graphics2D g, Game game, WatchPlan pl) {
+            double x = 584, w = 520;
+            u.panel(g, x, 124, w, 690, "Your agenda");
+            wrap(g, pl.bills.isEmpty() ? "The computer chooses which of your bills to send, and when. Check bills to choose them yourself; it sends them in the order you check them."
+                    : "The computer sends the checked bills, in this order, and no others. Uncheck them all to let it choose.", x + 18, 170, w - 36, F_XS, C_DIM);
+            List<BillDef> all = HillUI.agenda(game);
+            double top = 208, hh = 590;
+            double off = u.beginScroll(g, "watchbills", x + 10, top, w - 20, hh);
+            int h0 = u.hits.size();
+            double y = top - off;
+            int n = 0;
+            for (BillDef d : all) {
+                if (d.lean >= 0 && d.lean != game.party) continue;
+                final String id = d.id;
+                int at = pl.bills.indexOf(id);
+                u.card(g, x + 18, y, w - 36, 50, at >= 0, () -> { if (pl.bills.contains(id)) pl.bills.remove(id); else pl.bills.add(id); }, d.desc);
+                text(g, at >= 0 ? String.valueOf(at + 1) : "", x + 34, y + 31, F_H3, C_GOLD);
+                textFit(g, d.name, x + 64, y + 22, w - 240, F_SB, Color.white);
+                text(g, d.lean < 0 ? "Bipartisan" : "Your party's", x + 64, y + 40, F_T, d.lean < 0 ? C_ACCENT : C_DIM);
+                if (at >= 0) {
+                    u.button(g, x + w - 112, y + 11, 36, 28, "Up", B_GHOST, at > 0 ? () -> { pl.bills.remove(id); pl.bills.add(at - 1, id); } : null, "Send it sooner.");
+                    u.button(g, x + w - 70, y + 11, 36, 28, "Dn", B_GHOST, at < pl.bills.size() - 1 ? () -> { pl.bills.remove(id); pl.bills.add(at + 1, id); } : null, "Send it later.");
+                }
+                y += 56;
+                n++;
+            }
+            u.clipHits(h0, top, top + hh);
+            u.endScroll(g, "watchbills", n * 56);
+        }
+
+        static void stops(ResoluteDesk u, Graphics2D g, Game game, WatchPlan pl) {
+            double x = 1120, w = DW - 48 - x;
+            u.panel(g, x, 124, w, 690, "Stop for these decisions");
+            wrap(g, "When one of these reaches your desk, watch mode waits for you to decide. Everything else, the computer decides.", x + 18, 170, w - 36, F_XS, C_DIM);
+            double y = 208;
+            for (int i = 0; i < WatchPlan.NSTOP; i++) {
+                final int k = i;
+                u.button(g, x + 18, y, w - 36, 34, (pl.stop[i] ? "[x]  " : "[  ]  ") + WatchPlan.STOP[i], pl.stop[i] ? B_ON : B_GHOST, () -> pl.stop[k] = !pl.stop[k], null);
+                y += 42;
+            }
+            y += 18;
+            label(g, "Speed", x + 18, y, C_GOLD);
+            u.segmented(g, x + 18, y + 12, w - 36, 30, SPEED, clampi(game.watchSpeed, 0, 2), i -> game.watchSpeed = i, new String[]{"A week every " + fmt1(SECONDS[0]) + " seconds.", "A week every " + fmt1(SECONDS[1]) + " seconds.", "A week every " + fmt1(SECONDS[2]) + " seconds."});
+            y += 66;
+            wrap(g, "In the middle, every priority is the steady hand watch mode has always used. The plan is saved with the game.", x + 18, y, w - 36, F_XS, C_FAINT);
+        }
+
+        public static void key(ResoluteDesk u, KeyEvent e) {
+            int k = e.getKeyCode();
+            if (k == KeyEvent.VK_ESCAPE) u.go(SC_OVAL);
+            if (k == KeyEvent.VK_ENTER && u.game != null) start(u, u.game);
         }
     }
 
@@ -22117,8 +22493,8 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             g.log(NK_BIG, "PRESIDENT VETOES THE WAR POWERS RESOLUTION; THE WAR GOES ON", "Critics in Congress call it a constitutional crisis.", 3);
         }
 
-        /** What the hands-off president does with a War Powers resolution: obeys it if the war is going badly. */
-        public static int auto(Game g, Decision d) { return d.war != null && d.war.front < 55 ? 1 : 0; }
+        /** What the hands-off president does with a War Powers resolution: obeys it if the war is going badly (sooner for a dove). */
+        public static int auto(Game g, Decision d) { return d.war != null && d.war.front < Auto.plan(g).giveUpFront() ? 1 : 0; }
     }
 
     /** The state of the world in a game: the countries, their leaders and relations, the flashpoints and the wars. */
