@@ -9,14 +9,18 @@ Resolute Desk is a separate game from [Battleground 2028](https://github.com/luk
 ## How to play it
 
 - **In a browser:** download `index.html` and open it. No install, no internet needed. Saves stay in that browser.
-- **As a desktop app:** with Java 8 or newer, double-click `ResoluteDesk.jar`, or run `java -jar ResoluteDesk.jar`.
-- **In BlueJ:** create a project, add `ResoluteDesk.java` (Edit > Add Class from File), compile, and run `main`.
+- **As a desktop app:** with Java 8 or newer, double-click `dist/ResoluteDesk.jar`, or run `java -jar dist/ResoluteDesk.jar`.
+- **In BlueJ:** create a project, add `dist/ResoluteDesk.java` (Edit > Add Class from File), compile, and run `main`.
+
+The same three files are attached to each [release](https://github.com/lukewaadams-gif/ResoluteDesk/releases).
 
 The game autosaves every week. Use **Continue** on the title screen to pick up where you left off.
 
 ## What's in it
 
-The game is complete: this is the last of six planned updates. The first covered the core of the job: your time, your health, the economy and public opinion. The second added Congress and the budget, the third the executive branch, the fourth the world, the fifth the home front and the press, and the sixth history, re-election and the verdict.
+Version 1 came in six updates. The first covered the core of the job: your time, your health, the economy and public opinion. The second added Congress and the budget, the third the executive branch, the fourth the world, the fifth the home front and the press, and the sixth history, re-election and the verdict.
+
+Version 2 is under way; see [Coming in version 2](#coming-in-version-2).
 
 - **When you take office:** any of 25 inaugurations.
   - **Every inauguration from 1933 to 2021**, from Franklin Roosevelt's first to Joe Biden's (more under update 6).
@@ -236,6 +240,18 @@ The eras are on the **New presidency** screen. The campaign is in the Press Brie
 - **Watch mode:** the game governs on its own at three speeds, and you take back the controls whenever you like. **Watch history** on the title screen hands a random era to the real president.
 - **From Battleground 2028:** take office as the winner of a Battleground 2028 game. Their face, ratings and running mate come across, with the Congress the election produced and the economy they inherit. The desktop versions read the other game's saves on the same computer; the browser versions read them in the same browser and site.
 
+## Coming in version 2
+
+Version 2 arrives in stages, each one playable:
+
+1. **The code, reorganized** (done). The game is now a multi-file Java project with one package per mechanic, tests and build tools (see [The code](#the-code)). This stage also fixes the bug that gave many cabinet members and staff the same surname.
+2. **The transition and your team.** Ten weeks from Election Day to the inauguration to choose your cabinet and staff from shortlists, with vetting, leaks and early Senate whip counts. A new approval model with real presidents' range, from honeymoons in the 60s to lows in the 20s and rallies near 90%. Political capital gives way to relationships you build: goodwill with blocs, leaders and committee chairs, and favors owed.
+3. **Policies and their real-world effects.** About 150 policies in 12 areas, changed through bills, executive orders, agency rules or the budget. Each changes measurable outcomes over months and years, and each has an impacts panel with winners, losers, timing, precedents and how sure the evidence is. A map of the whole system shows what affects what.
+4. **Foreign policy and war.** Concrete objectives with at least 20 countries, a full set of tools from arms sales to covert action, wars of choice against any country, many ways to end a war, and realistic consequences.
+5. **News and runaway storylines.** Hundreds of new stories, and stories that grow with your choices and can take over a presidency.
+6. **Watch mode priorities and the 2029 setup.** Presets and sliders for the computer president, and sliders for the world you inherit in 2029.
+7. **New art.** Lit, textured rooms, detailed portraits, and a new interface with real typefaces.
+
 ## Screenshots
 
 | | |
@@ -275,3 +291,29 @@ The eras are on the **New presidency** screen. The campaign is in the Press Brie
 - What happens after an era begins is alternate history: the turning points arrive on their real dates, but the outcomes are yours.
 - Country outlines are from Natural Earth via the world-atlas package. Flags are stylised; those of the past are simplified and carry no emblems.
 - The browser version is generated from the Java source, so the two play the same game.
+
+## The code
+
+The game is plain Java 8 with Swing, and it uses no outside libraries. The source is a multi-file project:
+
+```
+src/main/java/resolutedesk/   the game, one package per mechanic: economy, opinion, congress, executive,
+                              world, history, home, press, campaign, legacy, sim (the turn), ui and more
+src/test/java/resolutedesk/   tests for each mechanic and whole-presidency simulations
+tools/Build.java              the build: compile, test, bundle, translate, package
+tools/bundle/                 merges the project into the one-file BlueJ version
+tools/j2js/                   translates that file into the browser version
+tools/browser-tests/          Playwright scripts that play the browser version
+docs/ARCHITECTURE.md          how it fits together
+```
+
+With a JDK (11 or newer) and nothing else:
+
+```
+java tools/Build.java test          the unit tests and simulations
+java tools/Build.java run           play from source
+java tools/Build.java dist          build the one-file version, the browser version and the jar
+java tools/Build.java equivalence   check that Java and the browser version play identically (needs Node)
+```
+
+The [architecture notes](docs/ARCHITECTURE.md) describe the game state, the weekly turn, and the pipeline from the project to the one-file and browser versions.
