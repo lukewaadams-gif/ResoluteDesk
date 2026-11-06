@@ -1612,7 +1612,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         for (Cand x : ROSTER) x.home = stateIdx(x.homeAb);
     }
 
-    static Cand candById(String id) { for (Cand c : ROSTER) if (c.id.equals(id)) return c; return null; }
+    static Cand candById(String id) { if (id == null) return null; for (Cand c : ROSTER) if (c.id.equals(id)) return c; for (Cand c : HIST) if (c.id.equals(id)) return c; return null; }
 
     static List<Cand> roster(int party) {
         List<Cand> l = new ArrayList<Cand>();
@@ -1667,8 +1667,8 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
 
     /** The game day of a calendar date (may be negative). */
     static int dayOfDate(int y, int m0, int d) {
-        int lo = -4000, hi = 4000;
-        while (lo < hi) { int mid = (lo + hi) / 2; int[] t = dateOf(mid); long k = t[0] * 10000L + t[1] * 100 + t[2], want = y * 10000L + m0 * 100 + d; if (k < want) lo = mid + 1; else hi = mid; }
+        int lo = -9000, hi = 9000;
+        while (lo < hi) { int mid = lo + (hi - lo) / 2; int[] t = dateOf(mid); long k = t[0] * 10000L + t[1] * 100 + t[2], want = y * 10000L + m0 * 100 + d; if (k < want) lo = mid + 1; else hi = mid; }
         return lo;
     }
 
@@ -1693,7 +1693,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             "A weekend at Camp David. Big stamina boost, but bad optics in a crisis.",
             "Stay at your desk into the night. Gets work done but costs sleep.",
             "In the air.",
-            "Rally for your party's candidates in a state. Only in the weeks before the midterms.",
+            "Rally in a state: for your party's candidates before the midterms, or for your own ticket in the fall of an election year.",
             "Meet the whole cabinet. Lifts their morale and their departments' readiness.",
             "Fly abroad to meet a foreign leader. A big lift in relations, but long flights and jet lag are hard on stamina."};
     static final double[] AC_STAMINA = {0, 6, 2.5, 3, -2.5, -3, -5, -3.5, -1.5, -3, 8, -4.5, -2, -5, -2, -4};
@@ -1757,6 +1757,8 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         double jobsLast, gdpReported, cpiReported;
         double[] stUnemp = new double[NS], stGas = new double[NS];
         double polGdp, polUnemp, polInfl;                         // what the laws you sign do to trend growth, jobs and prices
+        double gasRef = 3.1, gasAdj, uRef0 = 4.5, piRef0 = 2.5, uRef = 4.5, piRef = 2.5;   // what the public measures you against
+        double slump, war, war0;                                  // the Depression's slow-healing demand gap; war spending (% of GDP) now and at the start
     }
 
     static final class Game implements Serializable {
@@ -1792,6 +1794,24 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         World world;
         Home home;
         boolean removed;                    // convicted by the Senate
+        int termStart, prior;               // the week the current term began; terms the president had already served before the game
+        int ending;                         // how the presidency ended (END_*)
+        Reelect re;                         // the campaign for another term
+        int tut = -1;                       // the tutorial's step (-1: off)
+        boolean watch;                      // watch mode: the game plays itself
+        int watchSpeed = 1;
+        int okCount, failCount;             // crises and events that went well or badly
+        double justice;                     // the running record on equal justice
+        List<String> histOk = new ArrayList<String>();   // turning points that went your way
+        int warsStarted, minApprovalWeek;
+        double minApproval = 100, maxApproval;
+        boolean recorded;                   // added to the Hall of Fame
+        boolean night;                      // election night results are waiting to be shown
+        boolean midGain;                    // gained House seats in a midterm
+        int lastEvWon, lastEvTotal;         // the last re-election won
+        int legacyScore, legacyRank;
+        List<String> achievements, epilogue;
+        List<String> milestones = new ArrayList<String>();
         double capital = 30;                // political capital: spent on deals, earned by approval and wins
         List<Decision> inbox = new ArrayList<Decision>();
         boolean filibusterGone;
@@ -1805,6 +1825,9 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         transient boolean dirty = true;
 
         int day() { return week * 7; }
+
+        /** Weeks into the current term. */
+        int tw() { return week - termStart; }
 
         int presAge() { return pres == null || pres.born <= 0 ? 60 : dateOf(day())[0] - pres.born; }
 
@@ -1873,6 +1896,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             e.unemp = er.unemp; e.infl = er.infl; e.gdp = er.gdp; e.fed = er.fed; e.fedTarget = er.fed; e.tenYr = er.tenYr;
             e.stocks = er.stocks; e.oil = er.oil; e.oilBase = er.oil; e.debt = er.debt; e.deficit = er.deficit; e.nominalGdp = er.nominalGdp;
             e.tariff = er.tariff; e.fedChair = er.fedChair;
+            e.fedCred = er.fedCred; e.slump = er.slump;
             switch (s.scenario) {
                 case 1: e.unemp += 2; e.gdp -= 2.8; e.stocks *= 0.8; e.demandShock = -2.5; e.deficit += 1.5; break;
                 case 2: e.oil *= 1.3; e.deficit += 0.8; break;
@@ -1890,7 +1914,11 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             e.expect = 0.7 * 2.0 + 0.3 * e.infl;
             e.core = e.infl;
             e.rNeutral = 0.75;
+            if (er.year < 2021) e.gasAdj = (er.gas - gasPrice(e)) / e.priceLevel;
             e.gas = gasPrice(e); e.gas0 = e.gas;
+            e.gasRef = er.year < 2021 ? e.gas / e.priceLevel : 3.1;
+            e.uRef0 = e.unemp; e.piRef0 = e.infl;
+            refs(g);
             e.stocks0 = e.stocks;
             e.mortgage = e.tenYr + 1.8;
             e.interest = e.debt * 0.032;
@@ -1901,10 +1929,21 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             states(e);
         }
 
-        static double gasPrice(Econ e) { return 1.25 * e.priceLevel + 0.0245 * e.oil; }
+        static double gasPrice(Econ e) { return (1.25 + e.gasAdj) * e.priceLevel + 0.0245 * e.oil; }
+
+        /** Deflation hurts too: a falling price level counts like inflation of the same size. */
+        static double piEff(double infl) { return infl >= 0 ? infl : -1.2 * infl; }
+
+        /** What the public measures the economy against: normal times, or partly what you inherited if you inherited a disaster. */
+        static void refs(Game g) {
+            Econ e = g.econ;
+            double w = Math.max(0.25, 0.65 - 0.25 * g.week / 208.0);
+            e.uRef = 4.5 + Math.max(0, e.uRef0 - 5.5) * w;
+            e.piRef = 2.5 + Math.max(0, piEff(e.piRef0) - 3.5) * w;
+        }
 
         static double sentimentOf(Econ e) {
-            return clamp(96 - 4.5 * (e.unemp - 4) - 5.5 * (e.infl - 2) - 6 * (e.gas / e.priceLevel - 3.0) + 1.5 * (e.gdp - 2) + 12 * Math.log(e.stocks / e.stocks0), 45, 112);
+            return clamp(96 - 4.5 * (e.unemp - e.uRef + 0.5) - 5.5 * (piEff(e.infl) - e.piRef + 0.5) - 6 * (e.gas / e.priceLevel - e.gasRef + 0.1) + 1.5 * (e.gdp - 2) + 12 * Math.log(e.stocks / e.stocks0), 45, 112);
         }
 
         static void states(Econ e) {
@@ -1939,7 +1978,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             Random r = g.rng;
             shocks(g);
             double realRate = e.fed - e.expect;
-            double ogTarget = -0.6 * (realRate - e.rNeutral) + 0.55 * e.fiscal + e.demandShock + e.finShock - 0.07 * (e.tariff - 2.5) + 0.03 * (e.sentiment - 80) - e.aiShock * 0.3;
+            refs(g);
+            e.slump *= 0.9965;
+            double ogTarget = -0.6 * (realRate - e.rNeutral) + 0.55 * e.fiscal + e.demandShock + e.finShock - 0.07 * (e.tariff - 2.5) + 0.03 * (e.sentiment - 80) - e.aiShock * 0.3
+                    + e.slump + 0.45 * (e.war - e.war0);
             e.og += (ogTarget - e.og) * 0.022 + r.nextGaussian() * 0.05;
             e.demandShock *= 0.985; e.supplyShock *= 0.965; e.finShock *= 0.975; e.aiShock *= 0.99;
             e.ogHist[e.ogPos] = e.og;
@@ -1950,17 +1992,19 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             e.structural = Math.max(0, e.structural * 0.995 + e.aiShock * 0.004);
             double uTarget = e.nairu + e.polUnemp + e.structural - 0.5 * e.og;
             e.unemp += (uTarget - e.unemp) * 0.035 + r.nextGaussian() * 0.012;
-            e.unemp = clamp(e.unemp, 2.5, 25);
+            e.unemp = clamp(e.unemp, 1.0, 30);
             // inflation: anchored by the Fed's credibility, pushed by the gap, oil and tariffs
             double anchor = e.fedCred * 2.0 + (1 - e.fedCred) * e.infl;
             e.expect += (anchor - e.expect) * 0.02;
-            double piT = e.expect + e.polInfl + 0.28 * e.og + e.supplyShock + 0.012 * (e.oil - e.oilBase) + 0.05 * (e.tariff - g.era.tariff);
+            double ogP = e.og < -5 ? -5 + 0.04 * (e.og + 5) : e.og;
+            double piT = e.expect + e.polInfl + 0.28 * ogP + e.supplyShock + 0.012 * (e.oil - e.oilBase) + 0.05 * (e.tariff - g.era.tariff);
             e.infl += (piT - e.infl) * 0.03 + r.nextGaussian() * 0.025;
-            e.infl = clamp(e.infl, -3, 20);
+            e.infl = clamp(e.infl, -12, 25);
             e.core += (e.infl - 0.2 - e.core) * 0.04;
             // the Fed meets eight times a year
             double taylor = e.rNeutral + e.infl + 0.5 * (e.infl - 2) + 0.5 * e.og + (e.fedHawk - 0.5);
             e.fedTarget = clamp(taylor, 0.125, 20);
+            if (yearNow(g) < 1951) e.fedTarget = Math.min(e.fedTarget, 1.0);   // the Fed pegged rates low to finance the war, until the 1951 accord
             for (int[] f : FOMC) if (weekHas(g, f[0], f[1])) fomc(g);
             // markets
             double prev10 = e.tenYr;
@@ -1973,7 +2017,8 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             e.stocks *= Math.exp(ret);
             // oil and gas
             e.oil += (e.oilBase - e.oil) * 0.015 + r.nextGaussian() * 1.4 * e.oilBase / 75;
-            e.oil = clamp(e.oil, 15, 250);
+            double pl = e.priceLevel < 0.95 ? e.priceLevel : 1;
+            e.oil = clamp(e.oil, 15 * pl, 250 * pl);
             e.gas += (gasPrice(e) - e.gas) * 0.25;
             // the prices people feel
             e.groceries += (e.infl + 0.3 + 0.06 * (e.tariff - 2.5) - 0.01 * (e.farm - 100) - e.groceries) * 0.05 + r.nextGaussian() * 0.05;
@@ -1992,7 +2037,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             double avgRate = e.interest / Math.max(1, e.debt) * 100;
             avgRate += (e.tenYr - avgRate) * 0.004;
             e.interest = e.debt * avgRate / 100;
-            double primary = g.era.deficit - e.debt * 0.032 + e.fiscal;
+            double primary = g.era.deficit - e.debt * 0.032 + e.fiscal + (e.war - e.war0);
             double target = primary + cyc + e.interest;
             e.deficit += (target - e.deficit) * 0.05;
             double nom = (e.gdp + e.infl) / 100;
@@ -2036,7 +2081,12 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             else g.log(NK_ECON, "Fed holds rates at " + rate(e.fed), null, 0.4);
         }
 
-        static String rate(double r) { double lo = Math.floor(r * 4 + 0.001) / 4; return fmt2(lo - 0.125 < 0 ? 0 : lo - 0.125) + "-" + fmt2(lo + 0.125) + "%"; }
+        /** The Fed's target as it was announced: a quarter-point range since December 2008, a single rate before. */
+        static String rate(double r) {
+            if (CAL_YEAR < 2009) return fmt2(Math.round(r * 4) / 4.0) + "%";
+            double lo = Math.floor(r * 4 + 0.001) / 4;
+            return fmt2(lo) + "-" + fmt2(lo + 0.25) + "%";
+        }
 
         static String bp(double d) { return Math.round(d * 100) + " basis points"; }
 
@@ -2410,7 +2460,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         /** Where approval is heading, before partisanship squeezes it. */
         static double target(Game g) {
             Econ e = g.econ;
-            double t = g.era.approvalBase + 0.8 * (e.gdp - 2) - 1.6 * (e.unemp - 4.5) - 1.5 * (e.infl - 2.5) - 3.0 * (e.gas / e.priceLevel - 3.1)
+            double t = g.era.approvalBase + 0.8 * (e.gdp - 2) - 1.6 * (e.unemp - e.uRef) - 1.5 * (Economy.piEff(e.infl) - e.piRef) - 3.0 * (e.gas / e.priceLevel - e.gasRef)
                     + 0.06 * (e.sentiment - 80) + g.perf + g.honeymoon + g.rally - g.scandal + 1.5 * issueWeighted(g) + personal(g);
             if (g.set.difficulty == 0) t += 2;
             if (g.set.difficulty == 2) t -= 2;
@@ -2467,9 +2517,9 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             double a = g.approval;
             for (int i = 0; i < NPI; i++) {
                 double v = a + 4 * g.issueAdj[i] + (g.command[i] - 50) * 0.04;
-                if (i == PI_ECON) v += 1.6 * (e.gdp - 2) - 1.5 * (e.unemp - 4.5) + 0.08 * (e.sentiment - 80);
-                if (i == PI_PRICES) v += -2.5 * (e.infl - 2.5) - 5 * (e.gas / e.priceLevel - 3.1) - 0.6 * (e.groceries - 2.5) - 0.4 * (e.rent - 3.5) - 4;
-                if (i == PI_JOBS) v += -2.2 * (e.unemp - 4.5) + 0.01 * (e.jobsLast - 150);
+                if (i == PI_ECON) v += 1.6 * (e.gdp - 2) - 1.5 * (e.unemp - e.uRef) + 0.08 * (e.sentiment - 80);
+                if (i == PI_PRICES) v += -2.5 * (Economy.piEff(e.infl) - e.piRef) - 5 * (e.gas / e.priceLevel - e.gasRef) - 0.6 * (e.groceries - 2.5) - 0.4 * (e.rent - 3.5) - 4;
+                if (i == PI_JOBS) v += -2.2 * (e.unemp - e.uRef) + 0.01 * (e.jobsLast - 150);
                 g.issueApp[i] = clamp(v, 10, 88);
             }
         }
@@ -2481,7 +2531,9 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             double k = (g.party == DEM || g.party == REP ? 0.8 + 0.6 * g.era.polarization : 0.35);
             Econ e = g.econ;
             double[] local = new double[NS];
-            for (int s = 0; s < NS; s++) local[s] = -0.07 * (e.stUnemp[s] - e.unemp) - 0.10 * (e.stGas[s] - e.gas) + 0.06 * g.stateBump[s];
+            for (int s = 0; s < NS; s++) local[s] = -0.07 * (e.stUnemp[s] - e.unemp) - 0.10 * (e.stGas[s] - e.gas) / e.priceLevel + 0.06 * g.stateBump[s];
+            int yr = yearNow(g);
+            if (yr < 2024 && (g.party == DEM || g.party == REP)) for (int s = 0; s < NS; s++) local[s] += sign * 0.016 * leanShift(s, yr);
             double lo = -6, hi = 6, off = g.offset;
             for (int it = 0; it < 30; it++) {
                 double v = national(g, sign, k, off, local);
@@ -2654,7 +2706,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                     case AC_CAMPDAVID: campDavid++; break;
                     case AC_CABINET: Cabinet.meeting(g); break;
                     case AC_ABROAD: if (arg >= 0 && g.world != null && (i == 0 || g.act[i - 1] != AC_ABROAD || g.arg[i - 1] != arg)) Diplo.visit(g, arg, true); break;
-                    case AC_CAMPAIGN: if (arg >= 0 && g.cong != null) { g.cong.campaign[arg] += cha / 70; g.stateBump[arg] += 0.8; g.location = arg; trips++; } break;
+                    case AC_CAMPAIGN: if (arg >= 0 && g.cong != null) { g.cong.campaign[arg] += cha / 70; if (g.re != null && Reelection.season(g)) g.re.effort[arg] += cha / 70; g.stateBump[arg] += 0.8; g.location = arg; trips++; } break;
                     case AC_WORKLATE: { int t = topIssue(g); g.command[t] = Math.min(100, g.command[t] + 1.5); break; }
                     default: break;
                 }
@@ -2677,6 +2729,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 Legis.week(g);
                 Budget.week(g);
                 Midterms.week(g);
+                Reelection.week(g);
                 g.capital = clamp(g.capital + 0.6 + (g.approval - 45) * 0.05 + (g.honeymoon > 1 ? 0.5 : 0), 0, 100);
             }
             if (g.ex != null) {
@@ -2685,12 +2738,13 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 Courts.week(g);
                 Trouble.week(g);
                 if (g.world != null) Diplo.week(g);
+                if (g.world != null) History.week(g);
                 if (g.home != null) HomeFront.week(g);
                 g.issueAdj[PI_ECON] = clamp(g.issueAdj[PI_ECON] + 0.003 * (Cabinet.sq(g, S_NEC) - 0.6), -1.5, 1.5);
             }
             record(g);
             g.week++;
-            if (g.week >= g.termWeeks) g.over = true;
+            Terms.check(g);
             Delegate.plan(g);
             g.dirty = true;
         }
@@ -2717,6 +2771,8 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
 
         static void record(Game g) {
             Econ e = g.econ;
+            if (g.approval < g.minApproval) { g.minApproval = g.approval; g.minApprovalWeek = g.week; }
+            g.maxApproval = Math.max(g.maxApproval, g.approval);
             g.hist.add(new double[]{g.week, g.approval, e.unemp, e.infl, e.gdp, e.stocks, e.gas, e.deficit, e.debt, e.fed, e.sentiment, g.stamina, g.stress, e.tenYr, g.issueApp[PI_ECON], g.issueApp[PI_PRICES]});
         }
     }
@@ -2727,18 +2783,22 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     // =====================================================================
     //  10.  ERAS AND SCENARIOS
     //  Each era is the country on an inauguration day: Congress, the economy, the leaders and the mood.
+    //  Every inauguration from 1933 on, plus the projected world after Battleground 2028.
     // =====================================================================
     static final class Era implements Serializable {
         private static final long serialVersionUID = 1L;
-        int year;
+        int year, inM = 0, inD = 20;        // inauguration day (March 4 until 1937)
         String name, blurb, predecessor, winnerId;
+        int termOf = 1;                     // which term the real winner is starting
         boolean fictional;                  // a projected future rather than a real date
         int houseD = -1, senateD = -1;      // Democratic seats on day one (-1: set by who won)
         double approvalBase = 45, polarization = 0.85;
         double unemp, infl, gdp, fed, tenYr, stocks, oil, gas, debt, deficit, nominalGdp, potential = 1.9, nairu = 4.3, priceLevel = 1, tariff = 2.5;
+        double fedCred = 0.8, slump;        // the Fed's credibility; a slow-healing shortfall in demand (the Depression)
         String fedChair;
         String speakerD, speakerR, leaderD, leaderR, houseLeaderD, houseLeaderR;   // who leads each party in each chamber
         String issues;                      // salience weights: "index=weight ..."
+        String labels;                      // what some issues were called then: "index=name ..."
         boolean ai = true;
         String midSeats;                    // Senate seats up at the midterm, "AB:D" for the party holding each
     }
@@ -2747,9 +2807,103 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
 
     static Era era(int year) { for (Era e : ERAS) if (e.year == year) return e; return ERAS.get(ERAS.size() - 1); }
 
+    /** year|month0|day|name|winner|termOf|predecessor|houseD|senateD|approval base|polarization|unemployment|inflation|growth|fed|10y|stocks|oil|gas|debt|deficit|
+     *  nominal GDP ($T)|potential|nairu|price level (2025 = 1)|tariff|Fed chair|Fed credibility|slump|House D leader|House R leader|Senate D leader|Senate R leader|issues|labels|blurb */
+    static final String[] ERA_SPEC = {
+            "1933|2|4|The Great Depression|fdr|1|Herbert Hoover|313|61|64|0.3|24.9|-5.1|-1.5|2.5|3.3|7|0.67|0.18|35|4.5|0.057|3.0|5.0|0.041|19.8|Eugene Meyer|0.3|-30|Henry Rainey|Bertrand Snell|Joseph Robinson|Charles McNary"
+                    + "|0=1.8 1=0.8 2=2.0 3=0.2 4=0.2 5=0.6 6=0.3 7=0.2 8=0.5 9=0.2 10=0.3 11=0.05 12=0.2 13=0.6|9=Energy & conservation 11=Science"
+                    + "|March 4, 1933. A quarter of the workforce has no job, thousands of banks have failed and most states have closed the rest. Farm prices have collapsed and families are losing their homes. Democrats hold huge majorities in Congress. The country wants action, and fast.",
+            "1937|0|20|The Second New Deal|fdr|2|Franklin D. Roosevelt|334|79|57|0.3|14.3|3.0|5.1|1.0|2.7|17|1.18|0.20|38|2.5|0.092|3.0|5.0|0.045|15.6|Marriner Eccles|0.4|-14|William Bankhead|Bertrand Snell|Joseph Robinson|Charles McNary"
+                    + "|0=1.4 1=0.6 2=1.5 3=0.3 4=0.2 5=0.4 6=0.6 7=0.4 8=0.4 9=0.2 10=0.4 11=0.05 12=0.2 13=0.6|9=Energy & conservation 11=Science"
+                    + "|January 20, 1937. Re-elected in a landslide with the largest majorities in Congress in a century. The recovery is real but unfinished: one worker in seven is still jobless, and the Supreme Court keeps striking down the New Deal. Abroad, fascism is on the march.",
+            "1941|0|20|The Arsenal of Democracy|fdr|3|Franklin D. Roosevelt|267|69|58|0.3|11.0|1.4|8.0|1.0|2.0|10.5|1.14|0.19|42|3.0|0.103|3.5|4.5|0.046|13.6|Marriner Eccles|0.5|-8|Sam Rayburn|Joseph Martin|Alben Barkley|Charles McNary"
+                    + "|0=1.0 1=0.4 2=1.0 3=0.2 4=0.2 5=0.3 6=1.6 7=1.4 8=0.4 9=0.2 10=0.4 11=0.05 12=0.2 13=0.3|9=Energy & conservation 11=Science"
+                    + "|January 20, 1941. The first third term in history. War has engulfed Europe and China; Britain stands nearly alone and is running out of money to buy American arms. The country is officially neutral, and divided over how far to go to help.",
+            "1945|0|20|Victory and After|fdr|4|Franklin D. Roosevelt|242|59|62|0.3|1.9|2.3|4.0|0.375|2.4|13.5|1.22|0.21|100|21|0.228|3.0|4.0|0.056|9.5|Marriner Eccles|0.6|0|Sam Rayburn|Joseph Martin|Alben Barkley|Wallace White"
+                    + "|0=0.7 1=0.9 2=0.6 3=0.3 4=0.2 5=0.3 6=1.8 7=2.0 8=0.3 9=0.2 10=0.4 11=0.1 12=0.2 13=0.2|9=Energy & conservation 11=Science & the atom"
+                    + "|January 20, 1945. A fourth term, in the last year of the largest war in history. Allied armies are closing on Germany; in the Pacific the island campaigns grind toward Japan. Ahead lie the peace, the United Nations, a secret weapon and twelve million servicemen coming home.",
+            "1949|0|20|The Fair Deal|truman|1|Harry S. Truman|263|56|56|0.35|4.3|1.3|1.0|1.0|2.4|15.2|2.54|0.27|78|-0.2|0.272|3.5|4.5|0.074|5.5|Thomas McCabe|0.6|-1|Sam Rayburn|Joseph Martin|Scott Lucas|Kenneth Wherry"
+                    + "|0=1.0 1=1.0 2=0.8 3=0.5 4=0.2 5=0.3 6=1.4 7=1.2 8=0.3 9=0.2 10=0.8 11=0.1 12=0.3 13=0.6|9=Energy & conservation 11=Science & the atom"
+                    + "|January 20, 1949. Elected in his own right after the upset of the century. The Cold War has begun: Berlin is under blockade and the airlift flies around the clock. Prices have finally cooled, and the Fair Deal waits on a Congress Democrats now control again.",
+            "1953|0|20|I Like Ike|eisenhower|1|Harry S. Truman|213|49|60|0.3|2.9|0.8|4.7|2.0|2.8|26|2.68|0.29|58|1.7|0.389|3.5|4.3|0.083|5.0|William McChesney Martin|0.75|0|Sam Rayburn|Joseph Martin|Lyndon Johnson|Robert Taft"
+                    + "|0=1.0 1=0.6 2=0.6 3=0.3 4=0.2 5=0.3 6=1.3 7=1.4 8=0.3 9=0.2 10=0.6 11=0.2 12=0.3 13=0.8|9=Energy & conservation 11=Science & the atom"
+                    + "|January 20, 1953. The general takes office promising to end the war in Korea, where truce talks have dragged on for eighteen months. Republicans hold the White House and, narrowly, both chambers for the first time in twenty years. The economy is booming.",
+            "1957|0|20|The Affluent Society|eisenhower|2|Dwight D. Eisenhower|234|51|62|0.3|4.2|2.9|2.1|3.0|3.4|46|3.09|0.31|47|-0.8|0.474|3.3|4.5|0.088|5.5|William McChesney Martin|0.8|0|Sam Rayburn|Joseph Martin|Lyndon Johnson|William Knowland"
+                    + "|0=0.9 1=0.6 2=0.6 3=0.3 4=0.2 5=0.3 6=1.2 7=1.1 8=0.3 9=0.2 10=1.2 11=0.5 12=0.6 13=0.4|9=Energy & conservation 11=Science & space"
+                    + "|January 20, 1957. Re-elected in a landslide, though Democrats kept Congress. Prosperity is broad and the suburbs and interstates are spreading. But the South is resisting school desegregation, Soviet tanks have just crushed Hungary, and the space age is about to begin.",
+            "1961|0|20|The New Frontier|jfk|1|Dwight D. Eisenhower|262|64|60|0.3|6.6|1.6|0.5|2.0|3.8|58|2.97|0.31|43|0.6|0.54|3.5|5.0|0.093|7.2|William McChesney Martin|0.8|-1|Sam Rayburn|Charles Halleck|Mike Mansfield|Everett Dirksen"
+                    + "|0=1.0 1=0.4 2=1.0 3=0.5 4=0.2 5=0.3 6=1.4 7=1.3 8=0.3 9=0.2 10=1.0 11=0.6 12=0.5 13=0.3|9=Energy & conservation 11=Science & space"
+                    + "|January 20, 1961. The youngest man ever elected president takes office after one of the closest races in history, promising to get the country moving again. A recession lingers, Cuba has turned to Moscow, the Soviets lead in space, and the civil rights movement is pressing for action.",
+            "1965|0|20|The Great Society|lbj|1|Lyndon B. Johnson|295|68|62|0.3|4.9|1.6|6.5|4.0|4.2|87|2.86|0.31|37|0.2|0.72|4.0|4.8|0.098|6.5|William McChesney Martin|0.8|0|John McCormack|Gerald Ford|Mike Mansfield|Everett Dirksen"
+                    + "|0=0.7 1=0.3 2=0.6 3=1.0 4=0.4 5=0.6 6=1.1 7=1.0 8=0.3 9=0.3 10=1.5 11=0.5 12=0.8 13=0.3|9=Energy & environment 11=Science & space"
+                    + "|January 20, 1965. Elected in a 44-state landslide with the largest majorities since the New Deal. A civil rights act is law; voting rights, Medicare and a war on poverty are next. In South Vietnam the government is losing to the Viet Cong, and 23,000 American advisers are there.",
+            "1969|0|20|Law and Order|nixon|1|Lyndon B. Johnson|243|57|54|0.4|3.4|4.4|3.1|6.3|6.0|102|3.09|0.35|29|-0.3|0.98|3.8|5.0|0.115|6.0|William McChesney Martin|0.6|0|John McCormack|Gerald Ford|Mike Mansfield|Everett Dirksen"
+                    + "|0=0.7 1=0.8 2=0.4 3=0.4 4=0.2 5=1.2 6=1.2 7=1.6 8=0.3 9=0.5 10=1.0 11=0.5 12=0.5 13=0.4|9=Energy & environment 11=Science & space"
+                    + "|January 20, 1969. After a year of assassinations, riots and a war that split the country, the new president promises to bring Americans together and end the war with honor. More than half a million troops are in Vietnam; the Paris peace talks have barely begun. Democrats hold Congress.",
+            "1973|0|20|Peace with Honor|nixon|2|Richard Nixon|242|56|55|0.4|4.9|3.6|5.6|6.0|6.5|118|3.89|0.39|26|1.1|1.38|3.4|5.5|0.139|5.5|Arthur Burns|0.45|0|Carl Albert|Gerald Ford|Mike Mansfield|Hugh Scott"
+                    + "|0=1.0 1=1.3 2=0.6 3=0.4 4=0.2 5=0.9 6=1.0 7=0.9 8=0.3 9=0.9 10=0.6 11=0.3 12=0.4 13=1.0|9=Energy & environment 11=Science & space"
+                    + "|January 20, 1973. Re-elected with 49 states. A peace agreement for Vietnam is days away and the last American troops will soon come home. The economy is running hot under wage and price controls, oil is getting scarce, and questions about a burglary at the Watergate are growing.",
+            "1977|0|20|A Crisis of Confidence|carter|1|Gerald Ford|292|62|54|0.4|7.5|5.2|4.6|4.6|7.2|103|14.4|0.62|27|2.6|2.03|3.2|6.2|0.189|4.0|Arthur Burns|0.4|0|Tip O'Neill|John Rhodes|Robert Byrd|Howard Baker"
+                    + "|0=1.1 1=1.3 2=1.0 3=0.5 4=0.3 5=0.6 6=0.8 7=0.6 8=0.4 9=1.3 10=0.6 11=0.2 12=0.4 13=0.9|9=Energy & environment 11=Science & technology"
+                    + "|January 20, 1977. An outsider from Plains, Georgia promises a government as good as its people, two years after Watergate and the fall of Saigon. Unemployment is 7.5% and inflation is creeping up. The country imports half its oil, and this is the coldest winter in memory.",
+            "1981|0|20|The Reagan Revolution|reagan|1|Jimmy Carter|243|47|55|0.45|7.5|11.8|1.5|19.0|12.6|133|35|1.38|25.5|2.5|3.10|3.0|6.3|0.284|3.5|Paul Volcker|0.5|0|Tip O'Neill|Robert Michel|Robert Byrd|Howard Baker"
+                    + "|0=1.4 1=1.8 2=0.9 3=0.3 4=0.4 5=0.7 6=1.0 7=1.0 8=0.5 9=0.9 10=0.4 11=0.2 12=0.4 13=0.4|9=Energy & environment 11=Science & technology"
+                    + "|January 20, 1981. Inflation is near 12%, the prime rate is over 20%, and the hostages in Iran are coming home today after 444 days. The new president promises tax cuts, a bigger military and a smaller government. Republicans have won the Senate for the first time since 1953.",
+            "1985|0|20|Morning in America|reagan|2|Ronald Reagan|253|47|56|0.45|7.3|3.5|4.2|8.4|11.4|168|27|1.20|35|5.0|4.22|3.0|6.2|0.336|3.6|Paul Volcker|0.7|0|Tip O'Neill|Robert Michel|Robert Byrd|Bob Dole"
+                    + "|0=1.0 1=0.7 2=0.8 3=0.4 4=0.5 5=0.8 6=1.1 7=1.1 8=0.8 9=0.3 10=0.4 11=0.3 12=0.5 13=0.4|9=Energy & environment 11=Science & technology"
+                    + "|January 20, 1985. Re-elected with 49 states. The economy is booming, inflation is tamed, but the deficit has tripled and the trade gap with Japan is a political fight. A new generation may soon lead the Soviet Union; the arms race is at its height.",
+            "1989|0|20|A New World Order|bush41|1|Ronald Reagan|260|55|54|0.5|5.4|4.7|3.7|9.1|9.1|286|18|0.96|40|2.8|5.6|3.0|5.8|0.388|3.4|Alan Greenspan|0.8|0|Jim Wright|Robert Michel|George Mitchell|Bob Dole"
+                    + "|0=0.9 1=0.6 2=0.6 3=0.6 4=0.4 5=1.1 6=1.1 7=0.9 8=0.6 9=0.6 10=0.4 11=0.2 12=0.6 13=0.7|9=Energy & environment 11=Science & technology"
+                    + "|January 20, 1989. A kinder, gentler nation, and a world about to turn over: reform in Moscow is loosening the Eastern bloc's chains. At home the savings and loan industry is collapsing, the deficit won't go away, and a promise of no new taxes hangs over every budget.",
+            "1993|0|20|It's the Economy|clinton|1|George H. W. Bush|259|57|52|0.55|7.3|3.3|3.5|3.0|6.6|435|18.5|1.06|47|4.5|6.8|3.0|5.6|0.452|3.2|Alan Greenspan|0.8|0|Tom Foley|Robert Michel|George Mitchell|Bob Dole"
+                    + "|0=1.5 1=0.6 2=1.1 3=1.3 4=0.5 5=1.0 6=0.6 7=0.4 8=0.8 9=0.4 10=0.6 11=0.4 12=0.6 13=0.6|11=Technology"
+                    + "|January 20, 1993. The first baby-boomer president promises to focus like a laser on an economy that is recovering too slowly to feel. The deficit is huge, health costs are soaring, and the Cold War is over: no one is sure what comes next.",
+            "1997|0|20|The Bridge to the 21st Century|clinton|2|Bill Clinton|208|45|56|0.6|5.3|3.0|4.4|5.25|6.4|770|25|1.26|46|1.3|8.4|3.3|5.0|0.502|2.5|Alan Greenspan|0.85|0|Dick Gephardt|Newt Gingrich|Tom Daschle|Trent Lott"
+                    + "|0=0.9 1=0.4 2=0.5 3=0.8 4=0.5 5=0.9 6=0.6 7=0.5 8=0.6 9=0.4 10=0.5 11=0.6 12=0.9 13=1.0|11=Technology & the internet"
+                    + "|January 20, 1997. Re-elected comfortably, facing a Republican Congress. The economy is the best in a generation and the internet boom is under way; the budget could balance for the first time since 1969. Investigations are circling the White House.",
+            "2001|0|20|Compassionate Conservatism|bush43|1|Bill Clinton|213|50|52|0.65|4.2|3.7|1.0|6.0|5.2|1340|26|1.47|32|-1.3|10.6|3.0|4.8|0.553|1.8|Alan Greenspan|0.85|-1|Dick Gephardt|Dennis Hastert|Tom Daschle|Trent Lott"
+                    + "|0=1.0 1=0.6 2=0.7 3=0.8 4=0.5 5=0.4 6=0.5 7=0.5 8=0.4 9=0.7 10=0.4 11=0.5 12=1.1 13=0.6|11=Technology & the internet"
+                    + "|January 20, 2001. After a 36-day recount and a 5-4 Supreme Court decision, the new president takes office with the Senate split 50-50. The budget is in surplus, but the dot-com bubble has burst and the economy is slowing. Foreign policy barely came up in the campaign.",
+            "2005|0|20|Political Capital|bush43|2|George W. Bush|203|45|49|0.75|5.3|3.0|3.5|2.25|4.2|1180|46|1.83|35|3.4|13.0|2.7|4.8|0.61|1.6|Alan Greenspan|0.85|0|Nancy Pelosi|Dennis Hastert|Harry Reid|Bill Frist"
+                    + "|0=0.8 1=0.6 2=0.6 3=0.7 4=0.8 5=0.3 6=1.3 7=1.3 8=0.4 9=0.7 10=0.5 11=0.3 12=0.5 13=0.6|11=Technology"
+                    + "|January 20, 2005. Re-elected with the first popular-vote majority since 1988, the president says he has political capital to spend: on Social Security and on spreading democracy. 150,000 troops are in Iraq, where the insurgency is growing. House prices are soaring.",
+            "2009|0|20|The Great Recession|obama|1|George W. Bush|257|58|58|0.8|7.8|0.0|-2.5|0.125|2.5|850|42|1.84|52|9.8|14.4|2.2|5.0|0.67|1.5|Ben Bernanke|0.85|-6|Nancy Pelosi|John Boehner|Harry Reid|Mitch McConnell"
+                    + "|0=2.0 1=0.4 2=1.6 3=1.0 4=0.4 5=0.3 6=0.8 7=0.8 8=0.4 9=0.7 10=0.4 11=0.3 12=0.4 13=0.6|11=Technology"
+                    + "|January 20, 2009. The economy is losing 700,000 jobs a month in the worst financial crisis since the Depression; the banks and the automakers are on life support, and two wars are under way. A record crowd fills the Mall to see the first Black president sworn in.",
+            "2013|0|20|The Fiscal Cliff|obama|2|Barack Obama|201|55|51|0.85|8.0|1.6|1.8|0.125|1.9|1490|95|3.35|72|4.1|16.8|2.0|5.0|0.728|1.4|Ben Bernanke|0.85|-2|Nancy Pelosi|John Boehner|Harry Reid|Mitch McConnell"
+                    + "|0=1.2 1=0.5 2=1.0 3=1.0 4=0.9 5=0.5 6=0.7 7=0.7 8=0.4 9=0.6 10=0.6 11=0.5 12=0.4 13=0.6|11=Technology"
+                    + "|January 20, 2013. Re-elected, facing a Republican House. The recovery is slow but steady, the fiscal cliff was dodged at the last minute, and the health law's exchanges open this fall. Troops are coming home from Afghanistan; Syria's civil war is spreading.",
+            "2017|0|20|America First|trump|1|Barack Obama|194|48|46|0.95|4.7|2.5|2.2|0.66|2.4|2270|52|2.35|76|3.5|19.5|2.0|4.5|0.766|1.6|Janet Yellen|0.85|0|Nancy Pelosi|Paul Ryan|Chuck Schumer|Mitch McConnell"
+                    + "|0=1.0 1=0.5 2=0.9 3=1.1 4=1.3 5=0.5 6=0.7 7=0.8 8=1.0 9=0.5 10=0.6 11=0.4 12=0.4 13=0.8|11=Technology"
+                    + "|January 20, 2017. A businessman who has never held office takes over after winning the Electoral College while losing the popular vote. Republicans hold both chambers and plan to repeal the health law and cut taxes. The economy is in its eighth year of expansion.",
+            "2021|0|20|The Pandemic|biden|1|Donald Trump|222|50|52|0.95|6.4|1.4|5.9|0.125|1.1|3850|52|2.38|99|12.0|22.0|2.0|4.3|0.847|3.0|Jerome Powell|0.85|-3|Nancy Pelosi|Kevin McCarthy|Chuck Schumer|Mitch McConnell"
+                    + "|0=1.3 1=0.6 2=1.1 3=1.6 4=0.9 5=0.6 6=0.6 7=0.5 8=0.4 9=0.7 10=0.9 11=0.4 12=0.6 13=0.9|"
+                    + "|January 20, 2021. Two weeks after a mob stormed the Capitol, the new president is sworn in behind fences and troops. The pandemic is killing 3,000 Americans a day, but vaccines are arriving. Democrats hold the House narrowly and the Senate only through the vice president's tie-breaking vote."};
+
     static {
+        for (String spec : ERA_SPEC) {
+            String[] t = spec.split("\\|", -1);
+            Era e = new Era();
+            int i = 0;
+            e.year = Integer.parseInt(t[i++]); e.inM = Integer.parseInt(t[i++]); e.inD = Integer.parseInt(t[i++]);
+            e.name = t[i++]; e.winnerId = t[i++]; e.termOf = Integer.parseInt(t[i++]); e.predecessor = t[i++];
+            e.houseD = Integer.parseInt(t[i++]); e.senateD = Integer.parseInt(t[i++]);
+            e.approvalBase = Double.parseDouble(t[i++]); e.polarization = Double.parseDouble(t[i++]);
+            e.unemp = Double.parseDouble(t[i++]); e.infl = Double.parseDouble(t[i++]); e.gdp = Double.parseDouble(t[i++]); e.fed = Double.parseDouble(t[i++]);
+            e.tenYr = Double.parseDouble(t[i++]); e.stocks = Double.parseDouble(t[i++]); e.oil = Double.parseDouble(t[i++]); e.gas = Double.parseDouble(t[i++]);
+            e.debt = Double.parseDouble(t[i++]); e.deficit = Double.parseDouble(t[i++]); e.nominalGdp = Double.parseDouble(t[i++]);
+            e.potential = Double.parseDouble(t[i++]); e.nairu = Double.parseDouble(t[i++]); e.priceLevel = Double.parseDouble(t[i++]); e.tariff = Double.parseDouble(t[i++]);
+            e.fedChair = t[i++]; e.fedCred = Double.parseDouble(t[i++]); e.slump = Double.parseDouble(t[i++]);
+            String hD = t[i++], hR = t[i++], sD = t[i++], sR = t[i++];
+            e.speakerD = hD; e.houseLeaderD = hD; e.speakerR = hR; e.houseLeaderR = hR; e.leaderD = sD; e.leaderR = sR;
+            e.issues = t[i++]; e.labels = t[i].isEmpty() ? null : t[i]; i++;
+            e.blurb = t[i];
+            e.ai = e.year >= 2021;
+            ERAS.add(e);
+        }
+
         Era e = new Era();
-        e.year = 2025; e.name = "The real present";
+        e.year = 2025; e.name = "The real present"; e.termOf = 2;
         e.blurb = "January 20, 2025. Inflation has cooled but prices are still high, Republicans hold both chambers by a few seats, wars grind on in Ukraine and Gaza, and AI is reshaping the economy.";
         e.predecessor = "Joe Biden"; e.winnerId = "trump";
         e.houseD = 215; e.senateD = 47;
@@ -2790,6 +2944,375 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         return party == DEM ? new int[]{232, 51} : party == REP ? new int[]{206, 48} : new int[]{218, 50};
     }
     // =====================================================================
+    //  10b.  HISTORY: the presidents and their rivals since 1933, the Electoral College by census,
+    //  how each state leaned in each era, the Senate's classes and the Supreme Court year by year.
+    //  Real people appear as stylised characters with short factual bios; the game never quotes them.
+    // =====================================================================
+    static final List<Cand> HIST = new ArrayList<Cand>();
+
+    /** id|first|last|party|role|home|born|econ|cult|CHA SPE DEB INT DIS EXE FPC XOV EST STA SCA|look|bio */
+    static final String[] HSPEC = {
+            "fdr|Franklin D.|Roosevelt|D|Governor of New York|NY|1882|-0.7|-0.2|95 96 80 80 80 82 80 82 80 60 30|M 0 6 2 0.5 0 1 1.05 0.55 2 3 0.72 0.75|Governor of New York and a former assistant secretary of the Navy, elected in 1932 promising a New Deal for the forgotten man. A patrician with a gift for talking to ordinary people.",
+            "garner|John Nance|Garner|D|Speaker of the House|TX|1868|-0.1|0.5|55 50 55 70 70 60 40 55 90 55 30|M 0 7 0 0.9 0 0 1.05 0.6 0 1 0.85 0.5|Texas congressman for thirty years and Speaker of the House; a conservative Southern Democrat who knows every deal in the Capitol.",
+            "wallace|Henry A.|Wallace|D|Secretary of Agriculture|IA|1888|-0.8|-0.4|55 55 50 88 65 70 60 45 45 70 30|M 0 3 2 0.3 0 0 1.0 0.5 0 2 0.5 0.55|Iowa farm editor and plant geneticist who founded a seed company, then ran the New Deal's farm program; the left wing's favorite.",
+            "truman|Harry S.|Truman|D|U.S. Senator, Missouri|MO|1884|-0.5|-0.1|60 60 62 72 78 72 65 60 70 75 30|M 0 6 1 0.7 0 2 1.0 0.5 0 2 0.75 0.6|Missouri senator who led the committee rooting out waste in war production; a plain-spoken First World War artillery captain from Independence.",
+            "barkley|Alben|Barkley|D|Senate Majority Leader|KY|1877|-0.5|0|72 80 70 65 60 55 50 60 85 55 30|M 0 6 0 0.9 0 0 1.08 0.6 0 1 0.85 0.75|Kentucky senator since 1927 and the Senate's Democratic leader; a famous storyteller and stump speaker.",
+            "stevenson|Adlai|Stevenson|D|Governor of Illinois|IL|1900|-0.4|-0.3|72 88 70 88 70 70 72 60 65 65 25|M 0 6 0 0.6 0 0 1.0 0.5 0 2 0.65 0.6|Governor of Illinois and a lawyer who helped found the United Nations; eloquent and witty, beloved by intellectuals, often called too cerebral for the stump.",
+            "sparkman|John|Sparkman|D|U.S. Senator, Alabama|AL|1899|-0.3|0.5|50 50 50 60 65 50 45 50 70 60 30|M 0 6 2 0.6 0 1 1.0 0.5 0 1 0.65 0.5|Alabama senator and a New Deal supporter on housing and small business.",
+            "kefauver|Estes|Kefauver|D|U.S. Senator, Tennessee|TN|1903|-0.4|-0.1|68 60 62 70 65 50 50 65 45 70 30|M 0 2 1 0.3 0 1 1.0 0.55 0 1 0.6 0.6|Tennessee senator who became a national figure with televised hearings on organized crime; campaigns in a coonskin cap.",
+            "eisenhower|Dwight D.|Eisenhower|R|General of the Army|KS|1890|0.3|0.2|88 70 60 78 82 92 98 92 75 70 20|M 0 5 0 0.5 0 0 1.05 0.55 0 1 0.7 0.88|Supreme Allied Commander in Europe in the Second World War, then president of Columbia University and NATO's first supreme commander. Belonged to no party until 1952.",
+            "nixon|Richard|Nixon|R|Vice President|CA|1913|0.3|0.4|55 70 72 85 70 75 85 55 70 75 50|M 0 1 1 0.3 0 0 1.0 0.62 0 2 0.6 0.45|California congressman and senator who made his name pursuing communists in government, then Eisenhower's vice president for eight years. Tireless, tough and shrewd about foreign policy.",
+            "jfk|John F.|Kennedy|D|U.S. Senator, Massachusetts|MA|1917|-0.4|-0.3|92 90 85 78 70 60 70 72 60 65 45|M 0 3 2 0 0 0 1.0 0.5 0 2 0.3 0.75|Massachusetts senator and decorated PT-boat commander in the Pacific; elected at 43, the first Catholic president.",
+            "lbj|Lyndon B.|Johnson|D|Vice President|TX|1908|-0.6|-0.4|65 60 55 80 70 85 60 60 98 65 45|M 0 6 1 0.6 0 0 1.08 0.65 0 1 0.65 0.55|The most effective Senate majority leader of the century, then Kennedy's vice president; succeeded to the presidency in November 1963 and won a landslide a year later.",
+            "humphrey|Hubert|Humphrey|D|U.S. Senator, Minnesota|MN|1911|-0.6|-0.6|70 85 75 78 55 60 60 55 80 75 25|M 0 1 0 0.4 0 0 1.0 0.55 0 1 0.6 0.8|Minnesota senator and the Senate's leading civil rights champion, then Johnson's vice president; known as the Happy Warrior.",
+            "hoover|Herbert|Hoover|R|President|CA|1874|0.5|0.3|35 40 45 92 80 85 75 40 70 70 20|M 0 2 1 0.5 0 0 1.12 0.6 0 1 0.7 0.3|Mining engineer and humanitarian who fed Europe after the First World War; commerce secretary, then president from 1929 as the Depression deepened.",
+            "landon|Alf|Landon|R|Governor of Kansas|KS|1887|0.2|0|50 45 45 65 70 70 45 60 55 65 20|M 0 3 1 0.4 0 2 1.0 0.5 0 1 0.6 0.6|Kansas oilman and governor, one of the few Republicans to win re-election in 1934; a moderate who backs parts of the New Deal.",
+            "knox|Frank|Knox|R|Publisher, Chicago Daily News|IL|1874|0.5|0.2|55 55 50 60 65 70 70 50 55 60 20|M 0 6 0 0.9 0 0 1.05 0.55 0 1 0.8 0.5|Chicago newspaper publisher and a Rough Rider in the Spanish-American War; an internationalist Republican.",
+            "willkie|Wendell|Willkie|R|Businessman|IN|1892|0.3|-0.2|82 75 70 75 50 70 60 65 30 70 25|M 0 2 2 0.2 0 0 1.05 0.55 0 1 0.5 0.7|Utility executive and former Democrat from Indiana who fought the New Deal's public power projects; a charismatic political amateur who backs aid to Britain.",
+            "mcnary|Charles|McNary|R|Senate Republican Leader|OR|1874|0|0|45 45 50 65 70 55 45 60 85 55 20|M 0 6 0 0.8 0 0 1.0 0.5 0 1 0.85 0.5|Oregon senator and Republican leader, a progressive on farm and public power issues.",
+            "dewey|Thomas E.|Dewey|R|Governor of New York|NY|1902|0.2|0|60 65 65 80 80 82 65 60 65 70 20|M 0 1 1 0 4 0 1.0 0.5 0 1 0.45 0.55|Racket-busting Manhattan prosecutor turned governor of New York; efficient and polished, the leader of the party's internationalist wing.",
+            "bricker|John|Bricker|R|Governor of Ohio|OH|1893|0.6|0.4|50 50 50 60 65 65 45 45 65 60 20|M 0 7 2 0.9 0 0 1.05 0.55 0 1 0.7 0.5|Ohio governor and a favorite of the party's conservative Old Guard.",
+            "warren|Earl|Warren|R|Governor of California|CA|1891|0|-0.2|70 60 55 75 75 80 55 80 50 70 15|M 0 6 1 0.7 0 0 1.1 0.6 0 1 0.75 0.65|Governor of California, so popular he won the Democratic primary too; a progressive Republican.",
+            "taft|Robert A.|Taft|R|U.S. Senator, Ohio|OH|1889|0.7|0.3|40 45 60 88 80 60 50 40 85 60 15|M 0 0 0 0.6 0 1 1.05 0.55 0 1 0.75 0.4|Ohio senator, son of a president and the conservative leader known as Mr. Republican; co-author of the Taft-Hartley Act.",
+            "lodge|Henry Cabot|Lodge|R|Ambassador to the UN|MA|1902|0.1|-0.1|65 70 65 75 70 60 80 60 70 65 20|M 0 2 2 0.3 0 0 1.0 0.5 0 1 0.55 0.55|Former Massachusetts senator who persuaded Eisenhower to run in 1952, then his ambassador to the United Nations.",
+            "goldwater|Barry|Goldwater|R|U.S. Senator, Arizona|AZ|1909|0.85|0.4|70 65 60 65 50 55 55 35 55 70 25|M 0 6 2 0.7 0 2 1.0 0.6 0 1 0.6 0.55|Arizona senator, Air Force reserve general and author of The Conscience of a Conservative; the hero of the party's new right.",
+            "agnew|Spiro|Agnew|R|Governor of Maryland|MD|1918|0.4|0.6|50 55 50 55 50 55 30 40 40 65 45|M 0 1 0 0.5 0 0 1.0 0.55 0 1 0.55 0.5|Governor of Maryland and a sharp-tongued law-and-order voice.",
+            "muskie|Edmund|Muskie|D|U.S. Senator, Maine|ME|1914|-0.4|-0.3|68 65 65 72 60 65 55 65 65 65 20|M 0 6 2 0.6 0 0 1.05 0.6 0 1 0.6 0.55|Maine senator and former governor; author of the clean air and clean water laws, calm and Lincolnesque.",
+            "mcgovern|George|McGovern|D|U.S. Senator, South Dakota|SD|1922|-0.7|-0.6|55 60 60 75 60 50 60 40 45 70 20|M 0 2 2 0.4 0 0 1.0 0.5 0 1 0.5 0.6|South Dakota senator, a decorated B-24 pilot and the Senate's leading voice against the Vietnam War.",
+            "shriver|Sargent|Shriver|D|Former Ambassador to France|MD|1915|-0.6|-0.4|70 65 60 70 65 75 70 55 60 70 20|M 0 2 1 0.4 0 0 1.0 0.55 0 1 0.55 0.75|First director of the Peace Corps and of the war on poverty.",
+            "ford|Gerald|Ford|R|House Republican Leader|MI|1913|0.4|0.1|55 45 45 70 75 70 70 60 90 75 15|M 0 4 0 0.5 0 0 1.05 0.55 0 1 0.65 0.65|Michigan congressman and House Republican leader for nine years; appointed vice president in 1973 and president in 1974. Known for decency and candor.",
+            "carter|Jimmy|Carter|D|Governor of Georgia|GA|1924|-0.2|-0.1|70 55 60 85 80 60 55 60 25 75 10|M 0 4 2 0.2 0 0 1.0 0.5 0 1 0.55 0.85|Navy nuclear engineer, peanut farmer and one-term governor of Georgia who ran as an outsider promising never to lie.",
+            "mondale|Walter|Mondale|D|U.S. Senator, Minnesota|MN|1928|-0.55|-0.5|55 55 60 78 70 65 60 50 75 70 15|M 0 2 1 0.4 0 0 1.0 0.55 0 1 0.55 0.55|Minnesota senator and Humphrey's protege; made the vice presidency a working job.",
+            "dole|Bob|Dole|R|U.S. Senator, Kansas|KS|1923|0.5|0.3|55 50 60 75 75 60 60 50 90 65 20|M 0 1 2 0.4 0 0 1.0 0.6 0 1 0.6 0.45|Kansas senator gravely wounded in Italy in 1945; a dry wit and a master deal-maker who rose to lead Senate Republicans.",
+            "reagan|Ronald|Reagan|R|Former Governor of California|CA|1911|0.75|0.65|95 95 82 65 72 75 60 72 45 70 25|M 0 2 3 0.15 0 0 1.05 0.55 0 1 0.7 0.85|Movie actor, Screen Actors Guild president and two-term governor of California; the conservative movement's great communicator.",
+            "bush41|George H. W.|Bush|R|Vice President|TX|1924|0.45|0.35|55 50 55 78 75 75 95 55 85 70 15|M 0 2 1 0.5 0 0 1.0 0.55 0 1 0.65 0.6|Navy pilot shot down in the Pacific, Texas oilman, congressman, UN ambassador, envoy to China and CIA director; Reagan's vice president for eight years.",
+            "ferraro|Geraldine|Ferraro|D|U.S. Representative, New York|NY|1935|-0.4|-0.4|65 65 60 65 60 45 30 50 55 70 30|F 0 4 7 0.1 0 0 1.0 0.45 0 1 0.45 0.65 E|Queens congresswoman and former prosecutor; the first woman on a major-party national ticket.",
+            "quayle|Dan|Quayle|R|U.S. Senator, Indiana|IN|1947|0.6|0.6|60 45 40 55 55 45 40 45 55 75 25|M 0 4 2 0 0 0 0.98 0.5 0 1 0.3 0.65|Indiana senator who co-wrote the main federal job-training law.",
+            "dukakis|Michael|Dukakis|D|Governor of Massachusetts|MA|1933|-0.3|-0.4|50 50 55 82 80 75 45 50 50 70 15|M 1 0 1 0.2 0 0 1.0 0.5 0 1 0.5 0.6|Three-term governor of Massachusetts credited with the state's economic turnaround.",
+            "bentsen|Lloyd|Bentsen|D|U.S. Senator, Texas|TX|1921|-0.1|0.1|65 60 75 78 75 65 65 65 85 65 15|M 0 6 1 0.7 0 0 1.0 0.55 0 1 0.65 0.55|Texas senator, B-24 squadron commander and businessman; chairman of the Senate Finance Committee.",
+            "clinton|Bill|Clinton|D|Governor of Arkansas|AR|1946|-0.25|-0.3|95 88 85 90 45 70 50 72 60 80 70|M 0 6 2 0.4 0 0 1.05 0.55 0 1 0.45 0.8|Five-term governor of Arkansas and a founder of the centrist Democratic Leadership Council; a gifted, tireless campaigner.",
+            "gore|Al|Gore|D|U.S. Senator, Tennessee|TN|1948|-0.35|-0.4|50 55 65 85 75 65 65 50 75 75 15|M 0 1 2 0.2 0 0 1.0 0.55 0 1 0.45 0.5|Tennessee senator and congressman who championed the environment and the early internet; Clinton's vice president for eight years.",
+            "jkemp|Jack|Kemp|R|Former Secretary of Housing|NY|1935|0.7|0.2|72 70 65 72 60 60 45 60 60 75 15|M 0 2 2 0.4 0 0 1.0 0.55 0 1 0.55 0.75|Former Buffalo Bills quarterback, congressman and housing secretary; the party's tax-cutting evangelist.",
+            "bush43|George W.|Bush|R|Governor of Texas|TX|1946|0.6|0.65|78 60 60 60 75 70 40 65 70 75 30|M 0 6 2 0.5 0 0 1.0 0.55 0 1 0.5 0.7|Two-term governor of Texas and son of the 41st president; ran as a compassionate conservative.",
+            "cheney|Dick|Cheney|R|Former Secretary of Defense|WY|1941|0.75|0.6|35 45 70 85 85 85 88 40 90 55 30|M 0 6 0 0.6 0 1 1.05 0.55 0 1 0.6 0.35|Wyoming congressman, White House chief of staff at 34 and secretary of defense during the Gulf War.",
+            "mccain|John|McCain|R|U.S. Senator, Arizona|AZ|1936|0.55|0.4|70 60 60 70 55 55 85 70 70 65 25|M 0 7 1 0.9 0 0 1.0 0.55 0 1 0.75 0.6|Arizona senator and Navy pilot who spent five and a half years as a prisoner of war in Hanoi; the Senate's maverick on campaign finance and immigration.",
+            "lieberman|Joe|Lieberman|D|U.S. Senator, Connecticut|CT|1942|-0.2|-0.1|55 55 55 70 70 55 65 60 70 65 15|M 0 0 1 0.3 0 1 1.0 0.5 0 1 0.55 0.6|Connecticut senator, a centrist and a hawk; the first Jewish candidate on a major-party ticket.",
+            "kerry|John|Kerry|D|U.S. Senator, Massachusetts|MA|1943|-0.45|-0.45|55 65 72 82 70 50 80 45 75 70 20|M 0 6 2 0.5 0 0 0.95 0.65 0 1 0.55 0.5|Massachusetts senator and a decorated Navy officer in Vietnam who later spoke for veterans against the war.",
+            "edwards|John|Edwards|D|U.S. Senator, North Carolina|NC|1953|-0.5|-0.3|80 75 75 65 50 40 40 60 40 75 45|M 0 3 2 0 0 0 1.0 0.5 0 1 0.35 0.8|North Carolina senator and trial lawyer who campaigned on the two Americas.",
+            "obama|Barack|Obama|D|U.S. Senator, Illinois|IL|1961|-0.5|-0.55|92 96 75 88 85 55 55 65 50 80 15|M 5 0 0 0.15 0 0 0.95 0.5 0 1 0.4 0.75|Illinois senator, constitutional law lecturer and community organizer whose 2004 convention speech made him a national figure.",
+            "biden|Joe|Biden|D|U.S. Senator, Delaware|DE|1942|-0.45|-0.45|70 65 60 78 50 70 85 65 95 55 30|M 0 7 0 0.95 0 0 1.0 0.55 0 1 0.85 0.75|Delaware senator for 36 years and chairman of the Judiciary and Foreign Relations committees, then Obama's vice president for eight years.",
+            "hclinton|Hillary|Clinton|D|Former Secretary of State|NY|1947|-0.45|-0.5|55 65 80 92 80 75 90 45 85 70 50|F 0 5 6 0.1 0 0 1.0 0.5 0 1 0.6 0.6 E|First lady, senator from New York and secretary of state.",
+            "palin|Sarah|Palin|R|Governor of Alaska|AK|1964|0.5|0.85|85 75 50 40 40 50 20 35 25 70 45|F 0 1 7 0 0 1 0.98 0.45 0 1 0.35 0.75 E L|Governor of Alaska, a former small-town mayor and sportscaster.",
+            "romney|Mitt|Romney|R|Former Governor of Massachusetts|MA|1947|0.55|0.4|65 65 75 85 85 85 60 55 60 75 15|M 0 0 2 0.4 0 0 1.0 0.6 0 1 0.6 0.65|Private-equity founder who rescued the 2002 Winter Olympics, then governor of Massachusetts, where he signed near-universal health coverage.",
+            "ryan|Paul|Ryan|R|Chairman, House Budget Committee|WI|1970|0.75|0.55|65 65 65 82 75 45 45 45 75 80 15|M 0 1 2 0 0 0 0.98 0.55 0 1 0.3 0.65|Wisconsin congressman and the party's budget expert.",
+            "pence|Mike|Pence|R|Governor of Indiana|IN|1959|0.6|0.85|55 65 60 60 80 65 40 40 70 75 15|M 0 7 2 0.95 0 0 1.0 0.55 0 1 0.55 0.5|Governor of Indiana, former talk-radio host and congressman; a conservative evangelical.",
+            "kaine|Tim|Kaine|D|U.S. Senator, Virginia|VA|1958|-0.3|-0.3|60 55 55 72 70 70 55 55 65 70 10|M 0 2 2 0.4 0 0 1.0 0.55 0 1 0.5 0.65|Virginia senator and former governor and mayor of Richmond."};
+
+    static {
+        for (String spec : HSPEC) {
+            String[] t = spec.split("\\|");
+            Cand c = new Cand();
+            c.id = t[0]; c.first = t[1]; c.last = t[2]; c.party = t[3].equals("D") ? DEM : REP; c.role = t[4]; c.homeAb = t[5]; c.born = Integer.parseInt(t[6]);
+            c.faction = c.party == DEM ? F_LIB : F_GOV;
+            c.plat = FACTIONS[c.faction].pos.clone();
+            c.econ = Double.parseDouble(t[7]); c.cult = Double.parseDouble(t[8]);
+            String[] v = t[9].split(" ");
+            int[] at = {A_CHA, A_SPE, A_DEB, A_INT, A_DIS, A_EXE, A_FPC, A_XOV, A_EST, A_STA, A_SCA};
+            for (int i = 0; i < NA; i++) c.a[i] = 50;
+            for (int i = 0; i < at.length; i++) c.a[at[i]] = Integer.parseInt(v[i]);
+            c.a[A_POD] = 40; c.a[A_RET] = (c.a[A_CHA] + c.a[A_SPE]) / 2; c.a[A_SMD] = 40; c.a[A_BIG] = 60; c.a[A_SELF] = 10; c.a[A_VOL] = 55;
+            c.a[A_VIR] = 40; c.a[A_AUT] = (c.a[A_CHA] + c.a[A_DIS]) / 2; c.a[A_HOM] = 70; c.a[A_BAS] = 65;
+            c.look = Look.parse(t[10]);
+            c.bio = t[11];
+            c.home = stateIdx(c.homeAb);
+            HIST.add(c);
+        }
+    }
+
+    /** Who you can play in each era: "year|D: pres>vp ...|R: ...", winner first; then role overrides "id=role;id=role". */
+    static final String[] ERA_ROSTER = {
+            "1933|fdr>garner garner|hoover>knox landon>knox knox|",
+            "1937|fdr>garner garner wallace|landon>knox knox|",
+            "1941|fdr>wallace wallace truman|willkie>mcnary mcnary dewey>bricker|wallace=Vice President-elect;truman=U.S. Senator, Missouri",
+            "1945|fdr>truman truman wallace|dewey>bricker bricker warren|truman=Vice President-elect;wallace=Vice President",
+            "1949|truman>barkley barkley stevenson|dewey>warren warren taft|truman=President;barkley=Vice President-elect",
+            "1953|stevenson>sparkman sparkman kefauver|eisenhower>nixon nixon taft|stevenson=Governor of Illinois;nixon=Vice President-elect;eisenhower=Former Supreme Allied Commander",
+            "1957|stevenson>kefauver kefauver lbj|eisenhower>nixon nixon|stevenson=Former Governor of Illinois;eisenhower=President;lbj=Senate Majority Leader",
+            "1961|jfk>lbj lbj humphrey|nixon>lodge lodge goldwater|nixon=Vice President;lbj=Vice President-elect",
+            "1965|lbj>humphrey humphrey|goldwater>nixon nixon|lbj=President;humphrey=Vice President-elect;nixon=Former Vice President",
+            "1969|humphrey>muskie muskie mcgovern|nixon>agnew agnew|humphrey=Vice President;nixon=Former Vice President",
+            "1973|mcgovern>shriver shriver muskie|nixon>agnew agnew ford|nixon=President;agnew=Vice President",
+            "1977|carter>mondale mondale|ford>dole dole reagan|ford=President;mondale=Vice President-elect",
+            "1981|carter>mondale mondale|reagan>bush41 bush41|carter=President;mondale=Vice President;bush41=Vice President-elect",
+            "1985|mondale>ferraro ferraro|reagan>bush41 bush41 dole|reagan=President;mondale=Former Vice President;dole=Senate Majority Leader-elect",
+            "1989|dukakis>bentsen bentsen|bush41>quayle quayle dole|bush41=Vice President;quayle=Vice President-elect;dole=Senate Republican Leader",
+            "1993|clinton>gore gore|bush41>quayle quayle dole|bush41=President;quayle=Vice President;dole=Senate Republican Leader",
+            "1997|clinton>gore gore|dole>jkemp jkemp|clinton=President;gore=Vice President;dole=Former Senate Majority Leader",
+            "2001|gore>lieberman lieberman|bush43>cheney cheney mccain|gore=Vice President",
+            "2005|kerry>edwards edwards|bush43>cheney cheney|bush43=President;cheney=Vice President",
+            "2009|obama>biden biden hclinton|mccain>palin palin romney|biden=Vice President-elect;hclinton=U.S. Senator, New York",
+            "2013|obama>biden biden|romney>ryan ryan|obama=President;biden=Vice President",
+            "2017|hclinton>kaine kaine|trump>pence pence|trump=President-elect",
+            "2021|biden>harris harris|trump>pence pence|biden=Former Vice President;trump=President;pence=Vice President;harris=U.S. Senator, California"};
+
+    static String rosterRow(int year) { for (String r : ERA_ROSTER) if (r.startsWith(year + "|")) return r; return null; }
+
+    /** The real nominees in each presidential election: "year:D>vp,R>vp". */
+    static final String[] NOMINEES = {"1936:fdr>garner,landon>knox", "1940:fdr>wallace,willkie>mcnary", "1944:fdr>truman,dewey>bricker", "1948:truman>barkley,dewey>warren",
+            "1952:stevenson>sparkman,eisenhower>nixon", "1956:stevenson>kefauver,eisenhower>nixon", "1960:jfk>lbj,nixon>lodge", "1964:lbj>humphrey,goldwater>",
+            "1968:humphrey>muskie,nixon>agnew", "1972:mcgovern>shriver,nixon>agnew", "1976:carter>mondale,ford>dole", "1980:carter>mondale,reagan>bush41",
+            "1984:mondale>ferraro,reagan>bush41", "1988:dukakis>bentsen,bush41>quayle", "1992:clinton>gore,bush41>quayle", "1996:clinton>gore,dole>jkemp",
+            "2000:gore>lieberman,bush43>cheney", "2004:kerry>edwards,bush43>cheney", "2008:obama>biden,mccain>palin", "2012:obama>biden,romney>ryan",
+            "2016:hclinton>kaine,trump>pence", "2020:biden>harris,trump>pence", "2024:harris>walz,trump>vance", "2028:newsom>shapiro,vance>rubio", "2032:ossoff>moore,rubio>youngkin"};
+
+    /** The real nominee of a party in an election year, or null. */
+    static String nominee(int year, int party) {
+        for (String s : NOMINEES) {
+            if (!s.startsWith(year + ":")) continue;
+            String[] t = s.substring(5).split(",");
+            String x = t[party == DEM ? 0 : 1];
+            return x.split(">")[0];
+        }
+        return null;
+    }
+
+    // ---- the Electoral College, census by census ------------------------------------------------------------
+    static final int[] EV_FROM = {1932, 1944, 1952, 1960, 1964, 1972, 1984, 1992, 2004, 2012, 2024};
+    static final String[] EV_TABLE = {
+            "AL:11 AZ:3 AR:9 CA:22 CO:6 CT:8 DE:3 FL:7 GA:12 ID:4 IL:29 IN:14 IA:11 KS:9 KY:11 LA:10 ME:5 MD:8 MA:17 MI:19 MN:11 MS:9 MO:15 MT:4 NE:7 NV:3 NH:4 NJ:16 NM:3 NY:47 NC:13 ND:4 OH:26 OK:11 OR:5 PA:36 RI:4 SC:8 SD:4 TN:11 TX:23 UT:4 VT:3 VA:11 WA:8 WV:8 WI:12 WY:3",
+            "AL:11 AZ:4 AR:9 CA:25 CO:6 CT:8 DE:3 FL:8 GA:12 ID:4 IL:28 IN:13 IA:10 KS:8 KY:11 LA:10 ME:5 MD:8 MA:16 MI:19 MN:11 MS:9 MO:15 MT:4 NE:6 NV:3 NH:4 NJ:16 NM:4 NY:47 NC:14 ND:4 OH:25 OK:10 OR:6 PA:35 RI:4 SC:8 SD:4 TN:12 TX:23 UT:4 VT:3 VA:11 WA:8 WV:8 WI:12 WY:3",
+            "AL:11 AZ:4 AR:8 CA:32 CO:6 CT:8 DE:3 FL:10 GA:12 ID:4 IL:27 IN:13 IA:10 KS:8 KY:10 LA:10 ME:5 MD:9 MA:16 MI:20 MN:11 MS:8 MO:13 MT:4 NE:6 NV:3 NH:4 NJ:16 NM:4 NY:45 NC:14 ND:4 OH:25 OK:8 OR:6 PA:32 RI:4 SC:8 SD:4 TN:11 TX:24 UT:4 VT:3 VA:12 WA:9 WV:8 WI:12 WY:3",
+            "AL:11 AK:3 AZ:4 AR:8 CA:32 CO:6 CT:8 DE:3 FL:10 GA:12 HI:3 ID:4 IL:27 IN:13 IA:10 KS:8 KY:10 LA:10 ME:5 MD:9 MA:16 MI:20 MN:11 MS:8 MO:13 MT:4 NE:6 NV:3 NH:4 NJ:16 NM:4 NY:45 NC:14 ND:4 OH:25 OK:8 OR:6 PA:32 RI:4 SC:8 SD:4 TN:11 TX:24 UT:4 VT:3 VA:12 WA:9 WV:8 WI:12 WY:3",
+            "AL:10 AK:3 AZ:5 AR:6 CA:40 CO:6 CT:8 DE:3 DC:3 FL:14 GA:12 HI:4 ID:4 IL:26 IN:13 IA:9 KS:7 KY:9 LA:10 ME:4 MD:10 MA:14 MI:21 MN:10 MS:7 MO:12 MT:4 NE:5 NV:3 NH:4 NJ:17 NM:4 NY:43 NC:13 ND:4 OH:26 OK:8 OR:6 PA:29 RI:4 SC:8 SD:4 TN:11 TX:25 UT:4 VT:3 VA:12 WA:9 WV:7 WI:12 WY:3",
+            "AL:9 AK:3 AZ:6 AR:6 CA:45 CO:7 CT:8 DE:3 DC:3 FL:17 GA:12 HI:4 ID:4 IL:26 IN:13 IA:8 KS:7 KY:9 LA:10 ME:4 MD:10 MA:14 MI:21 MN:10 MS:7 MO:12 MT:4 NE:5 NV:3 NH:4 NJ:17 NM:4 NY:41 NC:13 ND:3 OH:25 OK:8 OR:6 PA:27 RI:4 SC:8 SD:4 TN:10 TX:26 UT:4 VT:3 VA:12 WA:9 WV:6 WI:11 WY:3",
+            "AL:9 AK:3 AZ:7 AR:6 CA:47 CO:8 CT:8 DE:3 DC:3 FL:21 GA:12 HI:4 ID:4 IL:24 IN:12 IA:8 KS:7 KY:9 LA:10 ME:4 MD:10 MA:13 MI:20 MN:10 MS:7 MO:11 MT:4 NE:5 NV:4 NH:4 NJ:16 NM:5 NY:36 NC:13 ND:3 OH:23 OK:8 OR:7 PA:25 RI:4 SC:8 SD:3 TN:11 TX:29 UT:5 VT:3 VA:12 WA:10 WV:6 WI:11 WY:3",
+            "AL:9 AK:3 AZ:8 AR:6 CA:54 CO:8 CT:8 DE:3 DC:3 FL:25 GA:13 HI:4 ID:4 IL:22 IN:12 IA:7 KS:6 KY:8 LA:9 ME:4 MD:10 MA:12 MI:18 MN:10 MS:7 MO:11 MT:3 NE:5 NV:4 NH:4 NJ:15 NM:5 NY:33 NC:14 ND:3 OH:21 OK:8 OR:7 PA:23 RI:4 SC:8 SD:3 TN:11 TX:32 UT:5 VT:3 VA:13 WA:11 WV:5 WI:11 WY:3",
+            "AL:9 AK:3 AZ:10 AR:6 CA:55 CO:9 CT:7 DE:3 DC:3 FL:27 GA:15 HI:4 ID:4 IL:21 IN:11 IA:7 KS:6 KY:8 LA:9 ME:4 MD:10 MA:12 MI:17 MN:10 MS:6 MO:11 MT:3 NE:5 NV:5 NH:4 NJ:15 NM:5 NY:31 NC:15 ND:3 OH:20 OK:7 OR:7 PA:21 RI:4 SC:8 SD:3 TN:11 TX:34 UT:5 VT:3 VA:13 WA:11 WV:5 WI:10 WY:3",
+            "AL:9 AK:3 AZ:11 AR:6 CA:55 CO:9 CT:7 DE:3 DC:3 FL:29 GA:16 HI:4 ID:4 IL:20 IN:11 IA:6 KS:6 KY:8 LA:8 ME:4 MD:10 MA:11 MI:16 MN:10 MS:6 MO:10 MT:3 NE:5 NV:6 NH:4 NJ:14 NM:5 NY:29 NC:15 ND:3 OH:18 OK:7 OR:7 PA:20 RI:4 SC:9 SD:3 TN:11 TX:38 UT:6 VT:3 VA:13 WA:12 WV:5 WI:10 WY:3",
+            null};
+
+    static int[] EV_NOW = new int[NS];
+    static int EV_YEAR = -1;
+
+    /** Electoral votes by state for an election year; the 2024 map from then on. */
+    static int[] evFor(int year) {
+        if (STATE_EV24[0] == 0) for (int s = 0; s < NS; s++) STATE_EV24[s] = STATES[s].ev;
+        int k = 0;
+        for (int i = 0; i < EV_FROM.length; i++) if (year >= EV_FROM[i]) k = i;
+        int[] v = new int[NS];
+        if (EV_TABLE[k] == null) { for (int s = 0; s < NS; s++) v[s] = STATE_EV24[s]; return v; }
+        for (String tok : EV_TABLE[k].split(" ")) { String[] p = tok.split(":"); int s = stateIdx(p[0]); if (s >= 0) v[s] = Integer.parseInt(p[1]); }
+        return v;
+    }
+
+    static int[] STATE_EV24 = new int[NS];
+
+    static int evTotal(int[] ev) { int t = 0; for (int x : ev) t += x; return t; }
+
+    /** Is a state part of the Union (and voting for president) in a year? */
+    static boolean votes(int s, int year) {
+        String ab = STATES[s].ab;
+        if (ab.equals("AK") || ab.equals("HI")) return year >= 1959;
+        if (ab.equals("DC")) return year >= 1964;
+        return true;
+    }
+
+    // ---- how each state leaned: D-minus-R margin against the nation, in points, at anchor elections ------------
+    static final int[] LEAN_YEAR = {1936, 1960, 1976, 1992, 2008};
+    static final String[] LEAN_TABLE = {
+            "AL:49 AK:-2 AZ:19 AR:40 CA:11 CO:-1 CT:-9 DE:-13 DC:60 FL:28 GA:50 HI:0 ID:7 IL:-6 IN:-10 IA:-12 KS:-16 KY:-5 LA:54 ME:-38 MD:1 MA:-15 MI:-6 MN:6 MS:70 MO:-2 MT:18 NE:-8 NV:21 NH:-22 NJ:-4 NM:2 NY:-5 NC:23 ND:9 OH:-4 OK:10 OR:14 PA:-8 RI:-11 SC:72 SD:-12 TN:14 TX:51 UT:16 VT:-37 VA:17 WA:13 WV:-3 WI:10 WY:-1",
+            "AL:15 AK:-2 AZ:-11 AR:7 CA:-1 CO:-10 CT:7 DE:1 DC:60 FL:-3 GA:25 HI:0 ID:-8 IL:0 IN:-11 IA:-13 KS:-22 KY:-7 LA:22 ME:-14 MD:7 MA:20 MI:2 MN:1 MS:30 MO:0 MT:-3 NE:-24 NV:2 NH:-7 NJ:1 NM:1 NY:5 NC:4 ND:-11 OH:-7 OK:-18 OR:-5 PA:2 RI:27 SC:2 SD:-16 TN:-7 TX:2 UT:-10 VT:-17 VA:-6 WA:-3 WV:5 WI:-4 WY:-10",
+            "AL:11 AK:-24 AZ:-19 AR:28 CA:-4 CO:-14 CT:-7 DE:3 DC:63 FL:3 GA:32 HI:1 ID:-25 IL:-4 IN:-10 IA:-3 KS:-10 KY:5 LA:4 ME:-3 MD:4 MA:14 MI:-8 MN:11 MS:0 MO:2 MT:-10 NE:-23 NV:-7 NH:-13 NJ:-4 NM:-5 NY:2 NC:9 ND:-8 OH:-2 OK:-3 OR:-2 PA:1 RI:9 SC:11 SD:-4 TN:11 TX:1 UT:-30 VT:-13 VA:-3 WA:-6 WV:14 WI:0 WY:-22",
+            "AL:-12 AK:-15 AZ:-8 AR:12 CA:8 CO:-1 CT:1 DE:3 DC:70 FL:-7 GA:-5 HI:6 ID:-19 IL:9 IN:-12 IA:0 KS:-11 KY:-2 LA:-1 ME:3 MD:9 MA:13 MI:2 MN:6 MS:-15 MO:5 MT:-3 NE:-23 NV:-3 NH:-4 NJ:-3 NM:3 NY:10 NC:-6 ND:-18 OH:-4 OK:-14 OR:5 PA:3 RI:12 SC:-14 SD:-9 TN:-1 TX:-9 UT:-24 VT:10 VA:-10 WA:6 WV:7 WI:-1 WY:-11",
+            "AL:-29 AK:-29 AZ:-16 AR:-27 CA:17 CO:2 CT:15 DE:18 DC:79 FL:-5 GA:-12 HI:38 ID:-33 IL:18 IN:-6 IA:2 KS:-22 KY:-23 LA:-26 ME:10 MD:18 MA:19 MI:9 MN:3 MS:-21 MO:-7 MT:-10 NE:-22 NV:5 NH:2 NJ:8 NM:8 NY:20 NC:-7 ND:-16 OH:-3 OK:-39 OR:9 PA:3 RI:21 SC:-16 SD:-16 TN:-22 TX:-19 UT:-35 VT:30 VA:-1 WA:10 WV:-20 WI:7 WY:-40"};
+    static double[][] LEANS;
+
+    /** A state's lean (D-minus-R points against the nation) in a year: the anchors blended, then today's electorate from 2008 to 2024. */
+    static double leanIn(int s, int year) {
+        if (LEANS == null) {
+            LEANS = new double[LEAN_TABLE.length][NS];
+            for (int k = 0; k < LEAN_TABLE.length; k++) for (String tok : LEAN_TABLE[k].split(" ")) { String[] p = tok.split(":"); int i = stateIdx(p[0]); if (i >= 0) LEANS[k][i] = Double.parseDouble(p[1]); }
+        }
+        double now = Elect.lean[s];
+        if (year >= 2024) return now;
+        if (year <= LEAN_YEAR[0]) return LEANS[0][s];
+        if (year >= 2008) { double f = (year - 2008) / 16.0; return LEANS[4][s] * (1 - f) + now * f; }
+        for (int k = 0; k < LEAN_YEAR.length - 1; k++) if (year >= LEAN_YEAR[k] && year <= LEAN_YEAR[k + 1]) {
+            double f = (year - LEAN_YEAR[k]) / (double) (LEAN_YEAR[k + 1] - LEAN_YEAR[k]);
+            return LEANS[k][s] * (1 - f) + LEANS[k + 1][s] * f;
+        }
+        return now;
+    }
+
+    /** How far a state's politics then sit from today's electorate, in points. */
+    static double leanShift(int s, int year) { return year >= 2024 ? 0 : leanIn(s, year) - Elect.lean[s]; }
+
+    // ---- the Senate's three classes -------------------------------------------------------------------------
+    static final String[] SEN_CLASS = {
+            "AZ CA CT DE FL HI IN ME MD MA MI MN MS MO MT NE NV NJ NM NY ND OH PA RI TN TX UT VT VA WA WV WI WY",
+            "AL AK AR CO DE GA ID IL IA KS KY LA ME MA MI MN MS MT NE NH NJ NM NC OK OR RI SC SD TN TX VA WV WY",
+            "AL AK AZ AR CA CO CT FL GA HI ID IL IN IA KS KY LA MD MO NV NH NY NC ND OH OK OR PA SC SD UT VT WA WI"};
+
+    /** The Senate seats up in an election year: "AB:D" for each, the party holding it drawn from the chamber's balance and the state's lean. */
+    static String senateUp(int year, int senateD) {
+        int k = Math.floorMod(year - 2024, 6) / 2;
+        List<Integer> st = new ArrayList<Integer>();
+        for (String ab : SEN_CLASS[k].split(" ")) { int s = stateIdx(ab); if (s >= 0 && (year >= 1959 || !ab.equals("AK") && !ab.equals("HI"))) st.add(s); }
+        final int yy = year;
+        Collections.sort(st, (a, b) -> Double.compare(leanIn(b, yy), leanIn(a, yy)));
+        int dHeld = (int) Math.round(st.size() * senateD / 100.0);
+        StringBuilder b = new StringBuilder();
+        for (int i = 0; i < st.size(); i++) b.append(b.length() > 0 ? " " : "").append(STATES[st.get(i)].ab).append(i < dHeld ? ":D" : ":R");
+        return b.toString();
+    }
+
+    // ---- the Supreme Court: every justice since 1930, with the years they served ------------------------------
+    /** name|born|appointing party|ideology|from|to */
+    static final String[] JUSTICES = {
+            "Charles Evans Hughes|1862|R|0.1|1930.1|1941.5", "Willis Van Devanter|1859|R|0.8|1911|1937.4", "James McReynolds|1862|D|0.9|1914.7|1941.08", "Louis Brandeis|1856|D|-0.7|1916.4|1939.1",
+            "George Sutherland|1862|R|0.8|1922.7|1938.05", "Pierce Butler|1866|D|0.85|1923.0|1939.9", "Harlan Fiske Stone|1872|R|-0.3|1925.2|1946.3", "Owen Roberts|1875|R|0.2|1930.4|1945.6",
+            "Benjamin Cardozo|1870|R|-0.6|1932.2|1938.5", "Hugo Black|1886|D|-0.6|1937.6|1971.7", "Stanley Reed|1884|D|-0.2|1938.08|1957.15", "Felix Frankfurter|1882|D|0.0|1939.08|1962.7",
+            "William O. Douglas|1898|D|-0.9|1939.3|1975.9", "Frank Murphy|1890|D|-0.7|1940.1|1949.5", "James Byrnes|1882|D|0.2|1941.5|1942.8", "Robert Jackson|1892|D|-0.1|1941.5|1954.8",
+            "Wiley Rutledge|1894|D|-0.7|1943.1|1949.7", "Harold Burton|1888|R|0.3|1945.8|1958.8", "Fred Vinson|1890|D|0.3|1946.5|1953.7", "Tom Clark|1899|D|0.2|1949.6|1967.5",
+            "Sherman Minton|1890|D|0.3|1949.8|1956.8", "Earl Warren|1891|R|-0.7|1953.8|1969.5", "John Marshall Harlan|1899|R|0.3|1955.2|1971.7", "William Brennan|1906|R|-0.85|1956.8|1990.6",
+            "Charles Whittaker|1901|R|0.3|1957.2|1962.2", "Potter Stewart|1915|R|0.1|1958.8|1981.5", "Byron White|1917|D|0.2|1962.3|1993.5", "Arthur Goldberg|1908|D|-0.8|1962.8|1965.6",
+            "Abe Fortas|1910|D|-0.7|1965.8|1969.4", "Thurgood Marshall|1908|D|-0.9|1967.7|1991.6", "Warren Burger|1907|R|0.4|1969.5|1986.7", "Harry Blackmun|1908|R|-0.4|1970.4|1994.6",
+            "Lewis Powell|1907|R|0.2|1972.02|1987.5", "William Rehnquist|1924|R|0.8|1972.02|2005.7", "John Paul Stevens|1920|R|-0.5|1975.9|2010.5", "Sandra Day O'Connor|1930|R|0.2|1981.7|2006.1",
+            "Antonin Scalia|1936|R|0.85|1986.7|2016.1", "Anthony Kennedy|1936|R|0.3|1988.1|2018.6", "David Souter|1939|R|-0.4|1990.8|2009.5", "Clarence Thomas|1948|R|0.95|1991.8|2100",
+            "Ruth Bader Ginsburg|1933|D|-0.8|1993.6|2020.7", "Stephen Breyer|1938|D|-0.6|1994.6|2022.5", "John Roberts|1955|R|0.55|2005.7|2100", "Samuel Alito|1950|R|0.85|2006.08|2100",
+            "Sonia Sotomayor|1954|D|-0.85|2009.6|2100", "Elena Kagan|1960|D|-0.7|2010.6|2100", "Neil Gorsuch|1967|R|0.75|2017.3|2100", "Brett Kavanaugh|1965|R|0.6|2018.8|2100",
+            "Amy Coney Barrett|1972|R|0.7|2020.8|2100", "Ketanji Brown Jackson|1970|D|-0.8|2022.5|2100"};
+    static final String[] FEMALE_JUSTICES = {"Sandra Day O'Connor", "Ruth Bader Ginsburg", "Sonia Sotomayor", "Elena Kagan", "Amy Coney Barrett", "Ketanji Brown Jackson"};
+
+    /** The Court on inauguration day, as "name|born|D or R|ideology" rows. */
+    static List<String> courtIn(Era e) {
+        List<String> l = new ArrayList<String>();
+        if (e.year >= 2025) { for (String s : SCOTUS25) l.add(s); return l; }
+        double t = e.year + (e.inM * 30.5 + e.inD) / 365.0;
+        for (String j : JUSTICES) {
+            String[] p = j.split("\\|");
+            if (Double.parseDouble(p[4]) <= t && Double.parseDouble(p[5]) > t) l.add(p[0] + "|" + p[1] + "|" + p[2] + "|" + p[3]);
+        }
+        return l;
+    }
+
+    /** Share of the lower federal bench appointed by Democrats: {district, circuit}. */
+    static double[] benchIn(int year) {
+        int[] y = {1933, 1941, 1949, 1953, 1961, 1969, 1977, 1981, 1989, 1993, 2001, 2009, 2017, 2021, 2025};
+        double[] d = {0.30, 0.62, 0.75, 0.78, 0.55, 0.60, 0.50, 0.58, 0.38, 0.32, 0.50, 0.42, 0.50, 0.44, 0.48};
+        int k = 0;
+        for (int i = 0; i < y.length; i++) if (year >= y[i]) k = i;
+        return new double[]{d[k], d[k] - 0.03};
+    }
+
+    // ---- the parties in Congress before today's sorting: the conservative coalition and the liberal Republicans ----
+    /** name|share|econ|cult|loyalty|deficit hawk, for the 12 bloc slots (House D x3, House R x3, Senate D x3, Senate R x3). */
+    static final String[] TIER_NEWDEAL = {"New Dealers|0.42|-0.6|-0.2|0.85|0.2", "Northern regulars|0.28|-0.4|0|0.85|0.4", "Southern Democrats|0.30|-0.2|0.75|0.7|0.5",
+            "Old Guard Republicans|0.45|0.65|0.35|0.8|0.8", "Mainstream Republicans|0.35|0.4|0.15|0.85|0.6", "Liberal Republicans|0.20|-0.1|-0.25|0.65|0.4",
+            "New Deal senators|0.40|-0.6|-0.2|0.85|0.2", "Mainstream Democrats|0.28|-0.4|0|0.85|0.4", "Southern Democrats|0.32|-0.2|0.75|0.7|0.5",
+            "Old Guard senators|0.45|0.65|0.35|0.8|0.8", "Mainstream Republicans|0.35|0.4|0.15|0.85|0.6", "Liberal Republicans|0.20|-0.1|-0.25|0.65|0.4"};
+    static final String[] TIER_REALIGN = {"Liberal Democrats|0.45|-0.6|-0.5|0.8|0.2", "Mainstream Democrats|0.32|-0.35|-0.2|0.85|0.4", "Boll Weevils|0.23|0.2|0.5|0.55|0.6",
+            "Conservatives|0.42|0.7|0.6|0.75|0.8", "Mainstream Republicans|0.40|0.45|0.3|0.85|0.6", "Gypsy Moths|0.18|0.1|-0.1|0.65|0.4",
+            "Liberal senators|0.42|-0.6|-0.5|0.8|0.2", "Mainstream Democrats|0.35|-0.35|-0.2|0.85|0.4", "Southern conservatives|0.23|0.2|0.5|0.6|0.6",
+            "Conservatives|0.42|0.7|0.6|0.75|0.8", "Mainstream Republicans|0.40|0.45|0.3|0.85|0.6", "Moderate Republicans|0.18|0.1|-0.1|0.65|0.4"};
+    static final String[] TIER_SORTED = {"Progressive Caucus|0.35|-0.6|-0.6|0.8|0.15", "Mainstream Democrats|0.42|-0.4|-0.45|0.9|0.3", "Blue Dogs|0.23|-0.1|0|0.7|0.65",
+            "Conservatives|0.30|0.75|0.7|0.65|0.85", "Mainstream Republicans|0.55|0.55|0.5|0.85|0.5", "Moderate Republicans|0.15|0.25|0.1|0.75|0.4",
+            "Liberal senators|0.25|-0.65|-0.6|0.85|0.15", "Mainstream Democrats|0.58|-0.4|-0.4|0.9|0.3", "Moderate Democrats|0.17|-0.1|-0.1|0.7|0.5",
+            "Hardliners|0.20|0.8|0.7|0.6|0.85", "Mainstream Republicans|0.65|0.55|0.5|0.85|0.5", "Moderate Republicans|0.15|0.2|0.05|0.7|0.4"};
+
+    /** The bloc templates for a year: null means today's. */
+    static String[] tierFor(int year) { return year < 1965 ? TIER_NEWDEAL : year < 1995 ? TIER_REALIGN : year < 2015 ? TIER_SORTED : null; }
+
+    /** The year in which the game's current term began. */
+    static int termYear(Game g) { return g.era.year + 4 * (g.term - 1); }
+
+    /** The week the current term ends: noon on January 20 four years after it began. */
+    static int termEnd(Game g) { return (int) Math.floor(dayOfDate(termYear(g) + 4, 0, 20) / 7.0); }
+
+    /** The calendar year now. */
+    static int yearNow(Game g) { return dateOf(g.day())[0]; }
+
+    // ---- what changes with the era: the calendar, the Electoral College, the names of issues, the money ----------
+    static double COST_SCALE = 1;
+    static final String[] PISSUE0 = PISSUE.clone(), PISSUE_SHORT0 = PISSUE_SHORT.clone();
+
+    static void applyEra(Era e) {
+        CAL_Y = e.year; CAL_M = e.inM; CAL_D = e.inD;
+        if (STATE_EV24[0] == 0) for (int s = 0; s < NS; s++) STATE_EV24[s] = STATES[s].ev;
+        setEv(e.year);
+        for (int i = 0; i < NPI; i++) { PISSUE[i] = PISSUE0[i]; PISSUE_SHORT[i] = PISSUE_SHORT0[i]; }
+        if (e.labels != null) for (String p : e.labels.split(" (?=\\d+=)")) {
+            int k = p.indexOf('=');
+            int i = Integer.parseInt(p.substring(0, k));
+            PISSUE[i] = p.substring(k + 1);
+            PISSUE_SHORT[i] = PISSUE[i].length() > 12 ? PISSUE[i].substring(0, PISSUE[i].indexOf(' ') > 0 ? PISSUE[i].indexOf(' ') : 12) : PISSUE[i];
+        }
+        COST_SCALE = e.year < 2021 ? e.nominalGdp / 29.7 : 1;
+        GEN_YEAR = e.year;
+        applyYear(e.year);
+    }
+
+    /** Sets the electoral votes in use for the election held in a year. */
+    static void setEv(int year) {
+        if (STATE_EV24[0] == 0) for (int s = 0; s < NS; s++) STATE_EV24[s] = STATES[s].ev;
+        int[] ev = evFor(year);
+        for (int s = 0; s < NS; s++) STATES[s].ev = ev[s];
+        EV_YEAR = year;
+    }
+
+    /** The largest city in each state, for the presidential library. */
+    static final String CITIES = "AL:Birmingham AK:Anchorage AZ:Phoenix AR:Little Rock CA:Simi Valley CO:Denver CT:Hartford DE:Wilmington DC:Washington FL:Miami GA:Atlanta HI:Honolulu ID:Boise "
+            + "IL:Chicago IN:Indianapolis IA:Des Moines KS:Abilene KY:Louisville LA:New Orleans ME:Portland MD:Baltimore MA:Boston MI:Grand Rapids MN:Minneapolis MS:Jackson MO:Independence "
+            + "MT:Billings NE:Omaha NV:Las Vegas NH:Manchester NJ:Newark NM:Albuquerque NY:Hyde Park NC:Charlotte ND:Medora OH:Columbus OK:Oklahoma City OR:Portland PA:Philadelphia "
+            + "RI:Providence SC:Charleston SD:Sioux Falls TN:Nashville TX:Austin UT:Salt Lake City VT:Burlington VA:Richmond WA:Seattle WV:Charleston WI:Milwaukee WY:Cheyenne";
+
+    static String cityOf(int s) {
+        if (s < 0) return "Washington";
+        String ab = STATES[s].ab;
+        for (String tok : CITIES.split(" (?=[A-Z][A-Z]:)")) if (tok.startsWith(ab + ":")) return tok.substring(3);
+        return STATES[s].name;
+    }
+
+    // ---- people the game makes up should look like their time ------------------------------------------------
+    static int GEN_YEAR = 2025;
+    static final String[] FIRST_M_OLD = {"John", "William", "James", "Charles", "George", "Frank", "Joseph", "Edward", "Henry", "Robert", "Harold", "Walter", "Arthur", "Clarence",
+            "Raymond", "Paul", "Fred", "Herbert", "Lloyd", "Earl", "Howard", "Ralph", "Louis", "Carl", "Thomas", "Richard", "Donald", "Kenneth"};
+    static final String[] FIRST_F_OLD = {"Mary", "Dorothy", "Helen", "Margaret", "Ruth", "Frances", "Florence", "Edith", "Mildred", "Alice", "Eleanor", "Marian", "Barbara", "Betty", "Jean", "Martha"};
+
+    /** A woman, with the chance scaled to how often women held such jobs in the year. */
+    static boolean genFemale(Random r, double modern) {
+        int y = GEN_YEAR;
+        double k = y < 1950 ? 0.06 : y < 1970 ? 0.12 : y < 1990 ? 0.35 : y < 2010 ? 0.7 : 1;
+        return r.nextDouble() < modern * k;
+    }
+
+    static String genFirst(Random r, boolean f) {
+        if (GEN_YEAR < 1975) return f ? FIRST_F_OLD[r.nextInt(FIRST_F_OLD.length)] : FIRST_M_OLD[r.nextInt(FIRST_M_OLD.length)];
+        return f ? FIRST_F[r.nextInt(FIRST_F.length)] : FIRST_M[r.nextInt(FIRST_M.length)];
+    }
+
+    static final String[] MODERN_LASTS = {"Okafor", "Delgado", "Nakamura", "Oyelaran", "Vasquez", "Ruiz", "Castellano", "Sandoval", "Vance-Hill"};
+    static final String[] OLD_LASTS = {"Callahan", "Dunmore", "Hollister", "Whitcomb", "Ainsworth", "Rutledge", "Carrington", "Sherwood", "Vance"};
+    static final String[] MID_LASTS = {"Callahan", "Delgado", "Hollister", "Whitcomb", "Vasquez", "Rutledge", "Carrington", "Sandoval", "Vance"};
+
+    /** A made-up surname: today's mix, or for earlier decades one that fits the Washington of the day. */
+    static String genLast(Random r) {
+        String s = LASTS[r.nextInt(LASTS.length)];
+        if (GEN_YEAR >= 1990) return s;
+        for (int i = 0; i < MODERN_LASTS.length; i++) if (MODERN_LASTS[i].equals(s)) return (GEN_YEAR < 1965 ? OLD_LASTS : MID_LASTS)[i];
+        return s;
+    }
+
+    /** Officials of earlier decades were overwhelmingly white; a made-up face follows the year. */
+    static void genSkin(Look l, Random r) {
+        int y = GEN_YEAR;
+        if (y >= 2010) return;
+        double keep = y < 1965 ? 0.04 : y < 1990 ? 0.15 : y < 2010 ? 0.6 : 1;
+        if (l.skin > 2 && r.nextDouble() > keep) l.skin = r.nextInt(3);
+        if (y < 1975 && r.nextDouble() < 0.6) { l.glasses = r.nextInt(3) == 0 ? 1 : 0; if (!l.female) l.facial = r.nextInt(6) == 0 ? 4 : 0; }
+    }
+
+    // =====================================================================
     //  11.  PRESIDENTS, RUNNING MATES AND A NEW GAME
     // =====================================================================
     static {
@@ -2802,9 +3325,31 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         c.spouse = "Melania Trump";
     }
 
+    static final String TRUMP_ROLE25 = "45th President, elected again in 2024";
+
     /** The presidents you can pick for an era: the real winner first, then what-ifs. */
     static List<Cand> eraRoster(Era e) {
         List<Cand> l = new ArrayList<Cand>();
+        String row = rosterRow(e.year);
+        Cand tr = candById("trump");
+        if (tr != null) tr.role = TRUMP_ROLE25;
+        if (row != null) {
+            String[] t = row.split("\\|", -1);
+            for (int p = 1; p <= 2; p++) for (String x : t[p].split(" ")) {
+                if (x.isEmpty()) continue;
+                Cand c = candById(x.split(">")[0]);
+                if (c != null && !l.contains(c)) l.add(c);
+            }
+            if (t.length > 3 && !t[3].isEmpty()) for (String ov : t[3].split(";")) {
+                int k = ov.indexOf('=');
+                Cand c = candById(ov.substring(0, k));
+                if (c != null) c.role = ov.substring(k + 1);
+            }
+            Cand w = candById(e.winnerId);
+            if (w != null) { l.remove(w); l.add(0, w); }
+            if (e.year == 2017 && tr != null) tr.role = "President-elect";
+            return l;
+        }
         Cand w = e.winnerId != null ? candById(e.winnerId) : null;
         if (w != null) l.add(w);
         for (Cand c : ROSTER) {
@@ -2818,6 +3363,16 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     /** The running mate the real winner had, or a sensible default. */
     static String defaultVp(Era e, Cand p) {
         if (p == null) return null;
+        String row = rosterRow(e.year);
+        if (row != null) {
+            String[] t = row.split("\\|", -1);
+            for (int k = 1; k <= 2; k++) for (String x : t[k].split(" ")) if (x.startsWith(p.id + ">")) return x.substring(p.id.length() + 1);
+            for (int k = 1; k <= 2; k++) for (String x : t[k].split(" ")) {
+                String id = x.split(">")[0];
+                Cand c = candById(id);
+                if (c != null && c != p && c.party == p.party) return id;
+            }
+        }
         if (p.id.equals("trump")) return "vance";
         if (p.id.equals("harris")) return "walz";
         String[] d = {"shapiro", "kelly", "beshear", "whitmer", "moore", "warnock"};
@@ -2826,18 +3381,27 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         return null;
     }
 
+    /** How many terms the president has already won before this game began (the real winner's earlier terms). */
+    static int priorTerms(Game g) {
+        if (g.set.custom != null || g.set.bgLine != null) return 0;
+        if (g.pres != null && g.era.winnerId != null && g.pres.id.equals(g.era.winnerId)) return g.era.termOf - 1;
+        return 0;
+    }
+
     static final class Setup {
         static Game newGame(Settings s) {
             Game g = new Game();
             g.set = s;
             g.era = era(s.year);
-            CAL_Y = g.era.year; CAL_M = 0; CAL_D = 20;
+            applyEra(g.era);
             g.rng = new Random(s.seed);
             g.pres = s.custom != null ? s.custom : candById(s.presId);
             if (g.pres == null) g.pres = eraRoster(g.era).get(0);
             g.party = g.pres.party;
             g.vp = s.vpId != null ? candById(s.vpId) : candById(defaultVp(g.era, g.pres));
             if (g.vp == g.pres) g.vp = null;
+            g.termWeeks = termEnd(g);
+            g.prior = priorTerms(g);
             int[] seats = seatsFor(g.era, g.party);
             int house = g.party == REP ? 435 - seats[0] : seats[0], senate = g.party == REP ? 100 - seats[1] : seats[1];
             if (s.scenario == 3) { house = Math.min(house, 205); senate = Math.min(senate, 46); }
@@ -2857,6 +3421,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             Diplo.setup(g);
             Approval.init(g);
             HomeFront.setup(g);
+            History.setup(g);
             Week.routine(g);
             Week.record(g);
             String vp = g.vp != null ? " " + g.vp.name() + " is sworn in as vice president." : "";
@@ -2902,6 +3467,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         final double econ, cult, cost, support, gdp, unemp, infl, base;
         final boolean budget, origRevenue;          // reconciliation-eligible; a revenue bill must start in the House
         final int fmt;
+        int from = 2021, to = 2100;                 // the calendar years the bill belongs to
 
         BillDef(String id, String name, String desc, int area, int lean, double econ, double cult, double cost, boolean budget, double support,
                 double gdp, double unemp, double infl, String impact, double base, int fmt) {
@@ -2912,7 +3478,8 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     }
 
     /** The modern agenda. Cost is $ billions a year at full size (negative raises revenue). */
-    static final BillDef[] BILLS = {
+    static BillDef[] BILLS;
+    static final BillDef[] BILLS_MODERN = {
             new BillDef("lower_costs", "Lower Costs Act", "Caps insulin at $35 a month and child care at 7% of income, and bans junk fees.", PI_PRICES, DEM, -0.4, -0.1, 80, true, 66, 0.05, 0, -0.15, "Families with young children save about $# a year on child care.", 3100, 0),
             new BillDef("public_option", "A public option", "A government health plan on the ACA marketplaces in every state.", PI_HEALTH, DEM, -0.6, -0.1, 60, true, 58, 0, 0, -0.05, "# million more Americans have health insurance.", 4.6, 1),
             new BillDef("restore_roe", "Restore Roe", "The Women's Health Protection Act: abortion rights written into federal law.", PI_RIGHTS, DEM, 0, -0.8, 0, false, 60, 0, 0, 0, "Abortion is legal through viability in every state; # states had banned it.", 13, 2),
@@ -2972,7 +3539,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
 
         double netCost() {
             BillDef d = def();
-            double c = d.cost * size * (0.7 + 0.6 * scope);
+            double c = d.cost * size * (0.7 + 0.6 * scope) * COST_SCALE;
             if (c > 0 && payFor != 0) c *= 0.05;
             return c;
         }
@@ -3055,7 +3622,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         Look l = null;
         for (String[] lk : LEADER_LOOKS) if (lk[0].equals(name)) l = Look.parse(lk[1]);
         if (l == null && realLook(name) != null) l = Look.parse(realLook(name));
-        if (l == null) l = Creator.randomLook(r);
+        if (l == null) { l = Creator.randomLook(r); genSkin(l, r); }
         c.look = l;
         return c;
     }
@@ -3172,10 +3739,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
 
         static Member person(Congress c, Random r, int party, int chamber) {
             Member m = new Member();
-            boolean f = r.nextDouble() < 0.33;
-            String last = LASTS[r.nextInt(LASTS.length)];
-            for (int t = 0; t < 30 && lastUsed(c, last); t++) last = LASTS[r.nextInt(LASTS.length)];
-            m.name = (f ? FIRST_F[r.nextInt(FIRST_F.length)] : FIRST_M[r.nextInt(FIRST_M.length)]) + " " + last;
+            boolean f = genFemale(r, 0.33);
+            String last = genLast(r);
+            for (int t = 0; t < 30 && lastUsed(c, last); t++) last = genLast(r);
+            m.name = genFirst(r, f) + " " + last;
             m.party = party; m.chamber = chamber; m.state = r.nextInt(NS);
             m.face = face(m.name, r, party);
             if (m.face.look != null) { m.face.look.female = f; if (f && m.face.look.style < 6) m.face.look.style = 6 + r.nextInt(4); if (!f && m.face.look.style >= 6) m.face.look.style = r.nextInt(5); }
@@ -3196,6 +3763,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             Member m = new Member();
             m.name = name; m.party = party; m.chamber = chamber; m.role = RO_LEADER; m.title = title;
             m.face = face(name, r, party);
+            // the leaders of the past were men, until Nancy Pelosi
+            boolean drawn = realLook(name) != null;
+            for (String[] lk : LEADER_LOOKS) if (lk[0].equals(name)) drawn = true;
+            if (!drawn && m.face.look != null) Cabinet.femaleLook(m.face.look, name.equals("Nancy Pelosi"), r);
             m.bloc = blocOf(g.cong, chamber, party, 1);
             ideo(g.cong, m, r);
             m.rel = party == g.party ? 62 : 35;
@@ -3219,12 +3790,18 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             Congress c = g.cong;
             List<Bloc> old = c.blocs;
             c.blocs = new ArrayList<Bloc>();
+            String[] tier = tierFor(yearNow(g));
             for (int t = 0; t < TB_CH.length; t++) {
                 Bloc b = new Bloc();
                 b.chamber = TB_CH[t]; b.party = TB_PARTY[t]; b.name = TB_NAME[t];
                 int total = b.chamber == HOUSE ? (b.party == DEM ? g.houseD : 435 - g.houseD) : (b.party == DEM ? g.senateD : 100 - g.senateD);
                 b.seats = (int) Math.round(total * TB_SHARE[t]);
                 b.econ = TB_ECON[t]; b.cult = TB_CULT[t]; b.loyalty = TB_LOY[t]; b.hawk = TB_HAWK[t];
+                if (tier != null) {
+                    String[] p = tier[t].split("\\|");
+                    b.name = p[0]; b.seats = (int) Math.round(total * Double.parseDouble(p[1]));
+                    b.econ = Double.parseDouble(p[2]); b.cult = Double.parseDouble(p[3]); b.loyalty = Double.parseDouble(p[4]); b.hawk = Double.parseDouble(p[5]);
+                }
                 for (Bloc o : old) if (o.name.equals(b.name) && o.chamber == b.chamber) b.rel = o.rel;
                 c.blocs.add(b);
             }
@@ -3253,9 +3830,178 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         static Member chairFor(Game g, Bill b, int chamber) {
             int k = committeeFor(b.def(), chamber);
             String[] names = chamber == HOUSE ? CHAIR_H : CHAIR_S;
-            for (Member m : g.cong.members) if (m.role == RO_CHAIR && m.chamber == chamber && m.committee.equals(names[k])) return m;
+            for (Member m : g.cong.members) if (m.role == RO_CHAIR && m.chamber == chamber && sameCommittee(chamber, k, m.committee)) return m;
             return null;
         }
+    }
+    // =====================================================================
+    //  12b.  THE AGENDA THROUGH HISTORY
+    //  Bills from the New Deal to the pandemic, each available in the years it was on the table.
+    //  Costs are scaled to today's economy and shrink to the era's dollars when you play an earlier year.
+    // =====================================================================
+    /** id|name|description|issue|lean (D, R or -)|econ|cult|cost|public support|growth|jobs|prices|impact|base|format|from|to */
+    static final String[] HBILL_SPEC = {
+            // the New Deal
+            "bank_act|Emergency Banking Act|Reopen sound banks under Treasury licenses, close the rest, and let the Fed back them with new currency.|0|-|-0.2|0|3|82|0.4|-0.3|0.2|# thousand banks reopened within a month.|12|2|1933|1933",
+            "ccc|Civilian Conservation Corps|Put 250,000 young men to work planting forests, building parks and fighting erosion.|2|D|-0.5|0|60|75|0.1|-0.3|0.05|# million young men have served in the CCC.|3|1|1933|1941",
+            "aaa|Agricultural Adjustment Act|Pay farmers to plant less, to lift collapsed crop prices.|0|D|-0.6|0.1|40|58|0.15|-0.1|0.25|Farm income is up #% since 1932.|50|2|1933|1938",
+            "nira|National Industrial Recovery Act|Industry codes for wages, hours and prices, the right to organize, and $3.3 billion for public works.|2|D|-0.6|0|120|60|0.3|-0.4|0.3|# thousand public works projects are under way.|34|2|1933|1935",
+            "tva|Tennessee Valley Authority|A federal corporation to dam the Tennessee River, make cheap power and lift one of the poorest regions in the country.|9|D|-0.6|0|20|64|0.08|-0.05|0|# million people now get TVA power.|2|1|1933|1936",
+            "glass_steagall|The Banking Act (Glass-Steagall)|Separate commercial from investment banking and insure bank deposits.|0|-|-0.4|0|2|72|0.1|0|0|Deposit insurance covers # million accounts; bank runs have stopped.|50|2|1933|1935",
+            "securities|Securities Exchange Act|A commission to police Wall Street, require honest disclosure and ban stock manipulation.|13|D|-0.4|0|1|70|0.05|0|0|The new Securities and Exchange Commission has brought # cases.|400|2|1933|1936",
+            "wpa|Emergency Relief Appropriation (the WPA)|Hire millions of the jobless to build roads, schools and airports, and to write, paint and perform.|2|D|-0.7|-0.1|250|62|0.5|-1.2|0.3|# million Americans have worked for the WPA.|8|1|1934|1941",
+            "social_security|Social Security Act|Old-age pensions paid for by payroll taxes, unemployment insurance and aid to poor children.|0|D|-0.7|-0.1|100|77|0.05|-0.1|0.05|# million retirees draw a Social Security check.|20|1|1934|1940",
+            "wagner|National Labor Relations Act|Guarantee the right to join a union and bargain collectively, with a board to enforce it.|2|D|-0.7|0|1|60|0|-0.05|0.1|Union membership has grown by # million.|6|1|1935|1938",
+            "wealth_tax|Revenue Act (the wealth tax)|Raise the top income tax rate to 79% and tax big estates and corporations more.|0|D|-0.8|0|-40|55|-0.05|0.02|0|The top income tax rate is #%.|79|2|1935|1938",
+            "neutrality|Neutrality Act|Ban arms sales and loans to nations at war.|6|-|0.2|0.3|0|65|0|0|0|The United States stayed out of # foreign wars.|2|2|1935|1939",
+            "court_pack|Judicial Procedures Reform Act|Add a justice for every sitting justice over 70, up to six, to the Supreme Court.|13|D|-0.3|0|0|39|0|0|0|The Supreme Court has # justices.|15|2|1937|1938",
+            "flsa|Fair Labor Standards Act|A 25-cent minimum wage, a 44-hour week falling to 40, and a ban on child labor.|2|D|-0.6|-0.1|2|69|-0.02|0.03|0.06|# thousand children no longer work in factories.|500|2|1937|1940",
+            "housing37|Housing Act (Wagner-Steagall)|Federal money for local public housing and slum clearance.|1|D|-0.6|0|20|60|0.05|-0.05|0|# thousand public housing units have been built.|120|2|1937|1941",
+            // war
+            "cash_carry|Neutrality Act of 1939 (cash and carry)|Let Britain and France buy American arms if they pay cash and carry them away.|6|D|0|-0.1|0|57|0.1|-0.05|0.05|The Allies have bought $# billion in American arms.|2|1|1939|1940",
+            "draft40|Selective Training and Service Act|The first peacetime draft: every man 21 to 35 registers, and 900,000 are trained a year.|7|-|0.2|0.3|30|60|0.05|-0.3|0.05|# million men are in uniform.|1.5|1|1940|1941",
+            "lend_lease|Lend-Lease Act|Lend or lease arms to any nation whose defense is vital to the defense of the United States.|6|D|0|0|80|55|0.2|-0.3|0.1|$# billion in arms and supplies have gone to the Allies.|50|2|1941|1941",
+            "price_control|Emergency Price Control Act|An Office of Price Administration to freeze prices and ration scarce goods.|1|D|-0.5|0|5|62|-0.05|0|-0.6|Price controls cover #% of what Americans buy.|90|2|1942|1946",
+            "revenue42|Revenue Act of 1942 (the Victory Tax)|Bring tens of millions of new taxpayers into the income tax and withhold it from paychecks.|0|D|-0.3|0|-150|52|-0.1|0.05|-0.2|# million Americans now pay income tax.|50|2|1942|1944",
+            "gi_bill|Servicemen's Readjustment Act (the GI Bill)|College tuition, cheap mortgages and jobless pay for returning veterans.|12|-|-0.4|0|60|82|0.15|-0.1|0.05|# million veterans have gone to college on the GI Bill.|2.2|1|1944|1948",
+            "bretton|Bretton Woods Agreements Act|Join the International Monetary Fund and the World Bank.|8|-|0|-0.1|3|60|0.05|0|0|# nations are in the new monetary system.|44|2|1945|1946",
+            "un_charter|The United Nations Charter|Ratify the charter of a new world organization with a Security Council.|6|-|0|-0.2|1|75|0|0|0|The United Nations has # members.|51|2|1945|1946",
+            // after the war
+            "employment_act|Employment Act|Commit Washington to maximum employment, with a Council of Economic Advisers.|2|D|-0.5|0|5|64|0.05|-0.1|0|Unemployment has averaged #% since the act.|4|1|1945|1946",
+            "taft_hartley|Taft-Hartley Act|Ban the closed shop and secondary boycotts, and let states pass right-to-work laws.|2|R|0.6|0.2|0|52|0.02|0|-0.02|# states have passed right-to-work laws.|12|2|1946|1952",
+            "marshall|Economic Cooperation Act (the Marshall Plan)|$13 billion to rebuild Western Europe and keep it out of Soviet hands.|6|-|-0.1|-0.1|100|56|0.1|-0.05|0.05|$# billion has gone to rebuild Western Europe.|13|2|1947|1950",
+            "nat_security|National Security Act|Unify the armed services under a Department of Defense, and create the CIA and the National Security Council.|7|-|0.1|0.1|5|66|0|0|0|The new Department of Defense commands # million troops.|1.5|1|1947|1948",
+            "nhi|National health insurance|Health insurance for every American, paid for by payroll taxes.|3|D|-0.8|-0.1|120|50|0|0|0.05|# million Americans have national health insurance.|150|2|1945|1952",
+            "civil_rights48|The civil rights program|Outlaw lynching and the poll tax, and create a permanent fair employment commission.|10|D|-0.1|-0.7|1|52|0|0|0|The poll tax is gone in # states.|5|2|1948|1956",
+            "housing49|Housing Act of 1949|810,000 public housing units and urban renewal money for the cities.|1|D|-0.5|0|25|62|0.05|-0.05|0|# thousand public housing units have been built.|810|2|1949|1953",
+            "nato_treaty|The North Atlantic Treaty|An armed attack on one member of the alliance is an attack on them all.|6|-|0.1|0|10|70|0|0|0|NATO has # members.|12|2|1949|1950",
+            // Eisenhower
+            "highways|Federal-Aid Highway Act|41,000 miles of interstate highways, 90% paid for by Washington.|2|-|0|0|80|75|0.2|-0.15|0.05|# thousand miles of interstate are open.|41|2|1954|1960",
+            "ndea|NASA and the National Defense Education Act|Science scholarships, student loans and a civilian space agency.|12|-|-0.1|-0.1|15|72|0.05|0|0|# thousand students have federal loans for college.|600|2|1957|1960",
+            "civil_rights57|Civil Rights Act of 1957|A civil rights division at the Justice Department and federal suits to protect the right to vote.|10|-|0|-0.5|1|58|0|0|0|Federal suits have registered # thousand Black voters in the South.|100|2|1956|1960",
+            // the New Frontier and the Great Society
+            "space|The Apollo program|Land a man on the Moon and return him safely to Earth before the decade is out.|11|-|-0.1|-0.1|60|60|0.05|-0.05|0.02|NASA employs # thousand people.|400|2|1961|1966",
+            "kennedy_tax|Revenue Act of 1964|Cut the top tax rate from 91% to 70%, and rates for everyone else.|0|D|0.1|0|120|58|0.25|-0.2|0.1|The typical family pays $# less in tax this year.|300|0|1961|1964",
+            "civil_rights64|Civil Rights Act|Outlaw segregation in public places and discrimination in hiring.|10|D|-0.1|-0.85|2|61|0.02|0|0|Segregation is illegal in the # states that once required it.|17|2|1962|1966",
+            "medicare|Medicare and Medicaid|Health insurance for everyone over 65 through Social Security, and for the poor.|3|D|-0.6|-0.1|90|63|0.02|-0.02|0.05|# million Americans over 65 have health insurance.|19|1|1961|1966",
+            "poverty|Economic Opportunity Act|The war on poverty: the Job Corps, Head Start, community action and VISTA.|2|D|-0.6|-0.3|30|60|0.03|-0.1|0|# million children have been through Head Start.|2|1|1963|1967",
+            "esea|Elementary and Secondary Education Act|Federal money for schools in poor districts.|12|D|-0.5|-0.2|25|70|0.02|0|0|# million poor children get extra help in school.|7|1|1964|1968",
+            "voting_rights65|Voting Rights Act|Federal examiners to register voters, and an end to literacy tests in the South.|10|D|0|-0.85|1|76|0|0|0|# thousand Black voters have been added to the rolls in the South.|250|2|1964|1968",
+            "immigration65|Immigration and Nationality Act|End the national-origin quotas; favor family ties and skills.|4|D|0|-0.5|0|50|0.02|0|0|# thousand immigrants arrived last year from countries the quotas shut out.|200|2|1964|1968",
+            "fair_housing|Fair Housing Act|Ban discrimination in the sale and rental of housing.|10|D|0|-0.7|1|52|0|0|0|# housing discrimination complaints have been filed.|3000|0|1966|1969",
+            // Nixon and Ford
+            "clean_air70|Clean Air Act|National air-quality standards and the first limits on car exhaust.|9|-|-0.2|-0.4|5|75|-0.02|0|0.02|Lead in the air is down #%.|50|2|1969|1977",
+            "clean_water|Clean Water Act|Federal limits on what can be dumped into rivers and lakes, and money for sewage plants.|9|-|-0.2|-0.3|18|72|0|0|0|#% of rivers are now safe for fishing.|60|2|1971|1977",
+            "revenue_sharing|General Revenue Sharing|Send $30 billion to states and cities with few strings attached.|0|R|0.2|0|30|58|0.05|0|0.02|$# billion has gone back to states and cities.|30|2|1969|1976",
+            "fap|Family Assistance Plan|A guaranteed minimum income for every family with children.|2|R|-0.3|0|40|50|0|0|0.02|# million families get a federal income floor.|4|1|1969|1972",
+            "osha|Occupational Safety and Health Act|Federal workplace safety standards and inspectors to enforce them.|2|-|-0.3|0|2|68|-0.01|0|0|Workplace deaths are down #%.|30|2|1969|1972",
+            "wage_controls|Economic Stabilization Act|A 90-day freeze on wages and prices, then a pay board and a price commission.|1|-|-0.2|0|0|68|-0.1|0|-0.8|Inflation was held to #% under the controls.|3|1|1969|1974",
+            "title_ix|Education Amendments (Title IX)|Ban sex discrimination in any school that takes federal money.|12|-|0|-0.5|0|66|0|0|0|# million girls now play high-school sports.|3|1|1971|1976",
+            "energy75|Energy Policy and Conservation Act|Fuel-economy standards, a strategic petroleum reserve and a 55-mile-an-hour speed limit.|9|-|0|-0.1|5|60|-0.02|0|-0.05|The strategic petroleum reserve holds # million barrels.|500|2|1973|1980",
+            "endangered|Endangered Species Act|Protect endangered plants and animals and the places they live, and bar federal projects that would wipe them out.|9|-|-0.1|-0.2|1|74|0|0|0|# species are now protected.|400|2|1973|1976",
+            "erisa|Employee Retirement Income Security Act|Federal standards for private pensions, and insurance for workers whose pension plans fail.|2|-|-0.2|0|1|70|0|0|0|# million workers have their pensions insured.|30|2|1973|1976",
+            "trade74|Trade Act of 1974|Authority to negotiate lower tariffs, help for workers hurt by imports, and limits on trade with countries that won't let people emigrate.|8|-|0.2|0.1|1|52|0.05|0|-0.02|Trade with the rest of the world has grown #% since the law.|20|2|1973|1976",
+            "tax75|Tax Reduction Act of 1975|A rebate on last year's taxes and lower withholding, to pull the economy out of recession.|0|-|-0.1|0|150|66|0.25|-0.1|0.05|The typical family got a $# rebate.|100|0|1974|1977",
+            // Carter
+            "energy77|National Energy Act|A Department of Energy, conservation credits, a gas-guzzler tax and gradual natural gas deregulation.|9|D|-0.2|-0.1|10|55|0|0|-0.05|Oil imports are down #%.|20|2|1977|1980",
+            "deregulation|Airline Deregulation Act|End federal control of airfares and routes.|1|-|0.4|0|0|60|0.08|0|-0.08|Average airfares are down #%.|30|2|1977|1982",
+            "panama|The Panama Canal treaties|Hand the canal to Panama by 1999 while keeping the right to defend it.|6|D|0|-0.2|0|42|0|0|0|# Latin American governments praised the treaties.|20|2|1977|1978",
+            // Reagan
+            "erta|Economic Recovery Tax Act|Cut income tax rates by a quarter over three years, and index them to inflation.|0|R|0.75|0.1|200|55|0.25|-0.15|0.15|The top income tax rate is #%.|50|2|1981|1983",
+            "defense81|The defense buildup|A 600-ship Navy, new bombers and new missiles.|7|R|0.5|0.3|120|50|0.1|-0.1|0.1|The Navy is building toward # ships.|600|2|1981|1986",
+            "ss83|Social Security Amendments of 1983|Raise payroll taxes, tax the benefits of the well-off and raise the retirement age to 67.|0|-|0|0|-30|60|0|0|0|Social Security's trust fund is solvent for # more years.|75|2|1982|1984",
+            "tax_reform86|Tax Reform Act of 1986|Two rates, 15% and 28%, and hundreds of loopholes closed.|0|-|0.3|0|0|58|0.08|0|0|# million low-income Americans no longer owe income tax.|6|1|1985|1987",
+            "irca|Immigration Reform and Control Act|Legal status for millions of undocumented immigrants, and fines for employers who hire illegally.|4|-|0|-0.1|3|55|0.03|0|0|# million immigrants have gained legal status.|2.7|1|1985|1987",
+            "drugs86|Anti-Drug Abuse Act|Mandatory minimum sentences for drug dealers and more money for treatment.|5|-|0.2|0.5|2|70|0|0|0|# thousand more drug offenders are in federal prison.|30|2|1985|1989",
+            // Bush
+            "ada|Americans with Disabilities Act|Ban discrimination against people with disabilities at work, on transit and in public places.|10|-|0|-0.4|3|78|0|0|0|# thousand buildings have been made accessible.|400|2|1989|1991",
+            "clean_air90|Clean Air Act Amendments|Cap-and-trade for the sulfur that causes acid rain, and tighter smog rules.|9|-|0|-0.3|5|70|-0.02|0|0.02|Sulfur emissions are down #%.|40|2|1989|1991",
+            "budget90|Omnibus Budget Reconciliation Act of 1990|Cut spending and raise taxes, with pay-as-you-go rules for new spending.|0|-|0|0|-120|45|-0.08|0.03|-0.05|The deficit is $# billion smaller.|490|2|1990|1990",
+            // Clinton
+            "budget93|Omnibus Budget Reconciliation Act of 1993|Raise the top tax rate to 39.6% and cut spending to shrink the deficit.|0|D|-0.3|0|-100|50|0.05|0|-0.05|The deficit is $# billion smaller than projected.|500|2|1993|1994",
+            "fmla|Family and Medical Leave Act|Twelve weeks of unpaid, job-protected leave for a new child or a serious illness.|2|D|-0.4|-0.1|0|70|0|0|0|# million workers have taken family leave.|35|1|1993|1994",
+            "nafta|North American Free Trade Agreement|Phase out tariffs between the United States, Canada and Mexico.|8|-|0.4|0|0|48|0.08|0.02|-0.03|Trade with Mexico and Canada is up #%.|70|2|1993|1994",
+            "health_security|Health Security Act|Universal coverage through regional health alliances and a mandate on employers.|3|D|-0.6|-0.1|90|47|0|0|0.03|# million more Americans have health insurance.|37|1|1993|1995",
+            "crime94|Violent Crime Control Act|100,000 police officers, an assault-weapons ban and tougher sentences.|5|D|0|-0.1|6|61|0|0|0|# thousand new police officers are on the street.|100|2|1993|1996",
+            "welfare96|Welfare reform|End the welfare entitlement: work requirements and time limits for cash aid.|2|-|0.4|0.3|-10|65|0.02|-0.05|0|The welfare rolls are down #%.|50|2|1995|1997",
+            "balanced97|Balanced Budget Act|Balance the budget by 2002 with spending caps and Medicare savings, plus health coverage for children.|0|-|0.1|0|-60|62|0.03|0|-0.03|The budget shows a surplus of $# billion.|230|2|1997|2000",
+            // Bush
+            "bush_tax|Economic Growth and Tax Relief Act|Cut income tax rates across the board and phase out the estate tax.|0|R|0.7|0.1|140|52|0.12|-0.05|0.05|The typical family pays $# less in tax.|1000|0|2001|2003",
+            "nclb|No Child Left Behind|Yearly tests in reading and math, and consequences for schools that keep failing.|12|-|0.1|0.1|10|68|0|0|0|# million students are tested every year.|25|1|2001|2002",
+            "patriot|USA PATRIOT Act|Wider surveillance and investigative powers against terrorism.|7|-|0.3|0.4|2|70|0|0|0|# terror plots have been disrupted.|12|2|2001|2005",
+            "medicare_d|Medicare prescription drug benefit|Drug coverage for seniors through private plans.|3|R|-0.1|0|50|60|0|0|0.02|# million seniors have drug coverage.|40|1|2002|2004",
+            "ss_accounts|Personal Social Security accounts|Let younger workers put part of their payroll taxes in private accounts.|0|R|0.7|0.1|30|42|0|0|0|# million workers have personal accounts.|20|1|2005|2006",
+            "imm07|Comprehensive immigration reform|Border security, a guest-worker program and a path to citizenship.|4|-|0|-0.2|5|52|0.05|0|0|# million immigrants are on a path to citizenship.|11|1|2005|2008",
+            "tarp|Emergency Economic Stabilization Act|$700 billion to buy troubled assets and shore up the banks.|0|-|0.1|0|200|40|0.3|-0.3|0.05|The banks have repaid $# billion.|440|2|2008|2009",
+            // Obama
+            "recovery_act|American Recovery and Reinvestment Act|$787 billion in tax cuts, aid to states and public works.|2|D|-0.5|0|390|52|0.6|-0.8|0.1|The stimulus saved or created about # million jobs.|2.5|1|2009|2010",
+            "aca|Affordable Care Act|Subsidized insurance exchanges, a Medicaid expansion, an individual mandate and an end to pre-existing-condition exclusions.|3|D|-0.6|-0.2|90|48|0|0|0|# million more Americans have health insurance.|20|1|2009|2016",
+            "dodd_frank|Dodd-Frank Wall Street Reform|A consumer financial protection bureau, stress tests and limits on banks' trading.|0|D|-0.5|0|1|58|-0.02|0|0|The consumer bureau has returned $# billion to consumers.|12|2|2009|2011",
+            "cap_trade|American Clean Energy and Security Act|Cap carbon emissions and let companies trade permits.|9|D|-0.5|-0.3|-10|50|-0.05|0.02|0.05|Carbon emissions are down #% from 2005.|17|2|2009|2010",
+            "dream|The DREAM Act|A path to citizenship for immigrants brought here as children.|4|D|0|-0.4|1|58|0.02|0|0|# thousand Dreamers are on a path to citizenship.|800|2|2009|2016",
+            "budget_control|Budget Control Act|Ten years of spending caps, and automatic cuts if a supercommittee fails.|0|-|0.3|0|-100|45|-0.08|0.04|-0.03|Spending caps cut $# billion over ten years.|2100|0|2011|2013",
+            "imm13|Border Security and Immigration Modernization Act|Billions for the border and a 13-year path to citizenship.|4|-|0|-0.2|5|60|0.05|0|0|# million immigrants are on a path to citizenship.|11|1|2013|2016",
+            // Trump
+            "tcja|Tax Cuts and Jobs Act|Cut the corporate rate from 35% to 21% and cut individual rates through 2025.|0|R|0.7|0.2|150|37|0.15|-0.05|0.08|The corporate tax rate is #%.|21|2|2017|2018",
+            "ahca|American Health Care Act|Repeal the individual mandate, cap Medicaid and replace ACA subsidies with tax credits.|3|R|0.7|0.2|-30|30|0|0|0|# million fewer Americans have health insurance.|20|1|2017|2018",
+            "wall17|Border wall funding|$25 billion for a wall on the southern border.|4|R|0.2|0.7|25|40|0|0|0|# miles of new border wall.|450|2|2017|2020",
+            "first_step|First Step Act|Shorter sentences for some drug crimes and more job training in federal prisons.|5|-|0|-0.3|1|70|0|0|0|# thousand federal prisoners have been released early.|3|2|2017|2020",
+            "usmca|United States-Mexico-Canada Agreement|A rewritten NAFTA with tougher rules for cars and new labor protections.|8|-|0.1|0.1|0|60|0.02|0|0|Trade with Mexico and Canada is up #%.|10|2|2018|2020",
+            "cares|CARES Act|$2.2 trillion in checks, loans to small businesses and bigger jobless benefits in the pandemic.|0|-|-0.2|0|900|75|0.8|-1.0|0.1|# million small businesses got loans.|5|1|2020|2020"};
+
+    static final BillDef[] BILLS_HIST = hbills();
+
+    static BillDef[] hbills() {
+        BillDef[] out = new BillDef[HBILL_SPEC.length];
+        for (int i = 0; i < HBILL_SPEC.length; i++) {
+            String[] t = HBILL_SPEC[i].split("\\|");
+            int lean = t[4].equals("D") ? DEM : t[4].equals("R") ? REP : -1;
+            double cost = Double.parseDouble(t[7]);
+            int from = Integer.parseInt(t[15]), to = Integer.parseInt(t[16]);
+            BillDef d = new BillDef(t[0], t[1], t[2], Integer.parseInt(t[3]), lean, Double.parseDouble(t[5]), Double.parseDouble(t[6]), cost, from >= 1981 && cost != 0,
+                    Double.parseDouble(t[8]), Double.parseDouble(t[9]), Double.parseDouble(t[10]), Double.parseDouble(t[11]), t[12], Double.parseDouble(t[13]), Integer.parseInt(t[14]));
+            d.from = from; d.to = to;
+            out[i] = d;
+        }
+        return out;
+    }
+
+    static {
+        BILLS = new BillDef[BILLS_MODERN.length + BILLS_HIST.length];
+        for (int i = 0; i < BILLS_MODERN.length; i++) BILLS[i] = BILLS_MODERN[i];
+        for (int i = 0; i < BILLS_HIST.length; i++) BILLS[BILLS_MODERN.length + i] = BILLS_HIST[i];
+    }
+
+    /** Is a bill on the table in the year the game is in? */
+    /** The year each bill really became law (or a treaty was ratified). A presidency that starts after that doesn't get to pass it again. */
+    static final String ENACTED = "bank_act:1933 ccc:1933 aaa:1933 nira:1933 tva:1933 glass_steagall:1933 securities:1934 wpa:1935 social_security:1935 wagner:1935 "
+            + "wealth_tax:1935 neutrality:1935 flsa:1938 housing37:1937 cash_carry:1939 draft40:1940 lend_lease:1941 price_control:1942 revenue42:1942 gi_bill:1944 "
+            + "bretton:1945 un_charter:1945 employment_act:1946 taft_hartley:1947 marshall:1948 nat_security:1947 housing49:1949 nato_treaty:1949 highways:1956 ndea:1958 "
+            + "civil_rights57:1957 space:1961 kennedy_tax:1964 civil_rights64:1964 medicare:1965 poverty:1964 esea:1965 voting_rights65:1965 immigration65:1965 "
+            + "fair_housing:1968 clean_air70:1970 clean_water:1972 revenue_sharing:1972 osha:1970 wage_controls:1970 title_ix:1972 energy75:1975 endangered:1973 erisa:1974 trade74:1975 tax75:1975 energy77:1978 "
+            + "deregulation:1978 panama:1978 erta:1981 defense81:1981 ss83:1983 tax_reform86:1986 irca:1986 drugs86:1986 ada:1990 clean_air90:1990 budget90:1990 "
+            + "budget93:1993 fmla:1993 nafta:1993 crime94:1994 welfare96:1996 balanced97:1997 bush_tax:2001 nclb:2002 patriot:2001 medicare_d:2003 tarp:2008 "
+            + "recovery_act:2009 aca:2010 dodd_frank:2010 budget_control:2011 tcja:2017 first_step:2018 usmca:2020 cares:2020";
+
+    static int enacted(String id) {
+        int i = (" " + ENACTED + " ").indexOf(" " + id + ":");
+        return i < 0 ? 0 : Integer.parseInt(ENACTED.substring(i + id.length() + 1, i + id.length() + 5));
+    }
+
+    static boolean billOk(Game g, BillDef d) {
+        int y = yearNow(g);
+        if (y < d.from || y > d.to) return false;
+        int en = enacted(d.id);
+        return en == 0 || g.era.year <= en;
+    }
+
+    /** A law's effect, written out: the impact line with its number. */
+    static String impactOf(Bill b) {
+        BillDef d = b.def();
+        if (d == null || d.impact == null) return null;
+        double v = d.base * Math.min(1.3, Math.max(0.4, b.strength));
+        String n = d.fmt == 0 ? thousands(Math.round(v)) : d.fmt == 1 ? fmt1(v) : String.valueOf(Math.round(v));
+        return d.impact.replace("#", n);
     }
     // =====================================================================
     //  13.  MAKING LAWS
@@ -3271,7 +4017,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 int vpParty = g.party;
                 return b.ours || vpParty == partyOf(b) ? 50 : 51;
             }
-            return g.era.year < 1975 ? 67 : 60;
+            int y = yearNow(g);
+            // before the 1970s the filibuster was mostly kept for civil rights; other bills passed by majority
+            if (y < 1971 && b.cult() > -0.45) return b.ours || g.party == partyOf(b) ? 50 : 51;
+            return y < 1975 ? 67 : 60;
         }
 
         /** The party whose bill it is: yours, or the majority's that wrote it. */
@@ -3301,7 +4050,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 double agree = clamp(0.5 + spatial, 0, 1);
                 l += bl.loyalty * (b.ours && mine ? 0.4 + 2.4 * agree : 0.5 + 1.3 * agree);
             } else l -= 0.9 * pol * (bip ? 0.7 : 1);
-            if (b.ours && !mine) l -= 0.35 + (Midterms.season(g) || g.week > 170 ? 0.3 : 0);   // why hand the president a win?
+            if (b.ours && !mine) l -= 0.35 + (Midterms.season(g) || g.tw() > 170 ? 0.3 : 0);   // why hand the president a win?
             if (b.ours || mine) l += (bl.rel - 50) / 35;
             l += mine ? (g.approval - 45) / 18 : (g.approval - 50) / 30;
             double cost = b.netCost();
@@ -3542,7 +4291,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             int sp = oppHouse ? Hill.other(g.party) : g.party;
             List<BillDef> l = new ArrayList<BillDef>();
             for (BillDef d : BILLS) {
-                if (d.lean != sp && d.lean >= 0) continue;
+                if (d.lean != sp && d.lean >= 0 || !billOk(g, d)) continue;
                 boolean used = false;
                 for (Bill b : g.cong.bills) if (b.defId.equals(d.id) && (b.stage != ST_DEAD || g.week - b.stageWeek < 52)) used = true;
                 if (!used) l.add(d);
@@ -3666,13 +4415,13 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             // a new budget cycle each year: the request, then twelve bills for the fiscal year that starts in October
             if (weekHas(g, 0, 2)) c.budgetSent = false;
             if (weekHas(g, 1, 1) && c.crUntil < 0 && !c.shutdown) Arrays.fill(c.approps, 0);
-            boolean due = g.week < 20 ? weekHas(g, 3, 15) : weekHas(g, 1, 3);
+            boolean due = g.tw() < 20 ? weekHas(g, 3, 15) : weekHas(g, 1, 3);
             if (due && !c.budgetSent) {
-                Decisions.add(g, D_BUDGET, "Your budget is due", (g.week < 20 ? "A new president's first budget goes to Congress in the spring." : "The law asks for the president's budget on the first Monday in February.")
+                Decisions.add(g, D_BUDGET, "Your budget is due", (g.tw() < 20 ? "A new president's first budget goes to Congress in the spring." : "The law asks for the president's budget on the first Monday in February.")
                                 + " Your budget director has a draft that follows your agenda. You can send it as is, or write your own in the Roosevelt Room (the budget tab).",
                         new String[]{"Send the draft", "I'll write it myself"}, new String[]{"Budget director: \"It funds your priorities and keeps the deficit about where it is.\"", "Chief of staff: \"Your call. It goes to Congress when you hit send.\""});
             }
-            if ((g.week < 20 ? weekHas(g, 4, 13) : weekHas(g, 2, 3)) && !c.budgetSent) autoRequest(g);
+            if ((g.tw() < 20 ? weekHas(g, 4, 13) : weekHas(g, 2, 3)) && !c.budgetSent) autoRequest(g);
             // appropriations: May through September
             boolean divided = !Hill.majority(g, HOUSE, g.party) || !Hill.majority(g, SENATE, g.party);
             int m = d0[1];
@@ -3916,7 +4665,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     static final class Midterms {
         /** Election day: the Tuesday after the first Monday in November, two years in. */
         static int electionDay(Game g) {
-            int y = g.era.year + 1;
+            int y = termYear(g) + 1;
             for (int d = 2; d <= 8; d++) { int day = dayOfDate(y, 10, d); if (dowOf(day) == 1) return day; }
             return dayOfDate(y, 10, 3);
         }
@@ -3928,15 +4677,15 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
 
         /** The Senate seats up at the midterm: "AB:D" or "AB:R" for the party holding each. */
         static String seatsUp(Game g) {
-            if (g.era.midSeats != null) return g.era.midSeats;
-            return "";
+            if (g.era.midSeats != null && g.term == 1) return g.era.midSeats;
+            return senateUp(termYear(g) + 1, g.senateD);
         }
 
         static double nationalMargin(Game g, double noise) {
             Econ e = g.econ;
             double camp = 0;
             for (double v : g.cong.campaign) camp += v;
-            double mP = 0.5 * (g.approval - 50) - 2.5 + 0.4 * (e.gdp - 2) - 0.3 * (e.unemp - 4.5) + Math.min(1.5, g.funds / 40) + Math.min(1.0, camp * 0.05) + (Cabinet.sq(g, S_POL) - 0.55) * 1.5 + (g.home != null ? ((g.home.fac[0] + g.home.fac[1]) / 2 - 55) * 0.04 : 0) + noise;
+            double mP = 0.5 * (g.approval - 50) - 2.5 + 0.4 * (e.gdp - 2) - 0.3 * (e.unemp - e.uRef) + Math.min(1.5, g.funds / 40) + Math.min(1.0, camp * 0.05) + (Cabinet.sq(g, S_POL) - 0.55) * 1.5 + (g.home != null ? ((g.home.fac[0] + g.home.fac[1]) / 2 - 55) * 0.04 : 0) + noise;
             return mP;
         }
 
@@ -3956,7 +4705,8 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             double natD = g.party == DEM ? mP : -mP;
             int hB = g.myHouse(), sB = g.mySenate();
             boolean houseBefore = Hill.majority(g, HOUSE, g.party), senBefore = Hill.majority(g, SENATE, g.party);
-            g.houseD = clampi((int) Math.round(222 + 3.8 * natD + r.nextGaussian() * 5), 120, 330);
+            int my = termYear(g) + 1;
+            g.houseD = clampi((int) Math.round(houseBase(my) + houseSlope(my) * natD + r.nextGaussian() * 5), 120, 340);
             int dUp = 0, dWon = 0;
             StringBuilder flips = new StringBuilder();
             String up = seatsUp(g);
@@ -3966,7 +4716,8 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 if (s < 0) continue;
                 boolean dHeld = p[1].equals("D");
                 if (dHeld) dUp++;
-                double m = Elect.lean[s] + natD + (dHeld ? 3 : -3) + c.campaign[s] * 1.2 * (g.party == DEM ? 1 : -1) + r.nextGaussian() * 3.5;
+                int yy = yearNow(g);
+                double m = leanIn(s, yy) + natD * (yy >= 1995 ? 1 : 0.6) + (dHeld ? 1 : -1) * (yy >= 1995 ? 3 : 6) + c.campaign[s] * 1.2 * (g.party == DEM ? 1 : -1) + r.nextGaussian() * 3.5;
                 if (m > 0) dWon++;
                 if (dHeld != m > 0) flips.append(flips.length() > 0 ? ", " : "").append(STATES[s].name).append(m > 0 ? " (D gain)" : " (R gain)");
             }
@@ -3974,6 +4725,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             Hill.seats(g);
             boolean houseAfter = Hill.majority(g, HOUSE, g.party), senAfter = Hill.majority(g, SENATE, g.party);
             Leaders.reshuffle(g, houseBefore != houseAfter, senBefore != senAfter);
+            if (g.myHouse() > hB) g.midGain = true;
             String head = (mP >= 0 ? "Your party gains" : "Your party loses") + " in the midterms";
             String body = "The national House vote went " + (g.party == DEM ? margin(natD) : margin(natD)) + ". " + PARTIES[g.party] + " now hold " + g.myHouse() + " House seats (" + signedInt(g.myHouse() - hB) + ") and "
                     + g.mySenate() + " Senate seats (" + signedInt(g.mySenate() - sB) + ")." + (flips.length() > 0 ? " Senate seats that changed hands: " + flips + "." : "")
@@ -4035,7 +4787,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     // =====================================================================
     static final int D_SIGN = 1, D_CR = 2, D_SHUTDOWN = 3, D_DEBT = 4, D_BUDGET = 5, D_INFO = 6, D_MUSTPASS = 7,
             D_CRA = 8, D_EMERG_END = 9, D_COURT = 10, D_SCANDAL = 11, D_LEAK = 12, D_PARDON = 13, D_SUBPOENA = 14, D_IMPEACH = 15,
-            D_WORLD = 16, D_SUMMIT = 17, D_GSUMMIT = 18, D_HOME = 19, D_DISASTER = 20, D_SPEECH = 21, D_QA = 22;
+            D_WORLD = 16, D_SUMMIT = 17, D_GSUMMIT = 18, D_HOME = 19, D_DISASTER = 20, D_SPEECH = 21, D_QA = 22, D_HIST = 23, D_CAMPAIGN = 24;
 
 
     static final class Decision implements Serializable {
@@ -4073,10 +4825,13 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 String lab = s.substring(0, c);
                 for (int j = 0; j < ADV_LABEL.length; j++) {
                     if (!lab.equals(ADV_LABEL[j])) continue;
-                    Person p = ADV_WHO[j] >= 100 ? g.ex.post[ADV_WHO[j] - 100] : g.ex.staff[ADV_WHO[j]];
-                    if (p == null) continue;
+                    int pk = ADV_WHO[j] >= 100 ? ep(ADV_WHO[j] - 100) : -1;
+                    Person p = pk >= 0 ? g.ex.post[pk] : g.ex.staff[ADV_WHO[j]];
+                    String nl = pk >= 0 && (pk != ADV_WHO[j] - 100 || !POST_TITLE[pk].equals(POST_TITLE0[pk])) ? POST_TITLE[pk] : lab;
+                    if (p == null) { if (!nl.equals(lab)) d.advice[i] = nl + s.substring(c); continue; }
                     d.advisers[i] = p;
-                    if (!p.real) d.advice[i] = (j == 3 ? "White House counsel" : lab) + " " + p.name + s.substring(c);
+                    if (!p.real) d.advice[i] = (j == 3 ? "White House counsel" : nl) + " " + p.name + s.substring(c);
+                    else if (!nl.equals(lab)) d.advice[i] = nl + s.substring(c);
                 }
             }
         }
@@ -4141,6 +4896,8 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                     for (int i = 0; i < o.length; i++) { String[] t = o[i].split("\\|"); double q = Diplo.p(g, t[2], Double.parseDouble(t[3])); double v = q - (q >= 1 ? 0.45 : 0); if (v > bv) { bv = v; best = i; } }
                     return best;
                 }
+                case D_HIST: return History.auto(g, d.a);
+                case D_CAMPAIGN: return Reelection.auto(g, d);
                 case D_SPEECH: return d.codes != null ? (g.week % d.codes.length) : d.a == 0 ? 0 : 0;
                 case D_SUMMIT: case D_GSUMMIT: case D_DISASTER: case D_QA: return 0;
                 default: return 0;
@@ -4189,12 +4946,17 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             if (g.week == 12 && Actions.available(g, actionIdx(g.party == REP ? "eo_freeze" : "eo_ai_safety"))) Actions.issue(g, actionIdx(g.party == REP ? "eo_freeze" : "eo_ai_safety"));
             if (g.world != null) {
                 World w = g.world;
-                if (g.week % 5 == 2) { int[] friends = {CC_GB, CC_JP, CC_DE, CC_FR, CC_CA, CC_MX, CC_KR, CC_IN}; Diplo.call(g, friends[(g.week / 5) % friends.length]); }
-                if (g.week % 7 == 3) Diplo.call(g, g.week % 14 == 3 ? CC_CN : CC_RU);
-                if (g.week % 40 == 20 && w.summitCountry < 0) Diplo.proposeSummit(g, w.uaStage == 2 ? CC_RU : CC_CN);
-                if (g.week % 13 == 6 && w.visitAt[CC_GB] < 0) Diplo.invite(g, new int[]{CC_GB, CC_JP, CC_IN, CC_DE, CC_FR, CC_CA, CC_AU, CC_KR}[(g.week / 13) % 8]);
+                int[] friends = {CC_GB, CC_JP, CC_DE, CC_FR, CC_CA, CC_MX, CC_KR, CC_IN};
+                int fr = friends[(g.week / 5) % friends.length];
+                if (g.week % 5 == 2 && !gone(g, fr) && align(g, fr) != AL_ADVERSARY) Diplo.call(g, fr);
+                if (g.week % 7 == 3 && w.modern) Diplo.call(g, g.week % 14 == 3 ? CC_CN : CC_RU);
+                if (g.week % 40 == 20 && w.summitCountry < 0 && w.modern) Diplo.proposeSummit(g, w.uaStage == 2 ? CC_RU : CC_CN);
+                if (g.week % 40 == 20 && w.summitCountry < 0 && !w.modern && yearNow(g) >= 1955 && !gone(g, CC_RU)) Diplo.proposeSummit(g, CC_RU);
+                int inv = new int[]{CC_GB, CC_JP, CC_IN, CC_DE, CC_FR, CC_CA, CC_AU, CC_KR}[(g.week / 13) % 8];
+                if (g.week % 13 == 6 && w.visitAt[inv] < 0 && !gone(g, inv) && align(g, inv) != AL_ADVERSARY) Diplo.invite(g, inv);
             }
             if (g.week % 26 == 10 && g.vp != null) VicePres.start(g, g.week % 52 == 10 ? VM_TOUR : VM_TASK, Week.topIssue(g));
+            History.autoWar(g);
         }
 
         /** Sends the president's next agenda bill to Congress when fewer than two are moving. */
@@ -4222,6 +4984,8 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             switch (d.kind) {
                 case D_COURT: Courts.courtDecision(g, d.caseRef, k); break;
                 case D_WORLD: Diplo.crisisDecision(g, d.a, k); break;
+                case D_HIST: History.decide(g, d.a, k); break;
+                case D_CAMPAIGN: Reelection.decide(g, d, k); break;
                 case D_HOME: HomeFront.eventDecision(g, d.a, k); break;
                 case D_DISASTER: HomeFront.disasterDecision(g, d, k); break;
                 case D_SPEECH: Speech.step(g, d.codes != null ? d.codes[k] : k); break;
@@ -4357,6 +5121,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0,
             1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
+    /** The first year each action makes sense. */
+    static final int[] AD_MIN = {1980, 1977, 1973, 2009, 1965, 1990, 2018, 1977, 1933, 2020, 2020, 1953, 2020, 1981, 2016, 2025, 1990, 1933, 2019,
+            2020, 2016, 2009, 2012, 2014, 2022, 2020, 2023, 1960, 2003, 2012, 1973, 1977, 2023, 2025,
+            2009, 1938, 2010, 2023, 2023, 2022, 2010, 2017, 2017, 1996, 2010, 2018, 1990, 2019, 2022};
     static final String[] AD_NAME = {
             "Declare an emergency at the border", "Declare an economic emergency over trade", "Declare an energy emergency", "Declare a climate emergency", "Declare a crime emergency",
             "Send troops to the border", "End birthright citizenship", "Emergency tariffs on imports", "Freeze federal hiring", "Schedule F", "Federal workers back to the office",
@@ -4580,7 +5348,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         static double sq(Game g, int role) { if (g.ex == null) return 0.5; Person p = g.ex.staff[role]; return p == null ? 0.4 : p.q(); }
 
         /** A cabinet officer's effectiveness (0-1); acting officials are career people of middling skill. */
-        static double pq(Game g, int post) { if (g.ex == null) return 0.5; Person p = g.ex.post[post]; return p == null ? 0.45 : p.q(); }
+        static double pq(Game g, int post) { if (g.ex == null) return 0.5; Person p = g.ex.post[ep(post)]; return p == null ? 0.45 : p.q(); }
+
+        /** Readiness of the department that does a post's work this year. */
+        static double rd(Game g, int post) { return g.ex.ready[ep(post)]; }
 
         static void setup(Game g) {
             Exec x = new Exec();
@@ -4604,20 +5375,30 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 }
             } else {
                 for (int s = 0; s < NSTAFF; s++) { Person p = staffOptions(g, s, 0).get(0); p.since = 0; x.staff[s] = p; }
-                for (int k = 0; k < NPOST; k++) x.nominee[k] = options(g, k, 0).get(0);
+                for (int k = 0; k < NPOST; k++) if (postOn(k)) x.nominee[k] = options(g, k, 0).get(0);
             }
             // the Senate takes the nominees a few at a time, the top jobs first
             int[] order = {P_STATE, P_TREAS, P_DEF, P_DHS, P_DOJ, P_CIA, P_DNI, P_OMB, P_HHS, P_COM, P_INT, P_DOE, P_AG, P_VA, P_DOT, P_HUD, P_LAB, P_ED, P_EPA, P_USTR, P_UN};
-            for (int i = 0; i < order.length; i++) { x.voteAt[order[i]] = i == 0 ? 0 : 1 + i / 3; x.nominee[order[i]].nominated = 0; }
+            int n = 0;
+            for (int i = 0; i < order.length; i++) { if (x.nominee[order[i]] == null) continue; x.voteAt[order[i]] = n == 0 ? 0 : 1 + n / 3; x.nominee[order[i]].nominated = 0; n++; }
             // the Supreme Court
-            for (String row : SCOTUS25) {
+            for (String row : courtIn(g.era)) {
                 String[] t = row.split("\\|");
                 Justice j = new Justice();
                 j.name = t[0]; j.born = Integer.parseInt(t[1]); j.party = t[2].equals("D") ? DEM : REP; j.ideo = Double.parseDouble(t[3]);
                 j.face = face(j.name, r, j.party);
-                if (j.face.look != null && realLook(j.name) == null) femaleLook(j.face.look, false, r);
+                if (j.face.look != null && realLook(j.name) == null) {
+                    boolean f = false;
+                    for (String fj : FEMALE_JUSTICES) if (fj.equals(j.name)) f = true;
+                    femaleLook(j.face.look, f, r);
+                    int age = g.era.year - j.born;
+                    j.face.look.age = clamp(0.3 + (age - 40) * 0.016, 0.3, 0.95); j.face.look.gray = clamp((age - 45) * 0.025, 0, 0.95);
+                    if (j.face.look.skin > 2 && !j.name.equals("Thurgood Marshall") && !j.name.equals("Clarence Thomas")) j.face.look.skin = r.nextInt(2);
+                    if (j.name.equals("Thurgood Marshall")) j.face.look.skin = 5;
+                }
                 x.court.add(j);
             }
+            if (g.era.year < 2025) { double[] bn = benchIn(g.era.year); x.dDistrict = bn[0]; x.dCircuit = bn[1]; }
             if (g.era.year >= 2029) { x.dDistrict = 0.46; x.dCircuit = 0.42; }
             for (int d = 0; d < NDG; d++) x.deleg[d] = false;
         }
@@ -4632,8 +5413,8 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         /** A generated person for a job. kind: 0 loyalist, 1 expert, 2 bipartisan or outsider. */
         static Person make(Game g, Random r, int party, int kind) {
             Person p = new Person();
-            boolean f = r.nextDouble() < 0.42;
-            p.name = (f ? FIRST_F[r.nextInt(FIRST_F.length)] : FIRST_M[r.nextInt(FIRST_M.length)]) + " " + LASTS[r.nextInt(LASTS.length)];
+            boolean f = genFemale(r, 0.42);
+            p.name = genFirst(r, f) + " " + genLast(r);
             p.party = party;
             double side = party == REP ? 1 : -1;
             if (kind == 0) { p.skill = 52 + r.nextInt(20); p.loyalty = 80 + r.nextInt(16); p.ideo = side * (0.55 + r.nextDouble() * 0.35); p.trait = r.nextDouble() < 0.5 ? T_LOYAL : pickTrait(r); }
@@ -4654,7 +5435,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             l.add(make(g, r, g.party, 1));
             l.add(make(g, r, g.party, 0));
             Cand big = bigName(g, post);
-            if (big != null) {
+            if (big != null && (yearNow(g) >= 2021 || yearNow(g) >= 2013 && big.born > 0 && yearNow(g) - big.born >= 45)) {
                 Person p = new Person();
                 p.name = big.name(); p.party = big.party; p.real = true; p.rosterId = big.id; p.face = big;
                 p.background = big.role != null ? big.role : "Politician";
@@ -4837,7 +5618,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             // departures
             for (Person p : everyone(g)) {
                 if (g.week - p.since < 12) continue;
-                double hz = 0.0006 + Math.max(0, 38 - p.morale) / 700 + (p.trait == T_AMBITIOUS && g.week > 70 ? 0.003 : 0) - (p.trait == T_LOYAL ? 0.0004 : 0);
+                double hz = 0.0006 + Math.max(0, 38 - p.morale) / 700 + (p.trait == T_AMBITIOUS && g.tw() > 70 ? 0.003 : 0) - (p.trait == T_LOYAL ? 0.0004 : 0);
                 if (r.nextDouble() < hz) { resign(g, p); break; }
             }
             // readiness of each department
@@ -4868,7 +5649,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
 
         static void resign(Game g, Person p) {
             Exec x = g.ex;
-            String why = p.trait == T_AMBITIOUS && g.week > 70 ? "to run for office" : p.morale < 30 ? "after months of friction" : "to return to private life";
+            String why = p.trait == T_AMBITIOUS && g.tw() > 70 ? "to run for office" : p.morale < 30 ? "after months of friction" : "to return to private life";
             remove(g, p);
             x.departures++;
             boolean big = p.role == S_COS || p.role == S_NSA || p.post >= 0 && p.post <= P_DEF || p.post == P_DOJ;
@@ -4877,11 +5658,21 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             if (!x.deleg[DG_PEOPLE]) Decisions.info(g, p.name + " resigns", "Your " + lcTitle(p.title()) + " is leaving " + why + ". " + (p.role >= 0 ? "Pick a replacement in the West Wing (the Staff tab)." : "A career official takes over until you nominate someone (the Cabinet tab)."));
         }
 
+        /** Congress creates a department: the president puts a name forward at once. */
+        static void created(Game g, int k) {
+            if (g.ex == null || g.ex.post[k] != null || g.ex.nominee[k] != null) return;
+            g.ex.ready[k] = 50;
+            String what = k == P_EPA ? "the Environmental Protection Agency" : k == P_UN ? "the post of ambassador to the new United Nations" : k == P_CIA ? "the Central Intelligence Agency"
+                    : k == P_DNI ? "the post of director of national intelligence" : k == P_USTR ? "the Special Trade Representative" : "the Department of " + POST_NAME[k];
+            g.log(NK_GOOD, "Congress creates " + what, "The work moves over from " + POST_NAME[POST_PARENT[k]] + ".", 1.4);
+            nominate(g, k, safest(g, options(g, k, g.week)));
+        }
+
         /** Fill every empty job with the first choice. */
         static void fill(Game g) {
             Exec x = g.ex;
             for (int s = 0; s < NSTAFF; s++) if (x.staff[s] == null) appoint(g, s, staffOptions(g, s, g.week).get(0));
-            for (int k = 0; k < NPOST; k++) if (x.post[k] == null && x.nominee[k] == null) {
+            for (int k = 0; k < NPOST; k++) if (postOn(k) && x.post[k] == null && x.nominee[k] == null) {
                 List<Person> o = options(g, k, g.week);
                 Person best = o.get(0);
                 for (Person p : o) if (chance(g, p) > chance(g, best) + 0.15) best = p;
@@ -4907,6 +5698,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
 
         static boolean available(Game g, int def) {
             if (live(g, def)) return false;
+            if (yearNow(g) < AD_MIN[def]) return false;
             int need = AD_NEEDS[def];
             if (need >= 0 && !g.ex.emergency[need]) return false;
             if (AD_KIND[def] == K_EMERG && g.ex.emergency[def]) return false;
@@ -5038,7 +5830,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     static final class Implement {
         static boolean roll(Game g, String what, int area, double weight) {
             if (g.ex == null) return false;
-            int post = AREA_POST[area];
+            int post = ep(AREA_POST[area]);
             double rd = g.ex.ready[post];
             double p = clamp((66 - rd) / 110, 0.02, 0.45);
             if (g.rng.nextDouble() >= p) return false;
@@ -5127,7 +5919,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             for (Justice j : new ArrayList<Justice>(x.court)) {
                 int age = yr - j.born;
                 double hz = 0.00012 * Math.exp((age - 60) / 7.5);
-                if (j.party == g.party && senate && age >= 70 && g.week < 150) hz += 0.0016;
+                if (j.party == g.party && senate && age >= 70 && g.tw() < 150) hz += 0.0016;
                 if (j.party != g.party) hz *= 0.6;
                 if (r.nextDouble() < hz) { vacancy(g, j, age); break; }
             }
@@ -5158,8 +5950,8 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             int[] age = {46, 53, 60};
             for (int i = 0; i < 3; i++) {
                 Justice j = new Justice();
-                boolean f = r.nextDouble() < 0.45;
-                j.name = "Judge " + (f ? FIRST_F[r.nextInt(FIRST_F.length)] : FIRST_M[r.nextInt(FIRST_M.length)]) + " " + LASTS[r.nextInt(LASTS.length)];
+                boolean f = genFemale(r, 0.45);
+                j.name = "Judge " + genFirst(r, f) + " " + genLast(r);
                 j.ideo = side * (ideo[i] + r.nextGaussian() * 0.05);
                 j.born = yr(g) - age[i] - r.nextInt(4);
                 j.party = g.party; j.real = false;
@@ -5194,7 +5986,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             boolean opp = !Hill.majority(g, SENATE, g.party);
             x.scotusVoteAt = g.week + 7 + g.rng.nextInt(4);
             g.log(NK_BIG, ("President " + g.pres.last + " nominates " + j.name + " to the Supreme Court").toUpperCase(), null, 3.2);
-            if (opp && (Midterms.season(g) || g.week > 150)) {
+            if (opp && (Midterms.season(g) || g.tw() > 150)) {
                 x.scotusVoteAt = g.week + 40;
                 g.log(NK_BAD, "The Senate majority says it won't consider a Supreme Court nominee in an election year", null, 2.4);
             }
@@ -5427,7 +6219,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         static void pardon(Game g) {
             Random r = g.rng;
             int i = r.nextInt(PARDONS.length);
-            if (g.week < 30 && i == 1) i = 0;
+            if (g.tw() < 30 && i == 1) i = 0;
             String[] t = PARDONS[i].split("\\|");
             int kind = Integer.parseInt(t[2]);
             Decision d = Decisions.add(g, D_PARDON, "A request for clemency: " + t[0].toLowerCase(), t[1] + " The pardon attorney's file is on your desk.",
@@ -5474,7 +6266,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 p.scandal = add(g, SK_POWER, "Congress investigates " + p.topic, "The committee wants documents and testimony from senior officials.", 1.6, null, false);
             }
             Member chair = null;
-            for (Member m : g.cong.members) if (m.role == RO_CHAIR && m.chamber == chamber && m.party != g.party && (m.committee.contains("Oversight") || m.committee.contains("Judiciary") || m.committee.contains("Homeland"))) { chair = m; break; }
+            for (Member m : g.cong.members) if (m.role == RO_CHAIR && m.chamber == chamber && m.party != g.party && (m.committee.contains("Oversight") || m.committee.contains("Judiciary") || m.committee.contains("Homeland") || m.committee.contains("Govern") || m.committee.contains("Expenditures"))) { chair = m; break; }
             p.chair = chair != null ? chair.name : "The committee chair";
             x.probes.add(p);
             g.log(NK_BAD, p.chair + " opens an investigation into " + p.topic, null, 1.6);
@@ -5485,7 +6277,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             d.probeRef = p;
         }
 
-        static int worstPost(Game g) { int w = 0; for (int k = 1; k < NPOST; k++) if (g.ex.ready[k] < g.ex.ready[w]) w = k; return w; }
+        static int worstPost(Game g) { int w = 0; for (int k = 1; k < NPOST; k++) if (postOn(k) && g.ex.ready[k] < g.ex.ready[w]) w = k; return w; }
 
         static void subpoenaDecision(Game g, Probe p, int k) {
             Exec x = g.ex;
@@ -5634,7 +6426,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 final Game gg = g;
                 Collections.sort(sw, (a, b) -> Double.compare(Math.abs(gg.stateApp[a] - 48) - STATES[a].ev * 0.15, Math.abs(gg.stateApp[b] - 48) - STATES[b].ev * 0.15));
                 g.act[7] = AC_TRIP; g.arg[7] = sw.get(0);
-                if (Midterms.season(g)) { g.act[10] = AC_CAMPAIGN; g.arg[10] = sw.get(1); }
+                if (Midterms.season(g) || Reelection.season(g)) { g.act[10] = AC_CAMPAIGN; g.arg[10] = sw.get(1); }
             }
             if (g.week - g.ex.lastCabinet > 6) g.act[4] = AC_CABINET;
         }
@@ -5644,7 +6436,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     //  20.  USER INTERFACE: window, input, widgets
     // =====================================================================
     static final int SC_HOME = 0, SC_SETUP = 1, SC_PICK = 2, SC_CREATE = 3, SC_OVAL = 4, SC_ROOM = 5, SC_PAPER = 6, SC_VP = 7,
-            SC_HALL = 8, SC_END = 9;
+            SC_HALL = 8, SC_END = 9, SC_NIGHT = 10, SC_LEGACY = 11, SC_IMPORT = 12;
 
     static final String SANS = pickFont(new String[]{"Inter", "Segoe UI", "Helvetica Neue", "SF Pro Text", "Roboto", "Noto Sans",
             "Open Sans", "Lato", "DejaVu Sans", "Liberation Sans", "Arial"}, "SansSerif");
@@ -5822,7 +6614,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     }
 
     void update(double dt) {
-        if (game != null && (screen == SC_OVAL || screen == SC_ROOM)) Oval.update(this, dt);
+        if (game != null && (screen == SC_OVAL || screen == SC_ROOM || screen == SC_PAPER)) Oval.update(this, dt);
         USMap.animate(dt);
         for (double[] s : scrolls.values()) if (s.length > 6) s[4] += (s[6] - s[4]) * Math.min(1, dt * 14);
     }
@@ -5864,6 +6656,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 case SC_OVAL: Oval.draw(this, g); break;
                 case SC_ROOM: Rooms.draw(this, g); break;
                 case SC_PAPER: Paper.draw(this, g); break;
+                case SC_NIGHT: Night.draw(this, g); break;
+                case SC_LEGACY: Legacy.draw(this, g); break;
+                case SC_HALL: Legacy.hall(this, g); break;
+                case SC_IMPORT: BgImport.draw(this, g); break;
                 default: break;
             }
         } catch (RuntimeException ex) {
@@ -6219,6 +7015,27 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         return cy - y;
     }
 
+    /** Word-wrapped text cut off after a number of lines, the last ending in an ellipsis. */
+    static void wrapMax(Graphics2D g, String s, double x, double y, double w, Font f, Color c, int max, double lh) {
+        g.setFont(f);
+        FontMetrics fm = g.getFontMetrics();
+        String[] words = s.split(" ");
+        int i = 0;
+        for (int ln = 0; ln < max && i < words.length; ln++) {
+            StringBuilder line = new StringBuilder(words[i++]);
+            while (i < words.length && fm.stringWidth(line + " " + words[i]) <= w) line.append(" ").append(words[i++]);
+            if (ln == max - 1 && i < words.length) {
+                String t = line.toString();
+                while (t.length() > 1 && fm.stringWidth(t + "...") > w) t = t.substring(0, t.length() - 1);
+                int sp = t.lastIndexOf(' ');
+                if (sp > t.length() - 12 && sp > 0) t = t.substring(0, sp);
+                line = new StringBuilder(t.replaceAll("[,;:.]+$", "") + "...");
+            }
+            g.setColor(c);
+            g.drawString(line.toString(), (float) x, (float) (y + ln * lh));
+        }
+    }
+
     static double wrapHeight(Graphics2D g, String s, double w, Font f) {
         FontMetrics fm = g.getFontMetrics(f);
         double lh = fm.getHeight();
@@ -6420,6 +7237,13 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             g.setColor(new Color(124, 196, 255, 130));
             g.fill(new RoundRectangle2D.Double(s[0] + s[2] - 5, ty, 4, th, 4, 4));
         }
+    }
+
+    /** Jumps a scrollable region to an offset (clamped when it's next drawn). */
+    void scrollTo(String id, double off) {
+        double[] s = scrolls.get(id);
+        if (s == null) { s = new double[]{0, 0, 0, 0, 0, 0, 0}; scrolls.put(id, s); }
+        s[4] = Math.max(0, off); s[6] = s[4];
     }
 
     void resetScroll(String id) { double[] s = scrolls.get(id); if (s != null) { s[4] = 0; s[6] = 0; } }
@@ -7624,7 +8448,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             g.drawString("DESK", (float) tx, 360f);
             text(g, "Four years, or eight, in the Oval Office. Govern, negotiate, survive the crises, and answer to history.", tx + 4, 400, F_SERIF_S, C_DIM);
             double by = 460;
-            u.button(g, tx, by, 340, 54, "New presidency", B_GOLD, () -> { u.setup = new Settings(); u.go(SC_SETUP); });
+            u.button(g, tx, by, 340, 54, "New presidency", B_GOLD, () -> { u.setup = new Settings(); showEra(u); u.go(SC_SETUP); });
             by += 66;
             boolean has = SaveGame.exists(SaveGame.AUTO);
             u.button(g, tx, by, 340, 46, has ? "Continue: " + SaveGame.describe(SaveGame.AUTO) : "Continue", has ? B_PRIMARY : B_OFF, has ? () -> SaveGame.load(u, SaveGame.AUTO) : null);
@@ -7632,9 +8456,37 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             boolean slot = SaveGame.exists(SaveGame.SLOT);
             u.button(g, tx, by, 340, 46, "Load saved game", slot ? B_NORM : B_OFF, slot ? () -> SaveGame.load(u, SaveGame.SLOT) : null, slot ? SaveGame.describe(SaveGame.SLOT) : "No saved game yet.");
             by += 58;
-            u.button(g, tx, by, 340, 46, "Quit", B_GHOST, () -> { if (u.frame != null) u.frame.dispose(); });
+            u.button(g, tx, by, 340, 46, "From Battleground 2028", B_NORM, () -> { BgImport.scanned = false; BgImport.sel = 0; u.go(SC_IMPORT); }, "Take office as the winner of a Battleground 2028 game.");
+            by += 58;
+            u.button(g, tx, by, 166, 46, "Watch history", B_NORM, () -> watchRandom(u), "Pick a random era and let the real president govern while you watch.");
+            u.button(g, tx + 174, by, 166, 46, "Hall of Fame", B_NORM, () -> u.go(SC_HALL), "Your finished presidencies and achievements.");
+            by += 58;
+            if (u.frame != null) u.button(g, tx, by, 340, 40, "Quit", B_GHOST, () -> u.frame.dispose());
             text(g, "Everything that happens in a game is fiction. Real people appear as stylised characters; the game never quotes them.", 80, DH - 30, F_XS, C_FAINT);
             if (status != null) text(g, status, 80, DH - 52, F_XS, C_AMBER);
+        }
+
+        /** Scrolls the list of inaugurations so the chosen one is in view. */
+        static void showEra(ResoluteDesk u) {
+            int i = 0;
+            for (int k = 0; k < ERAS.size(); k++) if (ERAS.get(k).year == u.setup.year) i = k;
+            u.scrollTo("eras", i * 104 - 646 + 124);
+        }
+
+        /** Watch mode from the title screen: a random era, the real winner, the game playing itself. */
+        static void watchRandom(ResoluteDesk u) {
+            Random r = new Random(System.nanoTime());
+            Era e = ERAS.get(r.nextInt(ERAS.size() - 1));
+            Settings s = new Settings();
+            s.year = e.year;
+            Cand w = eraRoster(e).get(0);
+            s.presId = w.id; s.vpId = defaultVp(e, w); s.tutorial = false;
+            u.setup = s;
+            start(u);
+            u.game.watch = true;
+            u.game.tut = -1;
+            u.modal = null;
+            u.toast("Watching " + w.name() + " from " + e.year + ". Click 'Watching...' to take over.", C_GOLD);
         }
 
         // ---- a new presidency --------------------------------------------------------------------------------
@@ -7643,19 +8495,25 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             header(u, g, "A New Presidency", "Choose when you take office and how the country looks on day one.");
             Era cur = era(s.year);
             double ax = 48, aw = 480;
-            u.panel(g, ax, 124, aw, 690, "When you take office");
-            double y = 168;
+            u.panel(g, ax, 124, aw, 690, "When you take office: " + ERAS.size() + " inaugurations");
+            double top = 160, hh = 646;
+            double off = u.beginScroll(g, "eras", ax + 10, top, aw - 20, hh);
+            int h0 = u.hits.size();
+            double y = top - off;
             for (Era e : ERAS) {
                 final Era ee = e;
                 boolean on = e.year == s.year;
-                u.card(g, ax + 18, y, aw - 36, 150, on, () -> { s.year = ee.year; s.presId = null; s.vpId = null; s.custom = null; }, null);
-                text(g, String.valueOf(e.year), ax + 36, y + 42, new Font(SERIF, Font.BOLD, 34), on ? C_GOLD : Color.white);
-                text(g, e.name, ax + 140, y + 30, F_H2, Color.white);
-                text(g, e.fictional ? "A projected future" : "Inauguration day, January 20", ax + 140, y + 50, F_XS, e.fictional ? C_AMBER : C_DIM);
-                wrap(g, e.blurb, ax + 36, y + 76, aw - 72, F_XS, C_TEXT);
-                y += 162;
+                u.card(g, ax + 18, y, aw - 36, 96, on, () -> { s.year = ee.year; s.presId = null; s.vpId = null; s.custom = null; }, null);
+                text(g, String.valueOf(e.year), ax + 32, y + 36, new Font(SERIF, Font.BOLD, 28), on ? C_GOLD : Color.white);
+                text(g, e.name, ax + 124, y + 26, F_BB, Color.white);
+                Cand w = e.winnerId != null ? candById(e.winnerId) : null;
+                text(g, e.fictional ? "A projected future" : (w != null ? w.name() + ", " : "") + MONTH_FULL[e.inM] + " " + e.inD, ax + 124, y + 44, F_XS, e.fictional ? C_AMBER : C_DIM);
+                String bl = e.blurb.indexOf(". ") > 0 && e.blurb.indexOf(". ") < 22 ? e.blurb.substring(e.blurb.indexOf(". ") + 2) : e.blurb;
+                wrapMax(g, bl, ax + 32, y + 66, aw - 72, F_XS, C_TEXT, 2, 16);
+                y += 104;
             }
-            wrap(g, "Earlier start years, every inauguration from 1933 on with that era's Congress, economy, leaders and issues, arrive in a later update.", ax + 18, y + 10, aw - 36, F_XS, C_FAINT);
+            u.clipHits(h0, top, top + hh);
+            u.endScroll(g, "eras", ERAS.size() * 104);
             // conditions
             double bx = ax + aw + 16, bw = 560;
             u.panel(g, bx, 124, bw, 690, "Starting conditions");
@@ -7682,12 +8540,16 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             u.stepper(g, bx + 380, y, ps < 0 ? "Senate: era" : "Senate: " + ps, () -> s.cSenate = Math.max(25, (s.cSenate < 0 ? 50 : s.cSenate) - 1), () -> s.cSenate = Math.min(75, (s.cSenate < 0 ? 50 : s.cSenate) + 1), "Your party's senators (50 plus the vice president is a majority).", 110);
             y += 44;
             u.button(g, bx + 18, y, 200, 30, "Reset to the era", B_GHOST, () -> { s.cApproval = Double.NaN; s.cUnemp = Double.NaN; s.cInfl = Double.NaN; s.cGdp = Double.NaN; s.cHouse = -1; s.cSenate = -1; });
+            y += 50;
+            u.button(g, bx + 18, y, bw - 36, 30, (s.tutorial ? "[x] " : "[  ] ") + "Show me around the Oval Office (a one-minute tour)", B_GHOST, () -> s.tutorial = !s.tutorial);
+            y += 44;
+            wrap(g, cur.blurb, bx + 18, y, bw - 36, F_XS, C_DIM);
             // the era at a glance
             double cx = bx + bw + 16, cw = DW - 48 - cx;
             u.panel(g, cx, 124, cw, 690, cur.year + " at a glance");
             y = 170;
             String[][] rows = {{"Unemployment", fmt1(cur.unemp) + "%"}, {"Inflation", fmt1(cur.infl) + "%"}, {"Growth", fmt1(cur.gdp) + "%"}, {"Fed funds rate", fmt1(cur.fed) + "%"},
-                    {"10-year Treasury", fmt1(cur.tenYr) + "%"}, {"Stocks (S&P 500)", thousands(Math.round(cur.stocks))}, {"Gas", "$" + fmt2(cur.gas)},
+                    {"10-year Treasury", fmt1(cur.tenYr) + "%"}, {"Stocks (S&P index)", thousands(Math.round(cur.stocks))}, {"Gas", "$" + fmt2(cur.gas)},
                     {"Debt held by the public", Math.round(cur.debt) + "% of GDP"}, {"Deficit", fmt1(cur.deficit) + "% of GDP"}, {"Fed chair", cur.fedChair}, {"Outgoing president", cur.predecessor}};
             for (String[] r : rows) { text(g, r[0], cx + 18, y, F_S, C_TEXT); textR(g, r[1], cx + cw - 18, y, F_BB, Color.white); y += 26; }
             y += 10;
@@ -7697,6 +8559,14 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 text(g, "House: " + cur.houseD + " D - " + (435 - cur.houseD) + " R", cx + 18, y, F_S, C_TEXT); y += 22;
                 text(g, "Senate: " + cur.senateD + " D - " + (100 - cur.senateD) + " R", cx + 18, y, F_S, C_TEXT); y += 22;
                 text(g, "Speaker " + (cur.houseD >= 218 ? cur.speakerD : cur.speakerR) + "; Senate leader " + (cur.senateD >= 51 ? cur.leaderD : cur.leaderR), cx + 18, y, F_XS, C_DIM);
+                y += 22;
+                if (cur.year < 2025) {
+                    List<String> ct = courtIn(cur);
+                    int nr = 0; for (String j : ct) if (j.split("\\|")[2].equals("R")) nr++;
+                    text(g, "Supreme Court: " + nr + " appointed by Republicans, " + (ct.size() - nr) + " by Democrats", cx + 18, y, F_XS, C_DIM);
+                    y += 22;
+                    for (String wsp : WAR_START) if (wsp.startsWith(cur.year + "|")) for (String tok : wsp.substring(5).split(" ")) { text(g, "At war: " + WAR_NAME[warIndex(tok.split(":")[0])].replace("The ", "the "), cx + 18, y, F_XS, C_AMBER); y += 20; }
+                }
             } else wrap(g, "Depends on who won: your party starts with about 232 House seats and 51 senators as a Democrat, or 229 and 52 as a Republican.", cx + 18, y, cw - 36, F_XS, C_TEXT);
             u.button(g, 48, 832, 180, 44, "Back", B_GHOST, () -> u.go(SC_HOME));
             u.button(g, DW - 48 - 300, 832, 300, 44, "Choose your president", B_GOLD, () -> { sel = -1; Cand w = era(s.year).winnerId != null ? candById(era(s.year).winnerId) : null; pickParty = w != null ? w.party : DEM; u.go(SC_PICK); });
@@ -7715,7 +8585,8 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         static void pick(ResoluteDesk u, Graphics2D g) {
             Settings s = u.setup;
             Era e = era(s.year);
-            header(u, g, "Choose Your President", e.year == 2025 ? "Donald Trump won in 2024. Play him, or anyone else as a what-if." : "Who won the 2028 election? Pick them, or create your own president.");
+            Cand win = e.winnerId != null ? candById(e.winnerId) : null;
+            header(u, g, "Choose Your President", e.year == 2029 ? "Who won the 2028 election? Pick them, or create your own president." : (win != null ? win.name() : "The winner") + " won in " + (e.year - 1) + ". Play them, the runner-up, or anyone else as a what-if.");
             List<Cand> all = eraRoster(e);
             List<Cand> l = new ArrayList<Cand>();
             for (Cand c : all) if (c.party == pickParty) l.add(c);
@@ -7815,6 +8686,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             Settings s = u.setup;
             s.seed = System.nanoTime();
             Game g = Setup.newGame(s);
+            g.tut = s.tutorial ? 0 : -1;
             u.game = g;
             Oval.begin(u);
         }
@@ -7936,12 +8808,13 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             String vp = g.vp != null ? " Your vice president is " + g.vp.name() + "." : "";
             u.modal("The Oath of Office", "\"I do solemnly swear that I will faithfully execute the Office of President of the United States, and will to the best of my ability, preserve, protect and defend the Constitution of the United States.\"\n\n"
                             + "It is noon on " + dateLong(0) + ". You are " + g.pres.name() + ", the president of the United States." + vp + "\n\n"
-                            + "Plan your week at the Resolute Desk, check the country through the windows and the economy in the briefing book, then end the week. This version covers your schedule, your health, the economy and public opinion; Congress, the cabinet, the world and the press arrive in later updates.",
+                            + "Plan your week at the Resolute Desk, check the country through the windows and the economy in the briefing book, then end the week. Congress is through the Roosevelt Room door, your staff and cabinet in the West Wing, the world at the globe and the press through the door on the left."
+                            + (g.tut >= 0 ? " A short tour will show you around; you can skip it at any time." : ""),
                     new String[]{"Get to work"}, new Runnable[]{null}, C_GOLD);
             SaveGame.save(u, SaveGame.AUTO);
         }
 
-        static void update(ResoluteDesk u, double dt) { tick += dt * 60; if (u.game != null) Decisions.show(u, u.game); }
+        static void update(ResoluteDesk u, double dt) { tick += dt * 60; if (u.game != null) { Watch.update(u, u.game, dt); if (!u.game.watch) Decisions.show(u, u.game); } }
 
         static void key(ResoluteDesk u, KeyEvent e) {
             int k = e.getKeyCode();
@@ -7958,17 +8831,20 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             snd(Sfx.TURN);
             SaveGame.save(u, SaveGame.AUTO);
             if (g.removed) {
+                g.watch = false;
                 u.modal("Removed from Office", (g.ex != null && g.ex.impResult != null ? g.ex.impResult + " " : "") + "Your presidency ends here, on " + dateLong(g.day()) + ". Historians will argue about it for decades.",
-                        new String[]{"Main menu"}, new Runnable[]{() -> u.go(SC_HOME)}, C_BAD);
+                        new String[]{"The verdict of history"}, new Runnable[]{() -> Legacy.begin(u)}, C_BAD);
                 return;
             }
+            if (g.night) { Night.begin(u); return; }
             if (g.over) {
-                u.modal("The End of the Term", "Your four years are up. Re-election, the second term and the verdict of history arrive in a later update. For now, thank you for your service, Mr. or Madam President.",
-                        new String[]{"Main menu"}, new Runnable[]{() -> u.go(SC_HOME)}, C_GOLD);
+                g.watch = false;
+                u.modal("The End of " + (g.term == 1 ? "the Term" : "Your Presidency"), "At noon on January 20 you hand the office to " + successorName(g) + ". Thank you for your service.",
+                        new String[]{"The verdict of history"}, new Runnable[]{() -> Legacy.begin(u)}, C_GOLD);
                 return;
             }
-            if (g.stamina < 25) u.toast("You're exhausted. Schedule rest this week.", C_BAD);
-            u.go(SC_PAPER);
+            if (g.stamina < 25 && !g.watch) u.toast("You're exhausted. Schedule rest this week.", C_BAD);
+            if (!g.watch) u.go(SC_PAPER);
         }
 
         // ---- the top bar, shared by every room ----
@@ -7980,30 +8856,40 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             seal(g, 30, 28, 20);
             text(g, "THE WHITE HOUSE", 60, 24, F_TB, C_GOLD);
             text(g, dateLong(game.day()), 60, 44, F_SB, Color.white);
-            double x = 360;
+            double x = 320;
             double last = game.hist.size() >= 2 ? game.hist.get(game.hist.size() - 2)[H_APP] : game.approval;
             stat(g, x, "APPROVAL", Math.round(game.approval) + "%", (game.approval >= last ? "+" : "") + fmt1(game.approval - last), game.approval >= 50 ? C_GOOD : game.approval >= 42 ? Color.white : C_BAD);
-            x += 150;
+            x += 135;
             label(g, "STAMINA", x, 22, C_DIM);
-            bar(g, x, 30, 110, 8, game.stamina / 100, game.stamina >= 50 ? C_GOOD : game.stamina >= 25 ? C_AMBER : C_BAD);
-            textR(g, String.valueOf(Math.round(game.stamina)), x + 140, 40, F_SB, Color.white);
-            x += 170;
+            bar(g, x, 30, 96, 8, game.stamina / 100, game.stamina >= 50 ? C_GOOD : game.stamina >= 25 ? C_AMBER : C_BAD);
+            textR(g, String.valueOf(Math.round(game.stamina)), x + 126, 40, F_SB, Color.white);
+            x += 150;
             label(g, "STRESS", x, 22, C_DIM);
-            bar(g, x, 30, 110, 8, game.stress / 100, game.stress < 50 ? C_ACCENT : game.stress < 75 ? C_AMBER : C_BAD);
-            textR(g, String.valueOf(Math.round(game.stress)), x + 140, 40, F_SB, Color.white);
-            x += 170;
+            bar(g, x, 30, 96, 8, game.stress / 100, game.stress < 50 ? C_ACCENT : game.stress < 75 ? C_AMBER : C_BAD);
+            textR(g, String.valueOf(Math.round(game.stress)), x + 126, 40, F_SB, Color.white);
+            x += 150;
             stat(g, x, "UNEMPLOYMENT", fmt1(game.econ.unemp) + "%", null, Color.white);
-            x += 130;
+            x += 120;
             stat(g, x, "INFLATION", fmt1(game.econ.infl) + "%", null, game.econ.infl > 4 ? C_AMBER : Color.white);
-            x += 110;
+            x += 100;
             stat(g, x, "GAS", "$" + fmt2(game.econ.gas), null, Color.white);
-            x += 90;
+            x += 80;
             int wk = game.week + 1;
-            stat(g, x, "TERM " + game.term, "Week " + wk, "of " + game.termWeeks, C_TEXT);
-            u.button(g, DW - 190, 10, 170, 36, game.over ? "Term over" : "End week  >", game.over ? B_OFF : B_GOLD, game.over ? null : () -> endWeek(u), "Play out this week. (Space)");
+            stat(g, x, "TERM " + game.term, "Week " + (game.tw() + 1), "of " + (game.termWeeks - game.termStart), C_TEXT);
+            if (game.over) u.button(g, DW - 190, 10, 170, 36, "The verdict  >", B_GOLD, () -> Legacy.begin(u), "Your presidency is over. See how history judges it.");
+            else u.button(g, DW - 190, 10, 170, 36, game.watch ? "Watching..." : "End week  >", game.watch ? B_NORM : B_GOLD, () -> { if (game.watch) game.watch = false; else endWeek(u); }, game.watch ? "Watch mode is on: click to take the controls back." : "Play out this week. (Space)");
             u.button(g, DW - 252, 10, 54, 36, "Save", B_GHOST, () -> SaveGame.save(u, SaveGame.SLOT), "Save the game");
+            if (!game.over) u.button(g, DW - 378, 10, 58, 36, game.watch ? Watch.SPEED[clampi(game.watchSpeed, 0, 2)] : "Watch", game.watch ? B_PRIMARY : B_GHOST,
+                    () -> { if (game.watch) game.watchSpeed = (game.watchSpeed + 1) % 3; else { game.watch = true; game.tut = -1; Watch.timer = 0; } },
+                    game.watch ? "Watch speed: click to change. Click 'Watching...' to stop." : "Watch mode: the game plays itself, week after week, until you take back the controls.");
             u.button(g, DW - 314, 10, 54, 36, "Menu", B_GHOST, () -> u.modal("Leave the Oval Office?", "Your game is saved automatically every week.", new String[]{"Stay", "Main menu"},
                     new Runnable[]{null, () -> { SaveGame.save(u, SaveGame.AUTO); u.go(SC_HOME); }}, null));
+        }
+
+        static String successorName(Game g) {
+            Reelect re = g.re;
+            if (re != null && re.done && re.opp != null) { Cand w = re.won ? (re.nominee != null ? re.nominee : g.pres) : re.opp; if (w != g.pres) return w.name(); }
+            return "your successor";
         }
 
         static void stat(Graphics2D g, double x, String lab, String v, String sub, Color c) {
@@ -8083,8 +8969,9 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             }
             topBar(u, g, game);
             weekCard(u, g, game);
-            hillCard(u, g, game);
+            if (game.re != null && !game.re.done && game.re.stage >= 2) campaignCard(u, g, game); else hillCard(u, g, game);
             ticker(u, g, game);
+            Tutorial.draw(u, g, game);
         }
 
         static void weekCard(ResoluteDesk u, Graphics2D g, Game game) {
@@ -8103,6 +8990,23 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             textR(g, String.valueOf(Math.round(ps)), x + w - 14, y + 83, F_SB, Color.white);
             text(g, "Sleep about " + fmt1(Week.sleepOf(game)) + " hours a night", x + 14, y + 104, F_XS, C_DIM);
             u.button(g, x + 14, y + 114, w - 28, 26, "Plan the week", B_NORM, () -> Rooms.open(u, R_DESK));
+        }
+
+        /** In an election year: the race at a glance. */
+        static void campaignCard(ResoluteDesk u, Graphics2D g, Game game) {
+            Reelect re = game.re;
+            double w = 300, h = 150, x = DW - 24 - w, y = 640;
+            g.setColor(new Color(8, 13, 26, 220));
+            g.fill(new RoundRectangle2D.Double(x, y, w, h, 12, 12));
+            g.setColor(new Color(242, 193, 78, 70));
+            g.draw(new RoundRectangle2D.Double(x, y, w, h, 12, 12));
+            Cand me = re.nominee != null ? re.nominee : game.pres;
+            label(g, "THE " + re.year + " RACE", x + 14, y + 22, C_GOLD);
+            text(g, me.last + (re.opp != null ? " vs. " + re.opp.last : ": the other side hasn't picked"), x + 14, y + 44, F_SB, Color.white);
+            text(g, "Polls: " + (re.nat >= 0 ? me.last + " +" : (re.opp != null ? re.opp.last : "them") + " +") + fmt1(Math.abs(re.nat)), x + 14, y + 66, F_S, re.nat >= 0 ? C_GOOD : C_BAD);
+            text(g, "Electoral votes today: " + Reelection.forecastEv(game), x + 14, y + 86, F_XS, C_DIM);
+            text(g, Math.max(0, Reelection.weeksTo(game)) + " weeks to Election Day", x + 14, y + 104, F_XS, C_DIM);
+            u.button(g, x + 14, y + 114, w - 28, 26, "Campaign headquarters", B_NORM, () -> { PressRoom.tab = 5; Rooms.open(u, R_PRESS); });
         }
 
         /** What's moving on Capitol Hill, bottom right of the office. */
@@ -8447,7 +9351,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 if (++n >= 8) break;
             }
             for (int i = 0; i < NSLOT && n < 8; i++) if (game.act[i] == AC_ABROAD && game.arg[i] >= 0 && (i == 0 || game.act[i - 1] != AC_ABROAD)) {
-                text(g, DOW3[dowOf(game.day() + i / 3)] + ": " + CT_NAME[game.arg[i]], px + 18, ty, F_XS, C_TEXT);
+                text(g, DOW3[dowOf(game.day() + i / 3)] + ": " + cname(game, game.arg[i]), px + 18, ty, F_XS, C_TEXT);
                 textR(g, fmt1(flightAbroad(game.arg[i])) + " hours each way", px + pw - 18, ty, F_XS, C_AMBER);
                 ty += 18; n++;
             }
@@ -8475,7 +9379,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             g.fill(new RoundRectangle2D.Double(x + 8, y + 10, 5, h - 20, 4, 4));
             label(g, SLOT[i % 3].toUpperCase(), x + 20, y + 22, C_DIM);
             text(g, AC_NAME[a], x + 20, y + 46, F_BB, a == AC_FREE ? C_DIM : Color.white);
-            String sub = arg >= 0 && a == AC_ABROAD ? CT_NAME[arg] : arg >= 0 && AC_ISSUE[a] ? PISSUE[arg] : arg >= 0 && AC_STATE[a] ? STATES[arg].name : pend ? "pick a state on the map" : null;
+            String sub = arg >= 0 && a == AC_ABROAD ? cname(game, arg) : arg >= 0 && AC_ISSUE[a] ? PISSUE[arg] : arg >= 0 && AC_STATE[a] ? STATES[arg].name : pend ? "pick a state on the map" : null;
             if (sub != null) wrap(g, sub, x + 20, y + 64, w - 28, F_XS, pend ? C_GOLD : C_TEXT);
             double c = AC_STAMINA[a];
             if (isTrip(a) && arg >= 0) c -= Math.min(6, Week.flight(arg) * 0.9);
@@ -8491,7 +9395,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 if (a == AC_CAMPDAVID && !weekend) continue;
                 if (a == AC_CONGRESS && weekend) continue;
                 if (a == AC_WORKLATE && i % 3 != 2) continue;
-                if (a == AC_CAMPAIGN && !Midterms.season(game)) continue;
+                if (a == AC_CAMPAIGN && !Midterms.season(game) && !Reelection.season(game)) continue;
                 if (a == AC_CABINET && (weekend || i % 3 == 2)) continue;
                 opts.add(a);
             }
@@ -8508,7 +9412,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                     for (int j = 0; j < NC; j++) ord[j] = j;
                     Arrays.sort(ord, (x1, x2) -> Double.compare(flightAbroad(x1), flightAbroad(x2)));
                     String[] cs = new String[NC];
-                    for (int j = 0; j < NC; j++) cs[j] = CT_NAME[ord[j]] + "  (" + fmt1(flightAbroad(ord[j])) + " hours)";
+                    for (int j = 0; j < NC; j++) cs[j] = cname(game, ord[j]) + "  (" + fmt1(flightAbroad(ord[j])) + " hours)";
                     u.openPopup(Math.min(u.mx, DW - 340), 120, 320, "Where to?", cs, j -> { int c0 = ord[j]; for (int s2 = i; s2 < Math.min(NSLOT, i + 3); s2++) { game.act[s2] = AC_ABROAD; game.arg[s2] = c0; } });
                 } else if (AC_STATE[a]) {
                     pendingSlot = i; pendingAct = a;
@@ -9034,9 +9938,9 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
 
         static List<BillDef> agenda(Game g) {
             List<BillDef> l = new ArrayList<BillDef>();
-            for (BillDef d : BILLS) if (d.lean == g.party) l.add(d);
-            for (BillDef d : BILLS) if (d.lean < 0) l.add(d);
-            for (BillDef d : BILLS) if (d.lean >= 0 && d.lean != g.party) l.add(d);
+            for (BillDef d : BILLS) if (d.lean == g.party && billOk(g, d)) l.add(d);
+            for (BillDef d : BILLS) if (d.lean < 0 && billOk(g, d)) l.add(d);
+            for (BillDef d : BILLS) if (d.lean >= 0 && d.lean != g.party && billOk(g, d)) l.add(d);
             return l;
         }
 
@@ -9230,9 +10134,9 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             text(g, "That's about " + myHouse + " House seats for " + PARTIES[game.party] + " (" + Midterms.signedInt(myHouse - game.myHouse()) + "); 218 is a majority.", 66, y, F_S, C_TEXT);
             y += 36;
             wrap(g, "The president's party usually loses ground in a midterm. Your approval and the economy matter most; campaigning and the money you raise for candidates can add a point or two. "
-                    + (Midterms.season(game) ? "It's campaign season: schedule \"Campaign\" stops from your calendar." : "Campaign season opens in late summer of " + (game.era.year + 1) + "."), 66, y, 560, F_XS, C_DIM);
+                    + (Midterms.season(game) ? "It's campaign season: schedule \"Campaign\" stops from your calendar." : "Campaign season opens in late summer of " + (termYear(game) + 1) + "."), 66, y, 560, F_XS, C_DIM);
             y += 70;
-            text(g, "Raised for your party: $" + fmt1(game.funds) + " million", 66, y, F_S, C_TEXT);
+            text(g, "Raised for your party: " + partyMoney(game.funds), 66, y, F_S, C_TEXT);
             // senate seats up
             double px = 664, pw = DW - 48 - px;
             u.panel(g, px, 160, pw, 652, "Senate seats up");
@@ -9368,7 +10272,9 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             text(g, "Post", 66, y, F_TB, C_FAINT); text(g, "Who", 250, y, F_TB, C_FAINT); text(g, "Skill", 560, y, F_TB, C_FAINT); text(g, "Morale", 660, y, F_TB, C_FAINT);
             text(g, "Readiness", 760, y, F_TB, C_FAINT); textR(g, "Staff", 990, y, F_TB, C_FAINT);
             y += 10;
+            int off = 0;
             for (int k = 0; k < NPOST; k++) {
+                if (!postOn(k)) { off++; continue; }
                 final int kk = k;
                 Person p = x.post[k], nom = x.nominee[k];
                 u.card(g, 58, y, 940, 26, selPost == k, () -> selPost = kk, POST_NAME[k]);
@@ -9385,10 +10291,12 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 textR(g, x.wf[k] >= 10 ? Math.round(x.wf[k]) + "k" : fmt1(x.wf[k]) + "k", 990, y + 17, F_XS, C_DIM);
                 y += 28;
             }
-            double tot = 0; for (double w : x.wf) tot += w;
+            double tot = 0; for (int k = 0; k < NPOST; k++) if (postOn(k)) tot += x.wf[k];
+            if (off > 0) text(g, off + " of today's posts don't exist yet; their work is done by older departments, and Congress creates them as the years go by.", 66, 784, F_XS, C_FAINT);
             text(g, "Federal civilian workforce: about " + fmt1(tot / 1000) + " million. Schedule a cabinet meeting from your calendar to lift morale and readiness.", 66, 802, F_XS, C_DIM);
             // the selected post
             double px = 1022, pw = DW - 48 - px;
+            if (!postOn(selPost)) selPost = 0;
             int k = selPost;
             Person p = x.post[k], nom = x.nominee[k];
             u.panel(g, px, 160, pw, 652, POST_NAME[k]);
@@ -9548,7 +10456,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 double lg = Actions.legal(game, AD_LEGAL[i]);
                 text(g, "Chance a court blocks it", dx + 18, y, F_S, C_TEXT); textR(g, Math.round(lg * 100) + "%", dx + dw - 18, y, F_SB, lg > 0.5 ? C_AMBER : C_TEXT); y += 22;
                 if (AD_KIND[i] == K_RULE) { text(g, "Comment period", dx + 18, y, F_S, C_TEXT); textR(g, "about " + Math.round(14 - 6 * Cabinet.pq(game, P_OMB)) + " weeks", dx + dw - 18, y, F_SB, C_TEXT); y += 22; }
-                int post = AREA_POST[AD_AREA[i]];
+                int post = ep(AREA_POST[AD_AREA[i]]);
                 text(g, "Carried out by " + POST_NAME[post], dx + 18, y, F_S, C_TEXT); textR(g, "readiness " + Math.round(x.ready[post]), dx + dw - 18, y, F_SB, good(x.ready[post])); y += 22;
                 String fx = effects(AD_FX[i]);
                 if (fx.length() > 0) { y += 8; y += wrap(g, "Effects: " + fx, dx + 18, y, dw - 36, F_XS, C_DIM) + 8; }
@@ -9786,17 +10694,29 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             }
             if (g.world == null) Diplo.setup(g);
             if (g.home == null) HomeFront.setup(g);
+            if (g.world.name == null) History.world(g, g.era.year, false);
+            if (g.world.wars == null) History.setup(g);
+            if (g.termWeeks <= 0 || g.term == 1 && g.termWeeks == 208 && g.era.inM != 0) g.termWeeks = termEnd(g);
+            if (g.milestones == null) g.milestones = new ArrayList<String>();
+            if (g.histOk == null) g.histOk = new ArrayList<String>();
+            if (g.econ.gasRef == 0) { g.econ.gasRef = 3.1; g.econ.uRef0 = 4.5; g.econ.piRef0 = 2.5; g.econ.uRef = 4.5; g.econ.piRef = 2.5; }
+            if (g.minApproval == 0) g.minApproval = 100;
         }
 
         static void resume(ResoluteDesk u, Game g) {
             if (g.version < Game.VERSION) { u.info("An older save", "This game was saved by an earlier version and can't be continued in this one."); return; }
-            CAL_Y = g.era.year; CAL_M = 0; CAL_D = 20;
             Elect.init();
             Groups.init();
+            if (g.era.inD == 0) { Era e = era(g.era.year); g.era.inM = e.inM; g.era.inD = e.inD; g.era.termOf = e.termOf; g.era.fedCred = e.fedCred; g.era.labels = e.labels; }
+            applyEra(g.era);
+            applyYear(yearNow(g));
+            GEN_YEAR = yearNow(g);
+            if (g.re != null) setEv(g.re.year);
             upgrade(g);
             g.dirty = true;
             u.game = g;
             u.setup = g.set;
+            if (g.over || g.removed) { Legacy.lastScores = null; Legacy.epi = null; u.go(SC_LEGACY); return; }
             u.go(SC_OVAL);
             u.toast("Welcome back. " + dateLong(g.day()) + ".", C_ACCENT);
         }
@@ -10239,6 +11159,15 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         List<String> record = new ArrayList<String>();
         int[] opCool = new int[OP_NAME.length], cvCool = new int[CV_NAME.length];
         int art5Week = -99, pressWeek = -99, drillWeek = -99;
+        // history: the countries as they were, the wars, the turning points already passed
+        String[] name;
+        int[] align;
+        double[] base, power;
+        boolean[] nuke, gone, hfired;
+        boolean modern = true;
+        double tradeK = 1;
+        List<War> wars;
+        int worldYear = -1, pressYear = -1;
     }
 
     static final class Diplo {
@@ -10261,6 +11190,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             if (g.set.scenario == 2) { w.twt = Math.max(w.twt, 50); w.proxy = 60; w.terror = 50; }
             // what's already in the economy's tariff stays; tariffs set here are on top of it
             w.tariffAdd = 0;
+            History.world(g, g.era.year, true);
         }
 
         static double totalTrade() { double t = 0; for (double v : CT_TRADE) t += v; return t + 900; }
@@ -10272,8 +11202,8 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             for (int i = 0; i < NC; i++) add += TARIFF_VAL[w.tariff[i]] * CT_TRADE[i] / tot;
             g.econ.tariff += add - w.tariffAdd;
             w.tariffAdd = add;
-            if (level > 0) { w.rel[c] -= 4 + level * 3; g.log(NK_ECON, "New " + TARIFF_VAL[level] + "% tariffs on goods from " + CT_NAME[c], null, CT_TRADE[c] > 100 ? 1.6 : 0.7); }
-            else g.log(NK_ECON, "Tariffs on " + CT_NAME[c] + " are lifted", null, 0.8);
+            if (level > 0) { w.rel[c] -= 4 + level * 3; g.log(NK_ECON, "New " + TARIFF_VAL[level] + "% tariffs on goods from " + cnameIn(g, c), null, tradeOf(g, c) > 100 ? 1.6 : 0.7); }
+            else g.log(NK_ECON, "Tariffs on " + cname(g, c) + " are lifted", null, 0.8);
         }
 
         static void setSanction(Game g, int c, int level) {
@@ -10282,7 +11212,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             w.sanction[c] = level;
             w.rel[c] -= (level - old) * 6;
             if (c == CC_RU || c == CC_IR || c == CC_VE) oil(g, (level - old) * (c == CC_RU ? 2.0 : 1.0));
-            g.log(NK_WORLD, (level > old ? "Tougher" : "Lighter") + " sanctions on " + CT_NAME[c], null, CT_POWER[c] >= 5 ? 1.4 : 0.6);
+            g.log(NK_WORLD, (level > old ? "Tougher" : "Lighter") + " sanctions on " + cnameIn(g, c), null, power(g, c) >= 5 ? 1.4 : 0.6);
         }
 
         static void setAid(Game g, int c, int level) {
@@ -10291,7 +11221,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             w.aid[c] = level;
             w.rel[c] += (level - old) * 6;
             g.econ.fiscal += (level - old) * (c == CC_UA ? 0.06 : 0.015);
-            g.log(NK_WORLD, (level > old ? "More" : "Less") + " American aid for " + CT_NAME[c], null, c == CC_UA || c == CC_IL ? 1.3 : 0.5);
+            g.log(NK_WORLD, (level > old ? "More" : "Less") + " American aid for " + cname(g, c), null, c == CC_UA || c == CC_IL ? 1.3 : 0.5);
         }
 
         static void oil(Game g, double d) { g.econ.oilBase += d; g.world.oilAdd += d; }
@@ -10303,10 +11233,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             if (w.callsThisWeek >= 3) return "You've made three calls this week.";
             w.callsThisWeek++;
             double k = (g.pres.a[A_CHA] + g.pres.a[A_FPC]) / 140.0;
-            double gain = (3 + 4 * k) * (g.week - w.lastCall[c] < 4 ? 0.4 : 1) * (CT_ALIGN[c] == AL_ADVERSARY ? 0.6 : 1);
+            double gain = (3 + 4 * k) * (g.week - w.lastCall[c] < 4 ? 0.4 : 1) * (align(g, c) == AL_ADVERSARY ? 0.6 : 1);
             w.rel[c] = clamp(w.rel[c] + gain, -100, 100);
             w.lastCall[c] = g.week;
-            if (CT_POWER[c] >= 6 || CT_ALIGN[c] == AL_ADVERSARY) g.log(NK_WORLD, "President " + g.pres.last + " speaks with " + w.leader[c], null, 0.8);
+            if (power(g, c) >= 6 || align(g, c) == AL_ADVERSARY) g.log(NK_WORLD, "President " + g.pres.last + " speaks with " + w.leader[c], null, 0.8);
             if (c == CC_CN) w.twt = Math.max(0, w.twt - 1.5);
             if (c == CC_RU && w.uaStage == 2) w.talks = Math.min(100, w.talks + 2);
             return "You speak with " + w.leader[c] + ". Relations " + (gain >= 4 ? "warm noticeably" : "warm a little") + ".";
@@ -10321,10 +11251,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
 
         static String proposeSummit(Game g, int c) {
             World w = g.world;
-            if (w.summitCountry >= 0) return "You already have a summit planned with " + CT_NAME[w.summitCountry] + ".";
-            if (w.rel[c] < -70 && g.rng.nextDouble() < 0.5) { w.rel[c] -= 2; return CT_NAME[c] + " turns down the invitation."; }
+            if (w.summitCountry >= 0) return "You already have a summit planned with " + cname(g, w.summitCountry) + ".";
+            if (w.rel[c] < -70 && g.rng.nextDouble() < 0.5) { w.rel[c] -= 2; return cname(g, c) + " turns down the invitation."; }
             w.summitCountry = c; w.summitWeek = g.week + 4 + g.rng.nextInt(5); w.summitRound = 0;
-            g.log(NK_WORLD, "The White House announces a summit with " + w.leader[c] + " around " + dateStr(w.summitWeek * 7), null, CT_POWER[c] >= 6 ? 2.0 : 1.0);
+            g.log(NK_WORLD, "The White House announces a summit with " + w.leader[c] + " around " + dateStr(w.summitWeek * 7), null, power(g, c) >= 6 ? 2.0 : 1.0);
             return "Summit with " + w.leader[c] + " set for around " + dateStr(w.summitWeek * 7) + ".";
         }
 
@@ -10335,8 +11265,8 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             w.rel[c] = clamp(w.rel[c] + (abroad ? 9 : 7) * k, -100, 100);
             w.visits[c]++;
             g.issueAdj[PI_FOREIGN] = clamp(g.issueAdj[PI_FOREIGN] + 0.03 * k, -1.5, 1.5);
-            if (CT_ALIGN[c] == AL_TREATY) { if (CT_REGION[c] == RG_EUROPE) w.nato = Math.min(100, w.nato + 2); else w.pacific = Math.min(100, w.pacific + 2); }
-            g.log(NK_WORLD, abroad ? "President " + g.pres.last + " visits " + CT_NAME[c] : w.leader[c] + " visits the White House", null, CT_POWER[c] >= 6 ? 1.4 : 0.8);
+            if (align(g, c) == AL_TREATY) { if (CT_REGION[c] == RG_EUROPE) w.nato = Math.min(100, w.nato + 2); else w.pacific = Math.min(100, w.pacific + 2); }
+            g.log(NK_WORLD, abroad ? "President " + g.pres.last + " visits " + cname(g, c) : w.leader[c] + " visits the White House", null, power(g, c) >= 6 ? 1.4 : 0.8);
         }
 
         // ---- the weekly turn ----
@@ -10349,21 +11279,22 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 if (Integer.parseInt(t[1]) != g.week) continue;
                 int c = ctIdx(t[0]);
                 w.leader[c] = t[2]; w.ltitle[c] = t[3];
-                g.log(NK_WORLD, t[2] + " becomes " + t[3].toLowerCase() + " of " + CT_NAME[c], null, CT_POWER[c] >= 6 ? 1.6 : 0.8);
+                g.log(NK_WORLD, t[2] + " becomes " + t[3].toLowerCase() + " of " + cnameIn(g, c), null, power(g, c) >= 6 ? 1.6 : 0.8);
             }
             // relations drift toward what policy earns
             double fpc = g.pres != null ? (g.pres.a[A_FPC] - 60) / 4.0 : 0;
             for (int c = 0; c < NC; c++) {
-                double target = CT_REL[c] + w.aid[c] * 4 - w.sanction[c] * 5 - TARIFF_VAL[w.tariff[c]] / 2.0 + fpc
-                        + (CT_ALIGN[c] == AL_TREATY ? ((CT_REGION[c] == RG_EUROPE ? w.nato : w.pacific) - 60) / 8 : 0);
+                if (w.gone != null && w.gone[c]) continue;
+                double target = (w.base != null ? w.base[c] : CT_REL[c]) + w.aid[c] * 4 - w.sanction[c] * 5 - TARIFF_VAL[w.tariff[c]] / 2.0 + fpc
+                        + (align(g, c) == AL_TREATY ? ((CT_REGION[c] == RG_EUROPE ? w.nato : w.pacific) - 60) / 8 : 0);
                 if (c == CC_TW || c == CC_JP || c == CC_KR || c == CC_PH || c == CC_AU) target += (w.deter - 55) / 4;
                 if (c == CC_UA) target += w.aid[c] * 4;
                 w.rel[c] = clamp(w.rel[c] + (target - w.rel[c]) * 0.012 + r.nextGaussian() * 0.4, -100, 100);
             }
             // tariffs invite retaliation
-            for (int c = 0; c < NC; c++) if (w.tariff[c] >= 2 && CT_POWER[c] >= 5 && r.nextDouble() < 0.015) {
+            for (int c = 0; c < NC; c++) if (w.tariff[c] >= 2 && power(g, c) >= 5 && r.nextDouble() < 0.015) {
                 e.farm = Math.max(40, e.farm - 4); e.finShock -= 0.25;
-                g.log(NK_ECON, CT_NAME[c] + " retaliates with tariffs on American farm goods", null, 1.4);
+                g.log(NK_ECON, cname(g, c) + " retaliates with tariffs on American farm goods", null, 1.4);
                 w.rel[c] -= 3;
             }
             theaters(g);
@@ -10374,7 +11305,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             if (w.twStage >= 3) e.supplyShock += 0.004 * (w.twStage - 2);
             // standing on foreign policy and security
             double ally = 0; int n = 0;
-            for (int c = 0; c < NC; c++) if (CT_ALIGN[c] == AL_TREATY) { ally += w.rel[c]; n++; }
+            for (int c = 0; c < NC; c++) if (align(g, c) == AL_TREATY && !gone(g, c)) { ally += w.rel[c]; n++; }
             ally /= Math.max(1, n);
             g.issueAdj[PI_FOREIGN] = clamp(g.issueAdj[PI_FOREIGN] + (ally - 55) * 0.0002 + (w.uaStage < 2 ? 0.002 : 0) - (w.twStage >= 3 ? 0.004 : 0), -1.5, 1.5);
             g.issueAdj[PI_SECURITY] = clamp(g.issueAdj[PI_SECURITY] - (w.terror - 40) * 0.0002 - (w.defcon < 5 ? 0.004 : 0), -1.5, 1.5);
@@ -10391,6 +11322,8 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             int[] d = dateOf(g.day());
             for (String s : SUMMITS) {
                 String[] t = s.split("\\|");
+                int yr = yearNow(g);
+                if (t[0].equals("G7") && yr < 1975 || t[0].equals("G20") && yr < 2008 || t[0].equals("NATO") && yr < 1957 || t[0].startsWith("UN") && yr < 1946) continue;
                 int m = Integer.parseInt(t[1]) - 1, day = Integer.parseInt(t[2]);
                 if (Economy.weekHas(g, m, day)) Summit.multilateral(g, t[0]);
             }
@@ -10400,6 +11333,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             World w = g.world;
             Random r = g.rng;
             double dq = Cabinet.pq(g, P_DEF), iq = (Cabinet.pq(g, P_CIA) + Cabinet.pq(g, P_DNI)) / 2;
+            if (!w.modern) { oldWorld(g, iq); return; }
             // Taiwan
             double detT = 30 + w.posture[0] * 9 + w.aid[CC_TW] * 6 + w.pacific * 0.25 + dq * 10;
             w.deter += (detT - w.deter) * 0.03;
@@ -10442,7 +11376,24 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             w.pacific = clamp(w.pacific + (pacT - w.pacific) * 0.02, 0, 100);
         }
 
-        static double avgRel(World w, int region) { double s = 0; int n = 0; for (int c = 0; c < NC; c++) if (CT_REGION[c] == region && CT_ALIGN[c] == AL_TREATY) { s += w.rel[c]; n++; } return n == 0 ? 0 : s / n; }
+        /** Before the modern theaters: terror, spies, migration and the alliances, quietly. */
+        static void oldWorld(Game g, double iq) {
+            World w = g.world;
+            Random r = g.rng;
+            int y = yearNow(g);
+            w.terror = clamp(w.terror + ((y >= 1993 ? 32 : 10) - w.terror) * 0.02 - (iq - 0.55) * 0.3 + r.nextGaussian() * 0.8, 0, 100);
+            w.migr = clamp(w.migr + ((y >= 1975 ? 42 : 20) - w.migr) * 0.02 + r.nextGaussian() * 0.8, 0, 100);
+            if (y >= 1949) {
+                double natoT = 40 + (avgRel(w, RG_EUROPE) - 40) * 0.3 + w.posture[1] * 4;
+                w.nato = clamp(w.nato + (natoT - w.nato) * 0.02, 0, 100);
+            }
+            if (y >= 1951) {
+                double pacT = 40 + (w.rel[CC_JP] + (gone(g, CC_KR) ? 50 : w.rel[CC_KR]) + w.rel[CC_AU] + (gone(g, CC_PH) ? 50 : w.rel[CC_PH])) / 4 * 0.3 + w.posture[0] * 4;
+                w.pacific = clamp(w.pacific + (pacT - w.pacific) * 0.02, 0, 100);
+            }
+        }
+
+        static double avgRel(World w, int region) { double s = 0; int n = 0; for (int c = 0; c < NC; c++) if (CT_REGION[c] == region && (w.align != null ? w.align[c] : CT_ALIGN[c]) == AL_TREATY && (w.gone == null || !w.gone[c])) { s += w.rel[c]; n++; } return n == 0 ? 0 : s / n; }
 
         static double var(Game g, String k) {
             World w = g.world;
@@ -10467,6 +11418,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
 
         static void crises(Game g) {
             World w = g.world;
+            if (!w.modern) return;
             for (int i = 0; i < CR_ID.length; i++) {
                 if (w.cool[i] > 0) continue;
                 if (!cond(g, CR_COND[i])) continue;
@@ -10491,12 +11443,12 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         static double p(Game g, String kind, double base) {
             if (base >= 1) return 1;
             double fpc = g.pres != null && (kind.equals("m") || kind.equals("d") || kind.equals("i")) ? (g.pres.a[A_FPC] - 60) / 250.0 : 0;
-            double m = kind.equals("m") ? (g.ex.ready[P_DEF] - 60) / 300.0 + (Cabinet.pq(g, P_DEF) - 0.6) * 0.2
+            double m = kind.equals("m") ? (Cabinet.rd(g, P_DEF) - 60) / 300.0 + (Cabinet.pq(g, P_DEF) - 0.6) * 0.2
                     : kind.equals("d") ? (Cabinet.pq(g, P_STATE) - 0.6) * 0.3 + (Cabinet.sq(g, S_NSA) - 0.6) * 0.15
                     : kind.equals("i") ? ((Cabinet.pq(g, P_CIA) + Cabinet.pq(g, P_DNI)) / 2 - 0.6) * 0.35
-                    : kind.equals("h") ? (g.ex.ready[P_DHS] - 60) / 250.0 + (Cabinet.pq(g, P_DHS) - 0.6) * 0.25
-                    : kind.equals("j") ? (Cabinet.pq(g, P_DOJ) - 0.6) * 0.3 + (g.ex.ready[P_DOJ] - 60) / 400.0
-                    : kind.equals("x") ? (g.ex.ready[P_HHS] - 60) / 250.0 + (Cabinet.pq(g, P_HHS) - 0.6) * 0.25
+                    : kind.equals("h") ? (Cabinet.rd(g, P_DHS) - 60) / 250.0 + (Cabinet.pq(g, P_DHS) - 0.6) * 0.25
+                    : kind.equals("j") ? (Cabinet.pq(g, P_DOJ) - 0.6) * 0.3 + (Cabinet.rd(g, P_DOJ) - 60) / 400.0
+                    : kind.equals("x") ? (Cabinet.rd(g, P_HHS) - 60) / 250.0 + (Cabinet.pq(g, P_HHS) - 0.6) * 0.25
                     : kind.equals("c") ? (Cabinet.sq(g, S_COMMS) + Cabinet.sq(g, S_PRESS) - 1.2) * 0.15 + (g.pres.a[A_SPE] - 60) / 250.0
                     : (Cabinet.sq(g, S_COS) - 0.6) * 0.15;
             return clamp(base + fpc + m, 0.05, 0.97);
@@ -10510,6 +11462,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         static void crisisDecision(Game g, int i, int k) {
             String[] t = CR_OPTS[i].split(";;")[k].split("\\|");
             boolean ok = g.rng.nextDouble() < p(g, t[2], Double.parseDouble(t[3]));
+            if (ok) g.okCount++; else g.failCount++;
             fx(g, ok ? t[4] : t[5]);
             String story = ok ? t[6] : t[7];
             g.log(ok ? NK_GOOD : NK_BAD, story, null, 1.8);
@@ -10524,6 +11477,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 if (tok.isEmpty()) continue;
                 String[] kv = tok.split("=");
                 String k = kv[0];
+                if (History.fxKey(g, k, kv[1])) continue;
                 double v = Double.parseDouble(kv[1]);
                 if (k.startsWith("rel:")) { int c = ctIdx(k.substring(4)); if (c >= 0) w.rel[c] = clamp(w.rel[c] + v, -100, 100); }
                 else if (k.equals("twt")) w.twt = clamp(w.twt + v, 0, 100); else if (k.equals("deter")) w.deter = clamp(w.deter + v, 0, 100);
@@ -10546,7 +11500,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 else if (k.equals("prices")) g.issueAdj[PI_PRICES] = clamp(g.issueAdj[PI_PRICES] + v, -1.5, 1.5);
                 else if (k.equals("jobs")) g.issueAdj[PI_JOBS] = clamp(g.issueAdj[PI_JOBS] + v, -1.5, 1.5);
                 else if (k.equals("health")) g.issueAdj[PI_HEALTH] = clamp(g.issueAdj[PI_HEALTH] + v, -1.5, 1.5);
-                else if (k.equals("rights")) g.issueAdj[PI_RIGHTS] = clamp(g.issueAdj[PI_RIGHTS] + v, -1.5, 1.5);
+                else if (k.equals("rights")) { g.issueAdj[PI_RIGHTS] = clamp(g.issueAdj[PI_RIGHTS] + v, -1.5, 1.5); g.justice += v; }
                 else if (k.equals("tech")) g.issueAdj[PI_TECH] = clamp(g.issueAdj[PI_TECH] + v, -1.5, 1.5);
                 else if (k.equals("energy")) g.issueAdj[PI_ENERGY] = clamp(g.issueAdj[PI_ENERGY] + v, -1.5, 1.5);
                 else if (k.equals("edu")) g.issueAdj[PI_EDU] = clamp(g.issueAdj[PI_EDU] + v, -1.5, 1.5);
@@ -10555,6 +11509,8 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 else if (k.equals("base")) { if (g.home != null) { g.home.fac[0] = clamp(g.home.fac[0] + v, 0, 100); g.home.fac[1] = clamp(g.home.fac[1] + v * 0.6, 0, 100); } for (Bloc b : g.cong.blocs) if (b.party == g.party) b.rel = clamp(b.rel + v * 0.5, 0, 100); }
                 else if (k.equals("opp")) { for (Bloc b : g.cong.blocs) if (b.party != g.party) b.rel = clamp(b.rel + v, 0, 100); }
                 else if (k.equals("scandal")) g.scandal += v;
+                else if (k.equals("farm")) e.farm = clamp(e.farm + v, 30, 160);
+                else if (k.equals("ethics")) g.issueAdj[PI_ETHICS] = clamp(g.issueAdj[PI_ETHICS] + v, -1.5, 1.5);
                 else if (k.equals("infl")) e.infl += v;
                 else if (k.equals("demand")) e.demandShock += v; else if (k.equals("supply")) e.supplyShock -= v;
                 else if (g.home != null && k.equals("grid")) g.home.grid = clamp(g.home.grid + v, 0, 100);
@@ -10576,7 +11532,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         }
 
         // ---- operations and covert action ----
-        static boolean opReady(Game g, int i) { return g.world.opCool[i] == 0 && cond(g, OP_COND[i]); }
+        static boolean opReady(Game g, int i) { return g.world.modern && g.world.opCool[i] == 0 && cond(g, OP_COND[i]); }
 
         static double opOdds(Game g, int i) { return p(g, "m", Double.parseDouble(OP_FX[i].split("\\|")[0])); }
 
@@ -10628,21 +11584,23 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         static final String[][] ASKS = {
                 {"A trade deal", "trade"}, {"A deal on fentanyl chemicals", "fent"}, {"Lower tensions over Taiwan", "taiwan"}, {"A ceasefire in Ukraine", "ukraine"},
                 {"A new nuclear arms treaty", "arms"}, {"Limits on Iran's nuclear program", "iran"}, {"A freeze on North Korea's tests", "nk"}, {"More defense spending by allies", "spend"},
-                {"Help at the border", "border"}, {"More oil on the market", "oil"}};
+                {"Help at the border", "border"}, {"More oil on the market", "oil"}, {"An easing over Berlin", "berlin"}, {"A pledge of friendship and cooperation", "friend"}};
 
         static List<Integer> asks(Game g, int c) {
+            int y = yearNow(g);
             List<Integer> l = new ArrayList<Integer>();
-            if (CT_TRADE[c] > 20) l.add(0);
-            if (c == CC_CN || c == CC_MX || c == CC_IN) l.add(1);
-            if (c == CC_CN) l.add(2);
-            if (c == CC_RU || c == CC_UA) l.add(3);
-            if (c == CC_RU || c == CC_CN) l.add(4);
-            if (c == CC_IR) l.add(5);
-            if (c == CC_KP) l.add(6);
-            if (CT_ALIGN[c] == AL_TREATY) l.add(7);
-            if (c == CC_MX || c == CC_PA || c == CC_VE || c == CC_CU) l.add(8);
-            if (c == CC_SA || c == CC_AE || c == CC_QA || c == CC_CA) l.add(9);
-            if (l.isEmpty()) l.add(0);
+            if (tradeOf(g, c) > 20 * COST_SCALE) l.add(0);
+            if (y >= 2016 && (c == CC_CN || c == CC_MX || c == CC_IN)) l.add(1);
+            if (y >= 1972 && c == CC_CN) l.add(2);
+            if (y >= 2014 && (c == CC_RU || c == CC_UA)) l.add(3);
+            if (y >= 1955 && c == CC_RU || y >= 1990 && c == CC_CN) l.add(4);
+            if (y >= 2003 && c == CC_IR) l.add(5);
+            if (y >= 1994 && c == CC_KP) l.add(6);
+            if (y >= 1950 && align(g, c) == AL_TREATY) l.add(7);
+            if (y >= 1980 && (c == CC_MX || c == CC_PA || c == CC_VE || c == CC_CU)) l.add(8);
+            if (y >= 1973 && (c == CC_SA || c == CC_AE || c == CC_QA || c == CC_CA)) l.add(9);
+            if (y >= 1948 && y < 1972 && (c == CC_RU || c == CC_DE)) l.add(10);
+            if (l.isEmpty()) l.add(11);
             return l;
         }
 
@@ -10651,7 +11609,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             int c = w.summitCountry;
             w.summitRound = 1; w.summitMood = w.rel[c] / 2 + 10; w.summitLeverage = 0;
             g.stamina = Math.max(0, g.stamina - 6);
-            Decision d = Decisions.add(g, D_SUMMIT, "Summit with " + w.leader[c] + ": the opening", "You sit down with " + w.leader[c] + " of " + CT_NAME[c] + ". Relations stand at " + Math.round(w.rel[c]) + ". How do you open?",
+            Decision d = Decisions.add(g, D_SUMMIT, "Summit with " + w.leader[c] + ": the opening", "You sit down with " + w.leader[c] + " of " + cnameIn(g, c) + ". Relations stand at " + Math.round(w.rel[c]) + ". How do you open?",
                     new String[]{"Warmly: talk about what you share", "Firmly: lay out your red lines", "Personally: flatter and charm"},
                     new String[]{"Secretary of State: \"Build trust first; the asks come later.\"", "National security adviser: \"Show strength and they'll take you seriously.\"", "Chief of staff: \"You're good in a room. Use it.\""});
             d.a = c;
@@ -10708,14 +11666,16 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 else if (what.equals("spend")) { w.allySpend += 0.2; w.nato -= 2; }
                 else if (what.equals("border")) { w.migr -= 15; g.issueAdj[PI_IMMIG] += 0.15; }
                 else if (what.equals("oil")) Diplo.oil(g, -4);
-                story = "A deal with " + CT_NAME[c] + ": " + ASKS[ask][0].toLowerCase() + ".";
+                else if (what.equals("berlin")) { g.issueAdj[PI_SECURITY] += 0.1; w.defcon = Math.min(5, w.defcon + 1); }
+                else if (what.equals("friend")) w.rel[c] = clamp(w.rel[c] + 4, -100, 100);
+                story = "A deal with " + cnameIn(g, c) + ": " + ASKS[ask][0].toLowerCase() + ".";
                 w.record.add(dateStr(g.day()) + ": " + story);
-                g.log(NK_BIG, story.toUpperCase(), null, CT_POWER[c] >= 6 ? 3.5 : 2);
+                g.log(NK_BIG, story.toUpperCase(), null, power(g, c) >= 6 ? 3.5 : 2);
             } else {
                 w.rel[c] = clamp(w.rel[c] - 3, -100, 100);
                 g.perf -= 0.3;
                 story = "The summit with " + w.leader[c] + " ends without a deal.";
-                g.log(NK_BAD, story, null, CT_POWER[c] >= 6 ? 2.2 : 1);
+                g.log(NK_BAD, story, null, power(g, c) >= 6 ? 2.2 : 1);
             }
             Decisions.info(g, ok ? "A deal" : "No deal", story);
         }
@@ -10733,8 +11693,8 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             boolean nato = d.a == 1;
             if (k == 2) { w.nato -= 5; w.pacific -= 3; g.issueAdj[PI_FOREIGN] -= 0.05; g.log(NK_WORLD, "The president skips the summit; the vice president goes instead", null, 1.2); return; }
             g.stamina = Math.max(0, g.stamina - 7);
-            if (k == 0) { w.nato += nato ? 4 : 1.5; w.pacific += 1.5; for (int c = 0; c < NC; c++) if (CT_ALIGN[c] == AL_TREATY) w.rel[c] += 1; }
-            else { w.allySpend += 0.15; w.nato -= nato ? 3 : 1; for (int c = 0; c < NC; c++) if (CT_ALIGN[c] == AL_TREATY) w.rel[c] -= 1.5; g.issueAdj[PI_FOREIGN] += 0.05; }
+            if (k == 0) { w.nato += nato ? 4 : 1.5; w.pacific += 1.5; for (int c = 0; c < NC; c++) if (align(g, c) == AL_TREATY) w.rel[c] += 1; }
+            else { w.allySpend += 0.15; w.nato -= nato ? 3 : 1; for (int c = 0; c < NC; c++) if (align(g, c) == AL_TREATY) w.rel[c] -= 1.5; g.issueAdj[PI_FOREIGN] += 0.05; }
             g.issueAdj[PI_FOREIGN] = clamp(g.issueAdj[PI_FOREIGN] + 0.05, -1.5, 1.5);
             g.log(NK_WORLD, "The president attends the summit", null, 1.0);
         }
@@ -10808,6 +11768,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             g.setStroke(new BasicStroke((float) (0.7 / f[0])));
             for (int k = 0; k < shape.length; k++) {
                 int c = ctIdx(code[k]);
+                if (c >= 0 && gone(game, c)) c = -1;
                 Color col = k == us ? rgb(0x1f4fa8) : c >= 0 ? relColor(game.world.rel[c]) : rgb(0x253044);
                 if (c >= 0 && (c == sel || c == hover)) col = shade(col, 1.35);
                 g.setColor(col);
@@ -10820,13 +11781,15 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             // labels for the bigger players, and the selected one
             for (int c = 0; c < NC; c++) {
                 boolean big = c == CC_CN || c == CC_RU || c == CC_CA || c == CC_BR || c == CC_AU || c == CC_IN;
-                if (!big && c != sel && c != hover) continue;
+                if (!big && c != sel && c != hover || gone(game, c)) continue;
                 double lx = f[1] + CT_LX[c] * f[0], ly = f[2] + CT_LY[c] * f[0];
-                textC(g, CT_NAME[c], lx, ly + 4, F_T, c == sel ? C_GOLD : new Color(235, 240, 250, 210));
+                textC(g, cname(game, c), lx, ly + 4, F_T, c == sel ? C_GOLD : new Color(235, 240, 250, 210));
             }
             // flashpoints
             World wd = game.world;
-            double[][] hot = {{828, 172, wd.twStage >= 2 ? 1 : 0}, {585, 96, wd.uaStage == 2 ? 1 : 0}, {590, 150, wd.gaza > 60 ? 1 : 0}, {640, 140, wd.iran > 80 ? 1 : 0}, {612, 192, wd.redsea > 60 ? 1 : 0}, {826, 117, wd.nk > 75 ? 1 : 0}};
+            double[][] hot = {{828, 172, wd.modern && wd.twStage >= 2 ? 1 : 0}, {585, 96, wd.modern && wd.uaStage == 2 ? 1 : 0}, {590, 150, wd.modern && wd.gaza > 60 ? 1 : 0}, {640, 140, wd.modern && wd.iran > 80 ? 1 : 0}, {612, 192, wd.modern && wd.redsea > 60 ? 1 : 0}, {826, 117, wd.modern && wd.nk > 75 ? 1 : 0},
+                    {CT_LX[CC_DE], CT_LY[CC_DE], warOn(wd, "ww2e")}, {CT_LX[CC_JP] + 10, CT_LY[CC_JP] + 20, warOn(wd, "ww2p")}, {CT_LX[CC_KR], CT_LY[CC_KR], warOn(wd, "korea")}, {CT_LX[CC_VN], CT_LY[CC_VN], warOn(wd, "vietnam")},
+                    {618, 160, warOn(wd, "gulf")}, {668, 138, warOn(wd, "afghan")}, {CT_LX[CC_IQ], CT_LY[CC_IQ], warOn(wd, "iraq")}, {CT_LX[CC_SY], CT_LY[CC_SY], warOn(wd, "isis")}};
             for (double[] hp : hot) {
                 if (hp[2] < 1) continue;
                 double px = f[1] + hp[0] * f[0], py = f[2] + hp[1] * f[0];
@@ -10838,13 +11801,29 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             }
             return hover;
         }
+
+        static double warOn(World w, String id) { War x = History.war(w, id); return x != null && x.stage == 2 ? 1 : 0; }
     }
 
     static final class Flag {
         static Color hex(String s) { return rgb(Integer.parseInt(s.trim(), 16)); }
 
+        /** The calendar year, for the flags of the day (set with the rest of the era). */
+        static int year = 2025;
+        /** Nationalist China still holds the mainland (until Mao's victory in October 1949). */
+        static boolean roc;
+
+        static String spec(int c) {
+            if (c == CC_RU && year < 1992) return "s:cc0000,ffd700";                    // the Soviet Union
+            if (c == CC_CN && roc) return CT_FLAG[CC_TW];                       // the Republic of China
+            if (c == CC_DE && year >= 1933 && year < 1946) return "h:000000,ffffff,dd0000"; // the old imperial colors
+            if (c == CC_CA && year < 1965) return "h:cc0000,cc0000|k:012169";           // the Red Ensign, simplified
+            if (c == CC_VN && year < 1976) return "h:ffcd00,ffcd00,ffcd00,da251d,ffcd00,da251d,ffcd00,da251d,ffcd00,ffcd00,ffcd00"; // South Vietnam
+            return CT_FLAG[c];
+        }
+
         static void draw(Graphics2D g, int c, double x, double y, double w, double h) {
-            String[] parts = CT_FLAG[c].split("\\|");
+            String[] parts = spec(c).split("\\|");
             Shape clip = g.getClip();
             g.clip(new RoundRectangle2D.Double(x, y, w, h, 3, 3));
             String base = parts[0];
@@ -10893,7 +11872,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     static final class SitRoom {
         static int tab, sel = CC_CN, selOp = 0;
         static String msg;
-        static final String[] TABS = {"The world", "Daily brief", "Hot spots", "Operations", "Trade and sanctions", "Alliances"};
+        static final String[] TABS = {"The world", "Daily brief", "Hot spots", "Operations", "Trade", "Alliances", "Wars"};
 
         static void draw(ResoluteDesk u, Graphics2D g, Game game) {
             if (game.world == null) Diplo.setup(game);
@@ -10907,6 +11886,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 case 3: ops(u, g, game); break;
                 case 4: trade(u, g, game); break;
                 case 5: alliances(u, g, game); break;
+                case 6: wars(u, g, game); break;
                 default: world(u, g, game); break;
             }
         }
@@ -10926,8 +11906,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             World w = game.world;
             u.panel(g, 48, 160, 1010, 652, "The world");
             int hv = WorldMap.draw(u, g, game, 60, 186, 986, 500, sel);
-            if (hv >= 0) u.tip = CT_NAME[hv] + ": " + w.leader[hv] + ". Relations " + Math.round(w.rel[hv]) + ".";
-            u.hit(60, 186, 986, 500, () -> { int h = WorldMap.at(u.mx, u.my); if (h >= 0) sel = h; }, null);
+            if (hv >= 0 && gone(game, hv)) hv = -1;
+            if (hv >= 0) u.tip = cname(game, hv) + ": " + w.leader[hv] + ". Relations " + Math.round(w.rel[hv]) + ".";
+            u.hit(60, 186, 986, 500, () -> { int h = WorldMap.at(u.mx, u.my); if (h >= 0 && !gone(game, h)) sel = h; }, null);
+            if (gone(game, sel)) for (int k = 0; k < NC; k++) if (!gone(game, k)) { sel = k; break; }
             double ly = 712;
             g.setColor(WorldMap.relColor(-80)); g.fill(new Rectangle2D.Double(66, ly - 9, 14, 10)); text(g, "Hostile", 86, ly, F_T, C_DIM);
             g.setColor(WorldMap.relColor(0)); g.fill(new Rectangle2D.Double(146, ly - 9, 14, 10)); text(g, "Cool", 166, ly, F_T, C_DIM);
@@ -10938,11 +11920,12 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             // the selected country
             double px = 1072, pw = DW - 48 - px;
             int c = sel;
-            u.panel(g, px, 160, pw, 652, CT_NAME[c]);
+            u.panel(g, px, 160, pw, 652, cname(game, c));
             Flag.draw(g, c, px + 18, 192, 72, 48);
             text(g, w.leader[c], px + 104, 208, F_H3, Color.white);
             text(g, w.ltitle[c], px + 104, 226, F_XS, C_DIM);
-            text(g, ALIGN[CT_ALIGN[c]] + (CT_NUKE[c] ? ", nuclear-armed" : "") + ", " + REGION[CT_REGION[c]].toLowerCase(), px + 104, 242, F_T, CT_ALIGN[c] == AL_ADVERSARY ? C_REP_L : CT_ALIGN[c] == AL_TREATY ? C_GOOD : C_TEXT);
+            int al = align(game, c);
+            text(g, ALIGN[al] + (nuke(game, c) ? ", nuclear-armed" : "") + ", " + REGION[CT_REGION[c]].toLowerCase(), px + 104, 242, F_T, al == AL_ADVERSARY ? C_REP_L : al == AL_TREATY ? C_GOOD : C_TEXT);
             text(g, "Relations", px + 18, 272, F_XS, C_TEXT);
             g.setColor(new Color(255, 255, 255, 25)); g.fill(new Rectangle2D.Double(px + 18, 280, pw - 76, 10));
             double mid = px + 18 + (pw - 76) / 2;
@@ -10950,7 +11933,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             g.fill(new Rectangle2D.Double(Math.min(mid, mid + w.rel[c] / 100 * (pw - 76) / 2), 280, Math.abs(w.rel[c] / 100 * (pw - 76) / 2), 10));
             textR(g, (w.rel[c] > 0 ? "+" : "") + Math.round(w.rel[c]), px + pw - 18, 290, F_SB, Color.white);
             double y = 314;
-            text(g, "Trade with the US: $" + Math.round(CT_TRADE[c]) + " billion a year" + (CT_BAL[c] < -1 ? ", a $" + Math.round(-CT_BAL[c]) + "B deficit" : CT_BAL[c] > 1 ? ", a $" + Math.round(CT_BAL[c]) + "B surplus" : ""), px + 18, y, F_XS, C_TEXT); y += 18;
+            double tr = tradeOf(game, c), tb = tradeBal(game, c);
+            if (tr <= 0) text(g, atWar(game, c) ? "No trade with the US: the two countries are at war." : "Next to no trade with the US.", px + 18, y, F_XS, C_TEXT);
+            else text(g, "Trade with the US: " + money(tr) + " a year" + (tb < -tr * 0.05 ? ", a " + money(-tb) + " deficit" : tb > tr * 0.05 ? ", a " + money(tb) + " surplus" : ""), px + 18, y, F_XS, C_TEXT);
+            y += 18;
             text(g, "Your tariff " + TARIFF_OPT[w.tariff[c]] + ", sanctions " + LEVEL[w.sanction[c]].toLowerCase() + ", aid " + LEVEL[w.aid[c]].toLowerCase(), px + 18, y, F_XS, C_TEXT); y += 18;
             if (w.visits[c] > 0) { text(g, "Visits: " + w.visits[c], px + 18, y, F_XS, C_DIM); y += 18; }
             if (w.visitAt[c] >= 0) { text(g, "Coming to the White House around " + dateStr(w.visitAt[c] * 7), px + 18, y, F_XS, C_GOLD); y += 18; }
@@ -10958,11 +11944,15 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             y += 6;
             final int cc = c;
             int calls = w.callWeek == game.week ? 3 - w.callsThisWeek : 3;
-            u.button(g, px + 18, y, pw - 36, 30, "Call " + w.leader[c] + " (" + calls + " calls left this week)", calls > 0 ? B_NORM : B_OFF, calls > 0 ? () -> msg = Diplo.call(game, cc) : null, "A phone call warms relations a little. Calls in quick succession do less.");
+            boolean war = atWar(game, c);
+            String no = "The United States is at war with " + cnameIn(game, c) + ".";
+            u.button(g, px + 18, y, pw - 36, 30, "Call " + w.leader[c] + " (" + calls + " calls left this week)", calls > 0 && !war ? B_NORM : B_OFF, calls > 0 && !war ? () -> msg = Diplo.call(game, cc) : null, war ? no : "A phone call warms relations a little. Calls in quick succession do less.");
             y += 36;
-            u.button(g, px + 18, y, pw - 36, 30, "Invite to the White House", w.visitAt[c] < 0 ? B_NORM : B_OFF, w.visitAt[c] < 0 ? () -> msg = Diplo.invite(game, cc) : null, "A state visit in a few weeks. A bigger boost than a call.");
+            boolean inv = w.visitAt[c] < 0 && !war;
+            u.button(g, px + 18, y, pw - 36, 30, "Invite to the White House", inv ? B_NORM : B_OFF, inv ? () -> msg = Diplo.invite(game, cc) : null, war ? no : "A state visit in a few weeks. A bigger boost than a call.");
             y += 36;
-            u.button(g, px + 18, y, pw - 36, 30, "Propose a summit", w.summitCountry < 0 ? B_PRIMARY : B_OFF, w.summitCountry < 0 ? () -> msg = Diplo.proposeSummit(game, cc) : null, "A face-to-face negotiation in three rounds: the opening, the ask and the give.");
+            boolean sum = w.summitCountry < 0 && !war;
+            u.button(g, px + 18, y, pw - 36, 30, "Propose a summit", sum ? B_PRIMARY : B_OFF, sum ? () -> msg = Diplo.proposeSummit(game, cc) : null, war ? no + " Peace comes through the Wars tab and the turning points." : "A face-to-face negotiation in three rounds: the opening, the ask and the give.");
             y += 46;
             // every country, by region
             label(g, "All countries", px + 18, y, C_GOLD);
@@ -10971,12 +11961,12 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             int h0 = u.hits.size();
             int row = 0;
             for (int rg = 0; rg < REGION.length; rg++) for (int k = 0; k < NC; k++) {
-                if (CT_REGION[k] != rg) continue;
+                if (CT_REGION[k] != rg || gone(game, k)) continue;
                 double ry = top - off + row * 24;
                 final int kk = k;
                 u.card(g, px + 14, ry, pw - 28, 22, k == sel, () -> sel = kk, w.leader[k]);
                 Flag.draw(g, k, px + 20, ry + 4, 21, 14);
-                text(g, CT_NAME[k], px + 48, ry + 16, F_XS, Color.white);
+                text(g, cname(game, k), px + 48, ry + 16, F_XS, Color.white);
                 textR(g, (w.rel[k] > 0 ? "+" : "") + Math.round(w.rel[k]), px + pw - 22, ry + 16, F_XSB, WorldMap.relColor(w.rel[k]).brighter());
                 row++;
             }
@@ -11006,12 +11996,16 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 if (y > 760) break;
             }
             Person dni = game.ex.post[P_DNI];
-            text(g, "Prepared by the Office of the Director of National Intelligence" + (dni != null && !dni.real ? " (" + dni.name + ")" : ""), x + 40, 790, F_T, rgb(0x555555));
+            int yr = yearNow(game);
+            if (!postOn(P_DNI)) dni = game.ex.post[ep(P_DNI)];
+            String by = yr >= 2005 ? "the Office of the Director of National Intelligence" : yr >= 1947 ? "the Central Intelligence Agency" : yr >= 1942 ? "the Office of Strategic Services and the service intelligence staffs" : "the State, War and Navy departments";
+            text(g, "Prepared by " + by + (dni != null && !dni.real && yr >= 1947 ? " (" + dni.name + ")" : ""), x + 40, 790, F_T, rgb(0x555555));
         }
 
         // ---- the hot spots ----
         static void hot(ResoluteDesk u, Graphics2D g, Game game) {
             World w = game.world;
+            if (!w.modern) { oldHot(u, g, game); return; }
             double cw = (DW - 96 - 24) / 3.0, ch = 316;
             String[] title = {"Taiwan and China", "Russia and Ukraine", "The Middle East", "The Korean Peninsula", "Terrorism and cyber", "The Western Hemisphere"};
             for (int i = 0; i < 6; i++) {
@@ -11050,9 +12044,113 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             }
         }
 
+        /** Before the modern theaters: the great powers, the wars and the threats. */
+        static void oldHot(ResoluteDesk u, Graphics2D g, Game game) {
+            World w = game.world;
+            double cw = (DW - 96 - 24) / 3.0;
+            u.panel(g, 48, 160, cw, 652, "The great powers");
+            Integer[] ord = new Integer[NC];
+            for (int i = 0; i < NC; i++) ord[i] = i;
+            Arrays.sort(ord, (a, b) -> Double.compare(power(game, b), power(game, a)));
+            double y = 200;
+            for (int n = 0, shown = 0; n < NC && shown < 14; n++) {
+                int c = ord[n];
+                if (gone(game, c)) continue;
+                Flag.draw(g, c, 66, y - 12, 24, 16);
+                text(g, cname(game, c), 98, y, F_XS, Color.white);
+                text(g, ALIGN[align(game, c)] + (nuke(game, c) ? ", nuclear" : ""), 98, y + 16, F_T, align(game, c) == AL_ADVERSARY ? C_REP_L : C_DIM);
+                textR(g, (w.rel[c] > 0 ? "+" : "") + Math.round(w.rel[c]), 48 + cw - 18, y, F_XSB, WorldMap.relColor(w.rel[c]).brighter());
+                y += 42; shown++;
+            }
+            double x2 = 48 + cw + 12;
+            u.panel(g, x2, 160, cw, 652, "America's wars");
+            y = 204;
+            boolean any = false;
+            for (War x : w.wars) {
+                if (x.stage == 0) continue;
+                any = true;
+                text(g, x.name, x2 + 18, y, F_H3, Color.white);
+                text(g, x.stage == 2 ? thousands(Math.round(x.troops * 1000)) + " troops, " + thousands(Math.round(x.kia)) + " killed" : WAR_STAGE[x.stage] + ", " + thousands(Math.round(x.kia)) + " killed", x2 + 18, y + 20, F_XS, x.stage == 2 ? C_AMBER : x.stage == 3 ? C_GOOD : C_DIM);
+                if (x.stage == 2) { gauge(g, "The front (100 is victory)", x.front, false, x2 + 18, y + 42, cw - 36); gauge(g, "Support at home", x.support, false, x2 + 18, y + 76, cw - 36); y += 120; }
+                else y += 50;
+            }
+            if (!any) wrap(g, "America is at peace. History may not leave it that way: the turning points of the era arrive on their real dates, and how you answer them is up to you.", x2 + 18, y, cw - 36, F_XS, C_DIM);
+            u.button(g, x2 + 18, 770, cw - 36, 30, "Run the wars", B_NORM, () -> tab = 6);
+            double x3 = x2 + cw + 12;
+            u.panel(g, x3, 160, cw, 652, "Threats and alliances");
+            int yr = yearNow(game);
+            y = 210;
+            gauge(g, yr >= 1993 ? "Terror threat" : "Sabotage and subversion", w.terror, true, x3 + 18, y, cw - 36); y += 40;
+            gauge(g, "Migration pressure", w.migr, true, x3 + 18, y, cw - 36); y += 40;
+            if (yr >= 1949) { gauge(g, "NATO cohesion", w.nato, false, x3 + 18, y, cw - 36); y += 40; }
+            if (yr >= 1951) { gauge(g, "Pacific alliances", w.pacific, false, x3 + 18, y, cw - 36); y += 40; }
+            y += 10;
+            wrap(g, yr < 1941 ? "There is no alliance system yet: America has no treaty allies, and Congress wants to keep it that way." : yr < 1947 ? "A wartime coalition, not yet a standing alliance." : yr < 1991 ? "The Cold War: a contest with the Soviet bloc on every continent, under the shadow of nuclear weapons." : "The Cold War is over. America is the only superpower.", x3 + 18, y, cw - 36, F_XS, C_DIM);
+        }
+
+        // ---- the wars ----
+        static int selWar;
+
+        static void wars(ResoluteDesk u, Graphics2D g, Game game) {
+            World w = game.world;
+            List<War> l = new ArrayList<War>();
+            for (War x : w.wars) if (x.stage != 0) l.add(x);
+            u.panel(g, 48, 160, 420, 652, "Wars");
+            if (l.isEmpty()) { wrap(g, "No wars. America is at peace, for now.", 66, 200, 384, F_S, C_DIM); return; }
+            if (selWar >= l.size()) selWar = 0;
+            double y = 194;
+            for (int i = 0; i < l.size(); i++) {
+                War x = l.get(i);
+                final int k = i;
+                u.card(g, 62, y, 392, 64, selWar == i, () -> selWar = k, null);
+                text(g, x.name, 76, y + 24, F_SB, Color.white);
+                text(g, x.stage == 2 ? "Fighting: " + thousands(Math.round(x.troops * 1000)) + " troops" : WAR_STAGE[x.stage], 76, y + 46, F_XS, x.stage == 2 ? C_AMBER : x.stage == 3 ? C_GOOD : C_DIM);
+                y += 72;
+            }
+            War x = l.get(selWar);
+            double px = 482, pw = DW - 48 - px;
+            u.panel(g, px, 160, pw, 652, x.name);
+            y = 204;
+            String foe = x.enemy >= 0 ? cname(game, x.enemy) : x.id.equals("vietnam") ? "North Vietnam and the Viet Cong" : x.id.equals("afghan") ? "The Taliban and al-Qaeda" : x.id.equals("iraq") ? "The insurgency" : "The Islamic State";
+            text(g, "Against: " + foe + (x.ally >= 0 ? ".  Fighting alongside: " + cname(game, x.ally) + "." : "."), px + 18, y, F_S, C_TEXT); y += 26;
+            text(g, "Americans killed: " + thousands(Math.round(x.kia)) + "    Weeks of war: " + Math.round(x.weeks) + "    Cost: about " + fmt1(x.troops * x.cost) + "% of GDP a year", px + 18, y, F_S, C_TEXT); y += 30;
+            if (x.stage != 2) { text(g, WAR_STAGE[x.stage] + (x.ended >= 0 ? " on " + dateStr(x.ended * 7) : "") + ".", px + 18, y, F_H3, x.stage == 3 ? C_GOOD : C_DIM); return; }
+            gauge(g, "The front (0 is defeat, 100 is victory)", x.front, false, px + 18, y, pw - 36); y += 38;
+            gauge(g, "Support at home", x.support, false, px + 18, y, pw - 36); y += 38;
+            gauge(g, "Progress toward a settlement", x.talks, false, px + 18, y, pw - 36); y += 50;
+            label(g, "Troops", px + 18, y, C_GOLD); y += 14;
+            text(g, thousands(Math.round(x.troops * 1000)) + " deployed; your generals say about " + thousands(Math.round(x.need * 1000)) + " can hold the line.", px + 18, y + 14, F_S, Color.white);
+            y += 26;
+            final War xx = x;
+            String[] steps = {"Bring home a quarter", "Bring home a tenth", "Send a tenth more", "Send a quarter more"};
+            double[] mul = {-0.25, -0.1, 0.1, 0.25};
+            double bw = (pw - 36 - 30) / 4;
+            for (int i = 0; i < 4; i++) {
+                final double m = mul[i];
+                u.button(g, px + 18 + i * (bw + 10), y, bw, 30, steps[i], i >= 2 ? B_NORM : B_GHOST, () -> { History.setTroops(game, xx, xx.troops + Math.max(Math.abs(m) * xx.troops, xx.need * 0.05) * Math.signum(m)); game.dirty = true; });
+            }
+            y += 48;
+            label(g, "Strategy", px + 18, y, C_GOLD); y += 10;
+            u.segmented(g, px + 18, y, pw - 36, 30, STRATEGY, x.strategy, i -> History.setStrategy(game, xx, i),
+                    new String[]{"Fewer casualties, slow losses of ground.", "Steady pressure.", "Gains on the front, at a much higher cost in lives.", "Fewer casualties and faster talks, but the enemy gains ground."});
+            y += 50;
+            wrap(g, "Victory comes when the front reaches 100; defeat at 0. A settlement comes when the talks are complete and the front still holds. Casualties wear down support at home, and support is part of how the public judges your handling of security.", px + 18, y, pw - 36, F_XS, C_DIM);
+            y += 60;
+            u.button(g, px + 18, y, 260, 32, "Withdraw and end the war", B_GHOST, () -> u.modal("End the war?", "Bringing everyone home now ends " + xx.name.toLowerCase() + (xx.front >= 60 ? " on terms we can live with." : " in what history will call a defeat."),
+                    new String[]{"Keep fighting", "Withdraw"}, new Runnable[]{null, () -> History.withdraw(game, xx)}, C_BAD));
+        }
+
+        static String money(double b) { return b >= 10 ? "$" + Math.round(b) + " billion" : b >= 1 ? "$" + fmt1(b) + " billion" : "$" + Math.round(b * 1000) + " million"; }
+
         // ---- operations and covert action ----
         static void ops(ResoluteDesk u, Graphics2D g, Game game) {
             World w = game.world;
+            if (!w.modern) {
+                u.panel(g, 48, 160, DW - 96, 652, "Military operations");
+                wrap(g, "In this era there are no standing strike plans on your desk: the big military choices come as the crises of the day arrive, and the wars are run from the Wars tab.", 66, 200, 900, F_S, C_DIM);
+                u.button(g, 66, 250, 220, 32, "The Wars tab", B_NORM, () -> tab = 6);
+                return;
+            }
             u.panel(g, 48, 160, 700, 652, "Military operations");
             double y = 194;
             for (int i = 0; i < OP_NAME.length; i++) {
@@ -11093,24 +12191,28 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             textR(g, "Average tariff on imports: " + fmt1(game.econ.tariff) + "%", DW - 66, 196, F_XSB, C_GOLD);
             Integer[] order = new Integer[NC];
             for (int i = 0; i < NC; i++) order[i] = i;
-            Arrays.sort(order, (a, b) -> Double.compare(CT_TRADE[b], CT_TRADE[a]));
+            Arrays.sort(order, (a, b) -> Double.compare(tradeOf(game, b), tradeOf(game, a)));
             double top = 206, hh = 594;
             double off = u.beginScroll(g, "trade", 58, top, DW - 116, hh);
             int h0 = u.hits.size();
+            int rows = 0;
             for (int n = 0; n < NC; n++) {
                 int c = order[n];
                 final int cc = c;
-                double ry = top - off + n * 34;
+                if (gone(game, c)) continue;
+                double ry = top - off + rows * 34;
+                rows++;
                 Flag.draw(g, c, 66, ry + 8, 24, 16);
-                text(g, CT_NAME[c], 98, ry + 21, F_XS, Color.white);
-                text(g, "$" + Math.round(CT_TRADE[c]) + "B", 290, ry + 21, F_XS, C_TEXT);
-                text(g, CT_BAL[c] >= 0 ? "+" + Math.round(CT_BAL[c]) : String.valueOf(Math.round(CT_BAL[c])), 370, ry + 21, F_XS, CT_BAL[c] < -20 ? C_AMBER : C_DIM);
+                text(g, cname(game, c), 98, ry + 21, F_XS, Color.white);
+                double tr = tradeOf(game, c), tb = tradeBal(game, c);
+                text(g, tr >= 1 ? "$" + Math.round(tr) + "B" : "$" + Math.round(tr * 1000) + "M", 290, ry + 21, F_XS, C_TEXT);
+                text(g, tb >= 0 ? "+" + fmt1(tb) : fmt1(tb), 370, ry + 21, F_XS, tb < -tr * 0.2 ? C_AMBER : C_DIM);
                 u.segmented(g, 470, ry + 4, 330, 24, TARIFF_OPT, w.tariff[c], i -> { if (i != w.tariff[cc]) Diplo.setTariff(game, cc, i); }, null);
                 u.segmented(g, 830, ry + 4, 330, 24, LEVEL, w.sanction[c], i -> { if (i != w.sanction[cc]) Diplo.setSanction(game, cc, i); }, null);
                 u.segmented(g, 1190, ry + 4, 330, 24, LEVEL, w.aid[c], i -> { if (i != w.aid[cc]) Diplo.setAid(game, cc, i); }, null);
             }
             u.clipHits(h0, top, top + hh);
-            u.endScroll(g, "trade", NC * 34);
+            u.endScroll(g, "trade", rows * 34);
         }
 
         // ---- alliances and posture ----
@@ -11121,7 +12223,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             gauge(g, "Cohesion", w.nato, false, 66, 206, cw - 36);
             text(g, "Allies spend about " + fmt1(w.allySpend) + "% of GDP on defense", 66, 252, F_XS, C_TEXT);
             boolean a5 = game.capital >= 3 && game.week - w.art5Week >= 13, pr = game.week - w.pressWeek >= 13, dr = game.week - w.drillWeek >= 13;
-            u.button(g, 66, 276, cw - 36, 32, "Reaffirm Article 5 (3 capital)", a5 ? B_NORM : B_OFF, a5 ? () -> { w.art5Week = game.week; game.capital -= 3; w.nato = Math.min(100, w.nato + 6); for (int c = 0; c < NC; c++) if (CT_ALIGN[c] == AL_TREATY && CT_REGION[c] == RG_EUROPE) w.rel[c] += 2; msg = "You reaffirm the commitment to defend every ally."; } : null);
+            u.button(g, 66, 276, cw - 36, 32, "Reaffirm Article 5 (3 capital)", a5 ? B_NORM : B_OFF, a5 ? () -> { w.art5Week = game.week; game.capital -= 3; w.nato = Math.min(100, w.nato + 6); for (int c = 0; c < NC; c++) if (align(game, c) == AL_TREATY && CT_REGION[c] == RG_EUROPE) w.rel[c] += 2; msg = "You reaffirm the commitment to defend every ally."; } : null);
             u.button(g, 66, 316, cw - 36, 32, "Press allies to spend more", pr ? B_NORM : B_OFF, pr ? () -> { w.pressWeek = game.week; w.allySpend += 0.1; w.nato = Math.max(0, w.nato - 4); msg = "Allies grumble, then pledge more."; } : null);
             text(g, "Each of these works once a quarter.", 66, 368, F_T, C_DIM);
             u.panel(g, 48, 486, cw, 326, "Asia-Pacific alliances");
@@ -11160,6 +12262,13 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     static final String[] EV_COND = {"ai>0,p=0.006", "p=0.004", "ai>0,p=0.003", "month>5,month<9,grid>50,p=0.06", "month<3,grid>45,p=0.04", "p=0.0015", "p=0.0025", "p=0.0025", "p=0.006",
             "protest>62", "gaza>55,month>2,month<6,p=0.03", "p=0.005", "month>4,month<8,p=0.012", "p=0.0025", "p=0.0025", "p=0.004", "p=0.004", "p=0.0012", "p=0.0008", "od>88", "crimeidx>106",
             "p=0.0025", "infl>3.2,p=0.02", "pand>0,pand<2,pandw<1", "pand>1,pandw<1", "pand>1,pandw>18,p=0.2", "ai>0,grid>40,p=0.006", "ai>0,p=0.004"};
+    /** The first year each event belongs to. */
+    static final int[] EV_MIN = {2023, 2019, 2023, 1990, 2000, 1950, 1940, 1960, 1960, 1960, 1965, 1990, 1950, 2022, 1990, 2005, 1995, 1965, 1990, 2010, 1965, 1933, 1933, 1960, 1960, 1960, 2023, 2022};
+
+    static {
+        for (int i = 0; i < EV_COND.length; i++) EV_COND[i] = "year>" + (EV_MIN[i] - 1) + (EV_COND[i].isEmpty() ? "" : "," + EV_COND[i]);
+    }
+
     static final int[] EV_COOL = {40, 30, 60, 26, 26, 80, 60, 60, 30, 20, 52, 30, 52, 70, 60, 40, 30, 80, 80, 40, 40, 80, 40, 400, 400, 400, 52, 60};
     static final String[] EV_TITLE = {"AI is wiping out entry-level office jobs", "A deepfake of you goes viral", "An AI lab warns of a dangerous new model", "A heat wave knocks out power in Texas",
             "A winter storm leaves millions without power", "A major bridge collapses", "A train carrying toxic chemicals derails", "An air-traffic outage grounds flights nationwide",
@@ -11341,7 +12450,11 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             return clamp(50 + OUT_LEAN[o] * side * 32 + (g.approval - 45) * 0.4 + (h.press - 50) * 0.3, 5, 95);
         }
 
-        static String[] factions(Game g) { return g.party == DEM ? FAC_D : FAC_R; }
+        static String[] factions(Game g) {
+            int y = yearNow(g);
+            if (g.party == DEM) return y < 1965 ? new String[]{"New Dealers", "Southern Democrats"} : y < 1993 ? new String[]{"Liberals", "Moderates"} : y < 2016 ? new String[]{"Progressives", "New Democrats"} : FAC_D;
+            return y < 1965 ? new String[]{"Old Guard conservatives", "Eastern moderates"} : y < 1981 ? new String[]{"Conservatives", "Rockefeller Republicans"} : y < 2010 ? new String[]{"Reagan conservatives", "Moderates"} : y < 2016 ? new String[]{"Tea Party conservatives", "Establishment Republicans"} : FAC_R;
+        }
 
         /** Records where an action lands, for your party's two wings. */
         static void act(Game g, double econ, double cult, double w) {
@@ -11356,6 +12469,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             Home h = g.home;
             Econ e = g.econ;
             if (k.equals("month")) return dateOf(g.day())[1] + 1;
+            if (k.equals("year")) return yearNow(g);
             if (k.equals("crimeidx")) return h.crime; if (k.equals("od")) return h.od; if (k.equals("protest")) return h.protest; if (k.equals("grid")) return h.grid;
             if (k.equals("pand")) return h.pand; if (k.equals("pandw")) return h.pandWeek < 0 ? 99 : g.week - h.pandWeek;
             if (k.equals("ai")) return g.era.ai ? 1 : 0; if (k.equals("infl")) return e.infl; if (k.equals("app")) return g.approval;
@@ -11405,7 +12519,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             if (g.week - h.oppWeek >= 13) {
                 h.oppWeek = g.week;
                 int s = g.approval < 43 ? 2 : g.approval > 55 ? 0 : 1;
-                if (Midterms.season(g) || g.week > 170) s = Math.min(2, s + 1);
+                if (Midterms.season(g) || g.tw() > 170) s = Math.min(2, s + 1);
                 if (s != h.opp) g.log(NK_INFO, "The " + PARTY[Hill.other(g.party)].toLowerCase() + " opposition's new strategy: " + OPP_STRAT[s].toLowerCase(), null, 0.9);
                 h.opp = s;
             }
@@ -11423,7 +12537,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             events(g);
             // the State of the Union
             int[] d = dateOf(g.day());
-            boolean sotu = g.week < 52 ? Economy.weekHas(g, 1, 25) : Economy.weekHas(g, 1, 4);
+            boolean sotu = g.week < 52 && g.term == 1 ? Economy.weekHas(g, 1, 25) : Economy.weekHas(g, 1, 4);
             if (sotu && h.sotuYear != d[0] && h.spType < 0) { h.sotuYear = d[0]; Speech.start(g, 1); }
             brief(g);
         }
@@ -11437,7 +12551,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             if (h.pand == 1 && g.week - h.pandWeek > 2 && r.nextDouble() < (h.pandSlow > 0 ? 0.05 : 0.14)) { h.pand = 2; h.pandWeek = g.week; g.log(NK_BIG, "THE NEW VIRUS IS SPREADING IN THE UNITED STATES", null, 4); }
             if (h.pand == 1 && g.week - h.pandWeek > 20) { h.pand = 0; g.log(NK_GOOD, "The overseas outbreak burns out", null, 1.2); }
             if (h.pand == 2) {
-                double hq = Cabinet.pq(g, P_HHS) * 0.5 + g.ex.ready[P_HHS] / 200;
+                double hq = Cabinet.pq(g, P_HHS) * 0.5 + Cabinet.rd(g, P_HHS) / 200;
                 g.econ.demandShock -= 0.05 * h.pandSev * (h.pandSlow > 0 ? 1.2 : 0.8);
                 g.issueSal[PI_HEALTH] = Math.min(2, g.issueSal[PI_HEALTH] + 0.03);
                 g.issueAdj[PI_HEALTH] = clamp(g.issueAdj[PI_HEALTH] + (hq - 0.55) * 0.02, -1.5, 1.5);
@@ -11464,7 +12578,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 h.disasters.add(dateStr(g.day()) + ": " + what);
                 g.log(sev >= 3 ? NK_BIG : NK_BAD, sev >= 3 ? what.toUpperCase() : what, null, 1 + sev * 0.7);
                 if (sev >= 2) {
-                    Decision d = Decisions.add(g, D_DISASTER, what, "The governor has asked for a federal disaster declaration. FEMA is " + (g.ex.ready[P_DHS] >= 60 ? "ready to move." : "stretched thin."),
+                    Decision d = Decisions.add(g, D_DISASTER, what, "The governor has asked for a federal disaster declaration. FEMA is " + (Cabinet.rd(g, P_DHS) >= 60 ? "ready to move." : "stretched thin."),
                             new String[]{"Declare a major disaster and go there yourself", "Declare a major disaster and send the vice president", "Let FEMA handle it"},
                             new String[]{"Chief of staff: \"People need to see you there.\"", "Homeland Security secretary: \"Your visit ties up resources for a day. The vice president can go.\"", "Budget director: \"FEMA knows what it's doing.\""});
                     d.a = s; d.b = sev;
@@ -11475,7 +12589,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
 
         static void disasterDecision(Game g, Decision d, int k) {
             int s = d.a, sev = d.b;
-            double q = (Cabinet.pq(g, P_DHS) + g.ex.ready[P_DHS] / 100) / 2;
+            double q = (Cabinet.pq(g, P_DHS) + Cabinet.rd(g, P_DHS) / 100) / 2;
             boolean good = g.rng.nextDouble() < 0.35 + q * 0.6;
             g.econ.fiscal += 0.004 * sev * (k < 2 ? 1 : 0.6);
             if (k == 0) { g.stamina = Math.max(0, g.stamina - 5); g.stateBump[s] += 1.5 * sev * (good ? 1 : 0.3); g.perf += good ? 0.4 : -0.2; }
@@ -11515,6 +12629,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         static void eventDecision(Game g, int i, int k) {
             String[] t = EV_OPTS[i].split(";;")[k].split("\\|");
             boolean ok = g.rng.nextDouble() < Diplo.p(g, t[2], Double.parseDouble(t[3]));
+            if (Double.parseDouble(t[3]) < 1) { if (ok) g.okCount++; else g.failCount++; }
             Diplo.fx(g, ok ? t[4] : t[5]);
             g.log(ok ? NK_GOOD : NK_BAD, ok ? t[6] : t[7], null, 1.4);
             if (Double.parseDouble(t[3]) < 1) Decisions.info(g, ok ? "It worked" : "It didn't go as hoped", ok ? t[6] : t[7]);
@@ -11525,7 +12640,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             Home h = g.home;
             World w = g.world;
             List<String> b = new ArrayList<String>();
-            if (w != null) {
+            if (w != null && w.wars != null) for (War x : w.wars) if (x.stage == 2)
+                b.add((x.front < 35 ? "3" : "2") + "|" + x.name.toUpperCase().replace("THE ", "") + ": " + (x.front >= 70 ? "Our forces are advancing." : x.front >= 45 ? "The front is holding." : "The enemy is gaining ground.")
+                        + " " + thousands(Math.round(x.troops * 1000)) + " Americans deployed; " + thousands(Math.round(x.kia)) + " killed so far. Support at home: " + Math.round(x.support) + "%.");
+            if (w != null && w.modern) {
                 if (w.twStage >= 2) b.add("3|TAIWAN: The PLA is " + (w.twStage >= 3 ? "enforcing a " + TW_STAGE[w.twStage].toLowerCase() : "drilling around the island") + ". Our deterrence index is " + Math.round(w.deter) + ".");
                 else if (w.twt > 45) b.add("2|CHINA: Pressure on Taiwan is building: more incursions into its air-defense zone.");
                 if (w.uaStage == 2) b.add((w.ukr < 35 ? "3" : "2") + "|UKRAINE: " + (w.ukr < 35 ? "Ukrainian lines are under severe strain." : "The front is grinding but holding.") + " Talks index " + Math.round(w.talks) + ".");
@@ -11547,6 +12665,109 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         }
     }
     // =====================================================================
+    //  34b.  THE PRESS OF EACH ERA
+    // =====================================================================
+    // ---- the press corps of each era: name|lean|audience (millions)|takes sit-down interviews ----------------------
+    static final String[] PRESS_1933 = {"The New York Times|-0.2|1|n", "The Washington Post|-0.1|0.3|n", "The Wall Street Journal|0.4|0.2|n", "The Associated Press|0|20|n", "United Press|0|15|n",
+            "Time|0.3|3|y", "The Nation|-0.8|0.1|n", "The Chicago Tribune|0.8|1|n", "NBC Radio|0|25|y", "CBS Radio|-0.1|25|y", "Mutual Radio|0.2|10|y", "Life|0.3|5|n", "The Hearst papers|0.7|8|n",
+            "Newsweek|0|2|n", "The Saturday Evening Post|0.4|4|y", "The New Republic|-0.7|0.1|n", "Reader's Digest|0.4|8|y", "The March of Time newsreel|0|20|y"};
+    static final String[] PRESS_1953 = {"The New York Times|-0.3|1.5|n", "The Washington Post|-0.3|0.6|n", "The Wall Street Journal|0.4|1|n", "The Associated Press|0|30|n", "United Press International|0|20|n",
+            "Time|0.2|5|y", "Newsweek|-0.1|4|y", "U.S. News and World Report|0.4|2|n", "NBC News|-0.1|20|y", "CBS News|-0.2|22|y", "ABC News|0|12|y", "The Los Angeles Times|0.1|1|n", "National Review|0.8|0.2|n",
+            "The Christian Science Monitor|0|0.3|n", "The Tonight Show|0|12|y", "The New Republic|-0.6|0.2|n", "Human Events|0.9|0.1|n", "Meet the Press|0|6|y"};
+    static final String[] PRESS_1981 = {"The New York Times|-0.4|1.5|n", "The Washington Post|-0.4|0.8|n", "The Wall Street Journal|0.3|2|n", "The Associated Press|0|30|n", "Reuters|0|10|n",
+            "CNN|-0.1|4|y", "Time|0|4|y", "Newsweek|-0.1|3|y", "NBC News|-0.2|15|y", "CBS News|-0.2|15|y", "ABC News|-0.1|14|y", "USA Today|0|5|n", "Conservative talk radio|0.9|15|y",
+            "NPR|-0.3|8|y", "Late-night television|0|10|y", "The New Republic|-0.5|0.2|n", "National Review|0.8|0.3|n", "60 Minutes|-0.1|25|y"};
+    static final String[] PRESS_1997 = {"The New York Times|-0.5|1.5|n", "The Washington Post|-0.5|0.8|n", "The Wall Street Journal|0.3|2|n", "The Associated Press|0|30|n", "Reuters|0|10|n",
+            "CNN|-0.2|3|y", "MSNBC|-0.4|1|y", "Fox News|0.8|2|y", "NBC News|-0.2|11|y", "CBS News|-0.2|9|y", "ABC News|-0.1|10|y", "The Drudge Report|0.6|3|n", "Conservative talk radio|0.9|15|y",
+            "NPR|-0.4|9|y", "Late-night television|0|8|y", "The Daily Show|-0.6|1.5|y", "The Weekly Standard|0.7|0.2|n", "60 Minutes|-0.2|15|y"};
+    static final String[] OUT_NAME0 = OUT_NAME.clone();
+    static final double[] OUT_LEAN0 = OUT_LEAN.clone(), OUT_AUD0 = OUT_AUD.clone();
+    static final boolean[] OUT_SIT0 = OUT_SIT.clone();
+
+    static final String[] POST_NAME0 = POST_NAME.clone(), POST_SHORT0 = POST_SHORT.clone(), POST_TITLE0 = POST_TITLE.clone();
+    /** The year each cabinet post first existed, and where its work was done before that. */
+    static final int[] POST_FROM = {0, 0, 0, 0, 0, 0, 0, 0, 1939, 1966, 1967, 1978, 1980, 0, 2003, 1971, 0, 1963, 1946, 2005, 1947};
+    static final int[] POST_PARENT = {-1, -1, -1, -1, -1, -1, -1, -1, P_LAB, P_COM, P_COM, P_INT, P_HHS, -1, P_DOJ, P_INT, -1, P_COM, P_STATE, P_CIA, P_DEF};
+    /** Posts that don't exist yet this year (all exist in the modern game). */
+    static final boolean[] POST_OFF = new boolean[NPOST];
+
+    static boolean postOn(int k) { return !POST_OFF[k]; }
+
+    /** The department that actually does a post's work this year. */
+    static int ep(int k) { while (POST_OFF[k] && POST_PARENT[k] >= 0) k = POST_PARENT[k]; return k; }
+
+    static void eraPosts(int year) {
+        for (int k = 0; k < NPOST; k++) { POST_NAME[k] = POST_NAME0[k]; POST_SHORT[k] = POST_SHORT0[k]; POST_TITLE[k] = POST_TITLE0[k]; POST_OFF[k] = year < POST_FROM[k]; }
+        if (year < 1947) { POST_NAME[P_DEF] = "War"; POST_SHORT[P_DEF] = "War"; POST_TITLE[P_DEF] = "Secretary of War"; }
+        if (year < 1953) { POST_NAME[P_HHS] = "Federal Security Agency"; POST_SHORT[P_HHS] = "FSA"; POST_TITLE[P_HHS] = "Federal Security administrator"; }
+        else if (year < 1980) { POST_NAME[P_HHS] = "Health, Education, and Welfare"; POST_SHORT[P_HHS] = "HEW"; POST_TITLE[P_HHS] = "HEW secretary"; }
+        if (year < 1989) { POST_NAME[P_VA] = "Veterans Administration"; POST_TITLE[P_VA] = "Veterans administrator"; }
+        if (year < 1970) { POST_NAME[P_OMB] = "Bureau of the Budget"; POST_SHORT[P_OMB] = "Budget"; }
+        if (year < 1980) { POST_NAME[P_USTR] = "Special Trade Representative"; POST_SHORT[P_USTR] = "STR"; POST_TITLE[P_USTR] = "Special trade representative"; }
+        if (year < 2005) POST_TITLE[P_CIA] = "Director of Central Intelligence";
+    }
+
+    /** Party money ($ millions in today's terms) in the era's own dollars, in words. */
+    static String partyMoney(double m) {
+        double a = Math.abs(m) * 1e6 * COST_SCALE;
+        String s = a >= 9.95e6 ? "$" + Math.round(a / 1e6) + " million" : a >= 1e6 ? "$" + fmt1(a / 1e6) + " million" : a >= 1e4 ? "$" + thousands(Math.round(a / 1000) * 1000) : "$" + thousands(Math.round(a / 100) * 100);
+        return (m < 0 ? "-" : "") + s;
+    }
+
+    // ---- committees of each era: chamber|index|until (exclusive)|name, earliest first --------------------------------
+    static final String[] CHAIR_ERA = {
+            "H|4|1947|Military Affairs", "H|6|1947|Labor", "H|8|1947|Roads", "H|11|1947|Naval Affairs", "H|5|1975|Banking and Currency", "H|8|1975|Public Works",
+            "H|11|1975|Veterans' Affairs", "H|10|1975|Foreign Affairs", "H|10|1979|International Relations", "H|2|1981|Interstate and Foreign Commerce",
+            "H|5|1995|Banking, Finance and Urban Affairs", "H|6|1995|Education and Labor", "H|8|1995|Public Works and Transportation", "H|5|2001|Banking and Financial Services",
+            "H|9|2003|Rules", "H|10|1995|Foreign Affairs", "H|10|2007|International Relations", "H|6|2007|Education and the Workforce", "H|6|2011|Education and Labor",
+            "H|6|2019|Education and the Workforce", "H|6|2023|Education and Labor",
+            "S|2|1947|Education and Labor", "S|4|1947|Military Affairs", "S|6|1947|Interstate Commerce", "S|8|1947|Post Offices and Post Roads", "S|11|1947|Rules",
+            "S|9|1952|Expenditures in the Executive Departments", "S|6|1961|Interstate and Foreign Commerce", "S|5|1971|Banking and Currency", "S|11|1975|Rules and Administration",
+            "S|2|1977|Labor and Public Welfare", "S|7|1977|Agriculture and Forestry", "S|8|1977|Public Works", "S|9|1978|Government Operations", "S|2|1999|Labor and Human Resources",
+            "S|9|2005|Governmental Affairs"};
+    static final String[] CHAIR_H0 = CHAIR_H.clone(), CHAIR_S0 = CHAIR_S.clone();
+
+    static void eraChairs(int year) {
+        boolean[][] set = new boolean[2][CHAIR_H.length];
+        for (int k = 0; k < CHAIR_H.length; k++) { CHAIR_H[k] = CHAIR_H0[k]; CHAIR_S[k] = CHAIR_S0[k]; }
+        for (String row : CHAIR_ERA) {
+            String[] t = row.split("\\|");
+            int ch = t[0].equals("H") ? 0 : 1, k = Integer.parseInt(t[1]);
+            if (set[ch][k] || year >= Integer.parseInt(t[2])) continue;
+            set[ch][k] = true;
+            if (ch == 0) CHAIR_H[k] = t[3]; else CHAIR_S[k] = t[3];
+        }
+    }
+
+    /** Is this the name, in any era, of committee k in the chamber? */
+    static boolean sameCommittee(int chamber, int k, String name) {
+        if (name.equals(chamber == HOUSE ? CHAIR_H0[k] : CHAIR_S0[k]) || name.equals(chamber == HOUSE ? CHAIR_H[k] : CHAIR_S[k])) return true;
+        String pre = (chamber == HOUSE ? "H|" : "S|") + k + "|";
+        for (String row : CHAIR_ERA) if (row.startsWith(pre) && row.endsWith("|" + name)) return true;
+        return false;
+    }
+
+    /** The calendar year the game last changed over to (applyYear). */
+    static int CAL_YEAR = 2025;
+
+    /** What changes with the calendar year: the press corps and the name of the president's megaphone. */
+    static void applyYear(int year) {
+        eraPosts(year);
+        eraChairs(year);
+        CAL_YEAR = year; Flag.year = year; Flag.roc = year < 1950;
+        String[] t = year < 1953 ? PRESS_1933 : year < 1981 ? PRESS_1953 : year < 1997 ? PRESS_1981 : year < 2009 ? PRESS_1997 : null;
+        for (int i = 0; i < OUT_NAME.length; i++) {
+            if (t == null) { OUT_NAME[i] = OUT_NAME0[i]; OUT_LEAN[i] = OUT_LEAN0[i]; OUT_AUD[i] = OUT_AUD0[i]; OUT_SIT[i] = OUT_SIT0[i]; continue; }
+            String[] p = t[i].split("\\|");
+            OUT_NAME[i] = p[0]; OUT_LEAN[i] = Double.parseDouble(p[1]); OUT_AUD[i] = Double.parseDouble(p[2]); OUT_SIT[i] = p[3].equals("y");
+        }
+        if (year >= 1971 && year < 1981) OUT_NAME[13] = "NPR";
+        if (year >= 1968 && year < 1981) OUT_NAME[17] = "60 Minutes";
+        if (year >= 1988 && year < 1997) OUT_NAME[12] = "Conservative talk radio";
+        else if (year < 1988 && year >= 1981) { OUT_NAME[12] = "The Moral Majority Report"; OUT_AUD[12] = 1; }
+        PressRoom.TABS[2] = year < 2009 ? "Statements" : "Social media";
+    }
+    // =====================================================================
     //  35.  THE BULLY PULPIT: speeches built line by line, press conferences, interviews, social media and polls
     // =====================================================================
     static String commas(long v) {
@@ -11561,7 +12782,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         static void start(Game g, int type) {
             Home h = g.home;
             h.spType = type; h.spStep = 0; h.spScore = 0; h.spAttack = 0; h.spIssue = -1;
-            String t = type == 1 ? (g.week < 52 ? "Your address to a joint session of Congress" : "The State of the Union") : "An address from the Oval Office";
+            String t = type == 1 ? (g.week < 52 && g.term == 1 ? "Your address to a joint session of Congress" : "The State of the Union") : "An address from the Oval Office";
             Decision d = Decisions.add(g, D_SPEECH, t + ": the opening", (type == 1 ? "Tonight you speak to Congress and about 30 million Americans. " : "The networks have given you fifteen minutes in prime time. ") + "Your speechwriters have drafts of every line. How do you open?",
                     SPEECH_OPEN, new String[]{"Communications director: \"Unity plays well with independents.\"", "Political director: \"Give our people something to cheer.\"",
                             "Chief of staff: \"Honesty about the hard parts earns trust.\"", "Press secretary: \"A good laugh up top relaxes the room.\""});
@@ -11650,8 +12871,8 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
 
         static String reporter(Game g, int outlet, int n) {
             Random r = new Random(g.set.seed * 13 + outlet * 101 + n);
-            boolean f = r.nextDouble() < 0.5;
-            return (f ? FIRST_F[r.nextInt(FIRST_F.length)] : FIRST_M[r.nextInt(FIRST_M.length)]) + " " + LASTS[r.nextInt(LASTS.length)];
+            boolean f = genFemale(r, 0.5);
+            return genFirst(r, f) + " " + genLast(r);
         }
 
         static List<String> topics(Game g) {
@@ -11727,13 +12948,14 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             Cand p = g.pres;
             Random r = g.rng;
             if (h.postWeek != g.week) { h.postWeek = g.week; h.postsThisWeek = 0; }
-            if (h.postsThisWeek >= 5) return "Your staff take your phone away: five posts a week is plenty.";
+            if (h.postsThisWeek >= 5) return yearNow(g) < 2009 ? "Five statements a week is plenty; the press office needs a rest." : "Your staff take your phone away: five posts a week is plenty.";
             h.postsThisWeek++; h.posts++;
-            double reach = (p.a[A_SMD] / 70.0) * (1 - 0.15 * (h.postsThisWeek - 1));
+            boolean old = yearNow(g) < 2009;
+            double reach = ((old ? (p.a[A_SPE] + p.a[A_CHA]) / 2.0 : p.a[A_SMD]) / 70.0) * (1 - 0.15 * (h.postsThisWeek - 1));
             double risk = (tone >= 2 ? 0.08 : 0.02) + Math.max(0, 60 - p.a[A_DIS]) / 300.0;
             if (r.nextDouble() < risk) {
                 g.perf -= 0.5;
-                g.log(NK_BAD, "The president's post " + (tone == 4 ? "falls flat and" : "") + " sets off a backlash", null, 1.5);
+                g.log(NK_BAD, "The president's " + (yearNow(g) < 2009 ? "remarks " : "post ") + (tone == 4 ? "fall flat and" : "") + " set off a backlash", null, 1.5);
                 return "It backfired. The post is the story of the day, and not in a good way.";
             }
             h.followers += 0.15 * reach;
@@ -11745,14 +12967,14 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 default: g.perf += 0.1 * reach * (p.a[A_CHA] / 70.0); groupBump(g, 0, 0.3 * reach); break;
             }
             g.issueSal[issue] = Math.min(2, g.issueSal[issue] + 0.03);
-            return "Posted. " + (reach > 0.9 ? "It's everywhere within the hour." : reach > 0.6 ? "It gets solid engagement." : "It gets a modest response.");
+            return (yearNow(g) < 2009 ? "Done. " : "Posted. ") + (reach > 0.9 ? "It's everywhere within the hour." : reach > 0.6 ? "It gets solid engagement." : "It gets a modest response.");
         }
     }
 
     static final class Polls {
         static String commission(Game g, int issue) {
             Home h = g.home;
-            if (g.funds < 0.5) return "Your party can't pay for a poll right now ($500,000).";
+            if (g.funds < 0.5) return "Your party can't pay for a poll right now (" + partyMoney(0.5) + ").";
             g.funds -= 0.5; h.polls++;
             StringBuilder b = new StringBuilder("Your pollster's numbers on " + PISSUE[issue].toLowerCase() + ": " + Math.round(g.issueApp[issue]) + "% approve. ");
             int[] gs = {21, 4, 5, 0, 1, 12, 10, 8, 9, 22};
@@ -11769,17 +12991,18 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     static final class PressRoom {
         static int tab, outlet = 14, pIssue = PI_ECON, pTone = 0, aIssue = PI_ECON, pollIssue = PI_ECON;
         static String msg;
-        static final String[] TABS = {"The press", "Speeches", "Social media", "Your party", "The home front"};
+        static final String[] TABS = {"The press", "Speeches", "Social media", "Your party", "The home front", "The campaign"};
 
         static void draw(ResoluteDesk u, Graphics2D g, Game game) {
             if (game.home == null) HomeFront.setup(game);
-            u.segmented(g, 48, 116, 760, 30, TABS, tab, i -> { tab = i; msg = null; }, null);
-            if (msg != null) textFit(g, msg, 830, 137, DW - 880, F_XS, C_GOLD);
+            u.segmented(g, 48, 116, 900, 30, TABS, tab, i -> { tab = i; msg = null; }, null);
+            if (msg != null) textFit(g, msg, 968, 137, DW - 1016, F_XS, C_GOLD);
             switch (tab) {
                 case 1: speeches(u, g, game); break;
                 case 2: social(u, g, game); break;
                 case 3: party(u, g, game); break;
                 case 4: home(u, g, game); break;
+                case 5: CampaignUI.draw(u, g, game); break;
                 default: press(u, g, game); break;
             }
         }
@@ -11794,7 +13017,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             double y = 212;
             for (int o = 0; o < OUT_NAME.length; o++) {
                 text(g, OUT_NAME[o], 66, y + 14, F_XS, Color.white);
-                text(g, Math.round(OUT_AUD[o]) + "M", 330, y + 14, F_XS, C_DIM);
+                text(g, OUT_AUD[o] < 1 ? Math.round(OUT_AUD[o] * 1000) + "K" : Math.round(OUT_AUD[o]) + "M", 330, y + 14, F_XS, C_DIM);
                 bar(g, 430, y + 6, 260, 8, h.tone[o] / 100, h.tone[o] >= 60 ? C_GOOD : h.tone[o] >= 40 ? C_GOLD : C_BAD);
                 textR(g, h.tone[o] >= 60 ? "friendly" : h.tone[o] >= 40 ? "mixed" : "hostile", 790, y + 14, F_T, C_DIM);
                 y += 30;
@@ -11819,7 +13042,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             u.panel(g, px, 470, pw, 342, "Commission a poll");
             text(g, "Issue", px + 18, 516, F_S, C_TEXT);
             u.button(g, px + 90, 498, pw - 108, 28, PISSUE[pollIssue], B_NORM, () -> u.openPopup(Math.min(u.mx, DW - 320), 300, 300, "Poll on which issue?", issues(), j -> pollIssue = j));
-            u.button(g, px + 18, 538, pw - 36, 32, "Run the poll ($500,000 from the party)", game.funds >= 0.5 ? B_NORM : B_OFF, game.funds >= 0.5 ? () -> { Polls.commission(game, pollIssue); msg = "The poll results are in."; } : null);
+            u.button(g, px + 18, 538, pw - 36, 32, "Run the poll (" + partyMoney(0.5) + " from the party)", game.funds >= 0.5 ? B_NORM : B_OFF, game.funds >= 0.5 ? () -> { Polls.commission(game, pollIssue); msg = "The poll results are in."; } : null);
             if (h.lastPoll != null) wrap(g, h.lastPoll, px + 18, 594, pw - 36, F_XS, C_TEXT);
             else wrap(g, "Your pollster breaks down how a group sees you on one issue, before you act on it.", px + 18, 594, pw - 36, F_XS, C_DIM);
         }
@@ -11848,22 +13071,28 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                     + " It works like an Oval Office address, with a bigger audience and the other party sitting in front of you.", px + 18, 196, pw - 36, F_S, C_TEXT);
         }
 
+        static String mediumOf(int yr) { return yr < 1950 ? "radio" : yr < 1995 ? "television" : yr < 2009 ? "cable news and the internet" : "social media"; }
+
         // ---- social media ----
         static void social(ResoluteDesk u, Graphics2D g, Game game) {
             Home h = game.home;
-            u.panel(g, 48, 160, 760, 652, "Post");
+            int yr = yearNow(game);
+            String medium = mediumOf(yr);
+            u.panel(g, 48, 160, 760, 652, yr < 2009 ? "A statement by " + medium : "Post");
             text(g, "About", 66, 212, F_S, C_TEXT);
             u.button(g, 160, 194, 628, 28, PISSUE[pIssue], B_NORM, () -> u.openPopup(Math.min(u.mx, DW - 320), 200, 300, "Post about...", issues(), j -> pIssue = j));
             text(g, "Tone", 66, 256, F_S, C_TEXT);
             u.segmented(g, 160, 238, 628, 28, POST_TONE, pTone, i -> pTone = i, new String[]{"Lifts your standing a little.", "Helps on the issue.", "Fires up your base; the other side digs in. Riskier.", "Humanizes you.", "Can land well with young voters, or badly."});
             int left = h.postWeek == game.week ? 5 - h.postsThisWeek : 5;
-            u.button(g, 66, 290, 722, 40, left > 0 ? "Post it (" + left + " left this week)" : "No more posts this week", left > 0 ? B_GOLD : B_OFF, left > 0 ? () -> msg = Social.post(game, pIssue, pTone) : null);
-            wrap(g, "Your reach depends on your feel for social media and how often you post: the fifth post of the week gets less attention than the first. Undisciplined presidents set off backlashes.", 66, 360, 720, F_XS, C_DIM);
+            u.button(g, 66, 290, 722, 40, left > 0 ? (yr < 2009 ? "Make the statement (" : "Post it (") + left + " left this week)" : "No more this week", left > 0 ? B_GOLD : B_OFF, left > 0 ? () -> msg = Social.post(game, pIssue, pTone) : null);
+            wrap(g, yr < 2009 ? "Before social media, a president reached the country through " + medium + ". Your reach depends on your gifts as a speaker and how often you go to the well: the fifth statement of the week gets less attention than the first."
+                    : "Your reach depends on your feel for social media and how often you post: the fifth post of the week gets less attention than the first. Undisciplined presidents set off backlashes.", 66, 360, 720, F_XS, C_DIM);
             double px = 822, pw = DW - 48 - px;
-            u.panel(g, px, 160, pw, 652, "Your accounts");
-            text(g, fmt1(h.followers) + " million followers", px + 18, 210, F_H2, Color.white);
-            text(g, h.posts + " posts so far", px + 18, 236, F_S, C_DIM);
-            text(g, "Feel for social media: " + game.pres.a[A_SMD], px + 18, 266, F_S, C_TEXT);
+            u.panel(g, px, 160, pw, 652, yr < 2009 ? "Your audience" : "Your accounts");
+            if (yr >= 2009) text(g, fmt1(h.followers) + " million followers", px + 18, 210, F_H2, Color.white);
+            else text(g, "About " + Math.round(yr < 1950 ? 50 : yr < 1990 ? 70 : 60) + " million listening", px + 18, 210, F_H2, Color.white);
+            text(g, h.posts + (yr < 2009 ? " statements so far" : " posts so far"), px + 18, 236, F_S, C_DIM);
+            text(g, yr < 2009 ? "Speaking gifts: " + (game.pres.a[A_SPE] + game.pres.a[A_CHA]) / 2 : "Feel for social media: " + game.pres.a[A_SMD], px + 18, 266, F_S, C_TEXT);
         }
 
         // ---- your party ----
@@ -11917,6 +13146,2515 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         }
     }
     // =====================================================================
+    //  37.  FOUR MORE YEARS?
+    //  The re-election campaign: whether to run, a primary challenge if you're weak, the other party's nominee,
+    //  the conventions, the debates, the fall campaign and election night. Then a second term, or the end.
+    // =====================================================================
+    static final int END_NONE = 0, END_SERVED = 1, END_LOST = 2, END_RETIRED = 3, END_DENIED = 4, END_REMOVED = 5;
+    static final String[] END_NAME = {"", "Served out the term", "Defeated for re-election", "Stepped aside", "Denied renomination", "Removed from office"};
+    static final String[] THEME = {"Run on the record", "Draw the contrast", "The next four years"};
+    static final String[] THEME_DESC = {"Works when times are good and people approve of you.", "Works when the other side is weaker than you are, or you are behind.", "Works for a fresh face, or when the country wants change."};
+    static final String[] DEBATE_APP = {"Defend the record", "Attack their plan", "Talk about the future", "Go for the memorable line"};
+
+    static final class Reelect implements Serializable {
+        private static final long serialVersionUID = 1L;
+        int year, stage;                    // stage: 0 not yet, 1 asked, 2 running, 3 a successor runs, 4 decided
+        boolean running, eligible, denied, done, won, nightSeen;
+        Cand nominee, nomVp, opp, oppVp;    // the two tickets
+        String challenger;                  // a primary challenger from your own party
+        double chal, chalShare;             // the challenger's strength and his share of the primary vote so far
+        int theme, adsMix = 55;             // spending split: % on television
+        double conv, oppConv;               // convention bounces, decaying
+        double[] debate = new double[3];
+        int debates, debatesHeld;
+        double[] effort = new double[NS];
+        double nat, mood, money;            // national margin (your party), the year's mood, money advantage
+        double[] st = new double[NS];       // state margins in the polls
+        int evMe, evOpp, evTotal;
+        double popMe, popOpp;
+        double[] margin = new double[NS];
+        int houseD0, senateD0, houseD1, senateD1;
+        List<String> news = new ArrayList<String>();
+    }
+
+    static final class Terms {
+        /** Has the president already served the maximum the Constitution allows by the year of the coming election? */
+        static boolean eligible(Game g) {
+            int y = Reelection.year(g);
+            if (y < 1952) return true;
+            return g.prior + g.term < 2;
+        }
+
+        /** Called when the week reaches the end of a term. */
+        static void check(Game g) {
+            if (g.week < g.termWeeks || g.over) return;
+            Reelect re = g.re;
+            if (re != null && re.done && re.won && re.running) startTerm(g);
+            else {
+                g.over = true;
+                if (g.ending == END_NONE) g.ending = re == null || !re.done ? END_SERVED : re.denied ? END_DENIED : !re.running ? (re.eligible ? END_RETIRED : END_SERVED) : END_LOST;
+            }
+        }
+
+        static void startTerm(Game g) {
+            Reelect re = g.re;
+            g.term++;
+            g.termStart = g.week;
+            g.termWeeks = termEnd(g);
+            g.re = null;
+            g.cong.midDone = false;
+            g.honeymoon += 2;
+            g.capital = Math.min(100, g.capital + 10);
+            if (re != null && re.nomVp != null && re.nomVp != g.vp) g.vp = re.nomVp;
+            // second-term departures: a few secretaries and senior staff move on
+            Random r = g.rng;
+            int gone = 0;
+            for (int k = 0; k < NPOST && gone < 4; k++) {
+                Person p = g.ex.post[k];
+                if (p == null || p.real || r.nextDouble() > 0.22) continue;
+                Cabinet.remove(g, p);
+                g.ex.departures++;
+                g.log(NK_INFO, p.name + " steps down as " + lcTitle(p.title()) + " at the end of the term", null, 1.0);
+                gone++;
+            }
+            int[] dt = dateOf(g.day());
+            g.log(NK_BIG, ("President " + g.pres.last + " is sworn in for a " + (g.term == 2 ? "second" : g.term == 3 ? "third" : "fourth") + " term").toUpperCase(),
+                    "The oath is taken again at noon on January 20, " + dt[0] + ". " + PARTIES[g.party] + " hold " + g.myHouse() + " House seats and " + g.mySenate() + " Senate seats.", 5);
+            g.milestones.add(dateStr(g.day()) + ": sworn in for term " + g.term);
+            Decisions.info(g, "Four More Years", "You took the oath again today. " + (gone > 0 ? gone + (gone == 1 ? " member" : " members") + " of your cabinet are leaving; their deputies are acting until you name successors in the West Wing. " : "")
+                    + "Second terms are hard: the honeymoon is short, the other party smells a lame duck, and history is watching.");
+        }
+    }
+
+    static final class Reelection {
+        /** The election year of the current term. */
+        static int year(Game g) { return termYear(g) + 3; }
+
+        static int electionDay(Game g) {
+            int y = year(g);
+            for (int d = 2; d <= 8; d++) { int day = dayOfDate(y, 10, d); if (dowOf(day) == 1) return day; }
+            return dayOfDate(y, 10, 3);
+        }
+
+        static int weeksTo(Game g) { return (int) Math.floor((electionDay(g) - g.day()) / 7.0); }
+
+        /** The fall campaign: stops on the calendar count. */
+        static boolean season(Game g) { return g.re != null && !g.re.done && (g.re.stage == 2 || g.re.stage == 3) && weeksTo(g) <= 10 && weeksTo(g) >= 0; }
+
+        static boolean debatesHeld(int y) { return y == 1960 || y >= 1976; }
+
+        static void week(Game g) {
+            if (g.over || g.removed) return;
+            int wt = weeksTo(g);
+            if (g.re == null) {
+                if (wt <= 50 && wt > 0) begin(g);
+                return;
+            }
+            Reelect re = g.re;
+            if (re.done) return;
+            Random r = g.rng;
+            if (re.stage == 1) return;           // waiting for your answer
+            // the primaries: a challenger chips away if you're weak
+            if (re.stage == 2 && re.challenger != null && wt <= 44 && wt >= 20 && wt % 2 == 0) {
+                double share = clamp(re.chal - (g.approval - 40) * 0.9 + r.nextGaussian() * 4, 5, 75);
+                re.chalShare = re.chalShare <= 0 ? share : re.chalShare * 0.7 + share * 0.3;
+                String st = PRIMARY_STATES[(44 - wt) / 2 % PRIMARY_STATES.length];
+                boolean lost = share > 50;
+                g.log(lost ? NK_BAD : NK_INFO, (lost ? re.challenger + " beats the president in the " : "The president wins the ") + st + " primary, " + Math.round(lost ? share : 100 - share) + "-" + Math.round(lost ? 100 - share : share), null, lost ? 2.2 : 1.0);
+                if (lost) { g.perf -= 0.6; g.home.fac[0] = Math.max(0, g.home.fac[0] - 2); }
+                if (wt == 20) {
+                    if (re.chalShare > 50) {
+                        re.denied = true; re.running = false; re.stage = 3;
+                        re.nominee = successor(g);
+                        re.nomVp = null;
+                        g.log(NK_BIG, ("Your party denies President " + g.pres.last + " a second nomination").toUpperCase(), re.challenger + " won the primaries; " + re.nominee.name() + " will be the nominee.", 5);
+                        Decisions.info(g, "Denied Renomination", re.challenger + " has beaten you in the primaries. " + re.nominee.name() + " will carry the party in November. You are a lame duck for the rest of your term.");
+                        g.perf -= 2;
+                    } else {
+                        g.log(NK_GOOD, "The president clinches renomination over " + re.challenger, null, 2);
+                        g.perf += 0.5;
+                    }
+                }
+            }
+            // the other party picks its nominee
+            if (re.opp == null && wt <= 24) pickOpp(g);
+            // conventions
+            if (wt == 15 && re.opp != null) {
+                re.oppConv = 2 + (re.opp.a[A_SPE] - 60) / 20.0 + r.nextGaussian();
+                g.log(NK_INFO, "The " + PARTIES[other(g.party)] + " nominate " + re.opp.name() + (re.oppVp != null ? ", with " + re.oppVp.name() + " as running mate" : ""), null, 2.2);
+            }
+            if (wt == 11 && (re.stage == 2 || re.stage == 3)) {
+                if (re.stage == 2) speechDecision(g);
+                else { re.conv = 2 + (re.nominee.a[A_SPE] - 60) / 20.0 + r.nextGaussian(); g.log(NK_INFO, "Your party nominates " + re.nominee.name() + " for president", null, 2); }
+            }
+            // debates
+            if (debatesHeld(year(g)) && re.opp != null) {
+                int n = year(g) == 1960 ? 2 : 3;
+                int[] at = n == 2 ? new int[]{7, 4} : new int[]{6, 4, 2};
+                for (int i = 0; i < n; i++) if (wt == at[i] && re.debatesHeld == i) {
+                    re.debatesHeld++;
+                    if (re.stage == 2) debateDecision(g, i);
+                    else { Cand a = re.nominee; double s = (a.a[A_DEB] - re.opp.a[A_DEB]) / 25.0 + r.nextGaussian() * 0.8; re.debate[i] = clamp(s, -2.5, 2.5); g.log(NK_INFO, (s >= 0 ? a.name() + " wins" : re.opp.name() + " wins") + " the debate, polls say", null, 1.6); }
+                }
+            }
+            // money: fundraising adds to the war chest
+            re.money = clamp((g.funds - 40) / 40.0 + (re.adsMix - 55) / 100.0, -2, 2.5);
+            poll(g);
+            re.conv *= 0.93; re.oppConv *= 0.93;
+            if (wt <= 0) election(g);
+        }
+
+        static final String[] PRIMARY_STATES = {"New Hampshire", "Florida", "Illinois", "Wisconsin", "Pennsylvania", "Texas", "Ohio", "Indiana", "Oregon", "California", "New Jersey", "New York", "Georgia"};
+
+        static void begin(Game g) {
+            Reelect re = new Reelect();
+            g.re = re;
+            re.year = year(g);
+            setEv(re.year);
+            re.eligible = Terms.eligible(g);
+            re.houseD0 = g.houseD; re.senateD0 = g.senateD;
+            re.mood = g.rng.nextGaussian() * 1.8;
+            if (!re.eligible) {
+                re.stage = 3; re.running = false;
+                re.nominee = successor(g);
+                re.nomVp = null;
+                Decisions.info(g, "The Race to Succeed You", "The Constitution allows two terms, and you have served them. Your party's race to succeed you begins in earnest; " + re.nominee.name()
+                        + " is the favorite. You can still help in the fall: your approval will rub off on the nominee, and your campaign stops count.");
+                return;
+            }
+            re.stage = 1;
+            String age = g.presAge() >= 75 ? " You would be " + (g.presAge() + 4) + " at the end of a second term." : "";
+            Decision d = Decisions.add(g, D_CAMPAIGN, "Another Four Years?", "The " + re.year + " election is a year away. Your party wants to know whether you will run again. Your approval is " + Math.round(g.approval) + "%."
+                    + (g.approval < 42 ? " At this level, expect a challenge from inside your own party." : "") + age,
+                    new String[]{"Announce that you're running", "Step aside: let the party choose a successor"},
+                    new String[]{"Political director: \"" + (g.approval >= 48 ? "We're in good shape. Let's go." : g.approval >= 42 ? "It'll be close, but incumbents usually win." : "It will be hard. But the alternative is worse.") + "\"",
+                            "Chief of staff: \"" + (g.approval < 40 ? "There's no shame in it. Some of the greats did it." : "You'd be walking away from a winnable race.") + "\""});
+            d.a = 0;
+        }
+
+        static void speechDecision(Game g) {
+            Decision d = Decisions.add(g, D_CAMPAIGN, "Your Acceptance Speech", "The convention hall is packed and fifty million are watching. What is the heart of your case?", THEME,
+                    new String[]{"Political director: \"" + (g.approval >= 50 ? "The record is strong. Own it.\"" : "The record is a hard sell right now.\""),
+                            "Communications director: \"" + (g.re.opp != null ? "Make it about " + g.re.opp.last + ".\"" : "Make it about them.\""),
+                            "Chief of staff: \"Give them a reason to want four more years.\""});
+            d.a = 1;
+        }
+
+        static void debateDecision(Game g, int i) {
+            Reelect re = g.re;
+            Decision d = Decisions.add(g, D_CAMPAIGN, (i == 0 ? "The First Debate" : i == 1 ? "The Second Debate" : "The Final Debate") + " with " + re.opp.name(),
+                    "Seventy million are watching. " + re.opp.last + "'s debating is rated " + re.opp.a[A_DEB] + ", yours " + g.pres.a[A_DEB] + ". How do you play it?", DEBATE_APP,
+                    new String[]{"Policy staff: \"Your record is your shield.\"", "Political director: \"Make them defend their plan.\"", "Communications director: \"Talk past them, to the country.\"", "Media adviser: \"One great line is all anyone remembers. A bad one too.\""});
+            d.a = 2; d.b = i;
+        }
+
+        /** Who carries the party when you don't. */
+        static Cand successor(Game g) {
+            int y = year(g);
+            String id = nominee(y, g.party);
+            Cand c = id != null ? candById(id) : null;
+            if (c == null || c == g.pres) c = g.vp;
+            if (c == null || c == g.pres) for (Cand x : eraRoster(g.era)) if (x.party == g.party && x != g.pres) { c = x; break; }
+            if (c == null) c = makeCand(g, g.party);
+            return c;
+        }
+
+        /** The other party's nominee: the real one when history offers a match, otherwise its strongest figure. */
+        static void pickOpp(Game g) {
+            Reelect re = g.re;
+            int y = year(g), op = other(g.party);
+            String id = nominee(y, op);
+            Cand c = id != null ? candById(id) : null;
+            Cand mine = re.nominee != null ? re.nominee : g.pres;
+            if (c == g.pres || c == g.vp || c == mine) c = null;
+            if (c == null) {
+                Era next = era(y + 1);
+                if (next.year == y + 1) for (Cand x : eraRoster(next)) if (x.party == op && x != g.pres) { c = x; break; }
+            }
+            if (c == null) for (Cand x : eraRoster(g.era)) if (x.party == op && x != g.pres && x != g.vp) { c = x; break; }
+            if (c == null) c = makeCand(g, op);
+            re.opp = c;
+            String vid = null;
+            for (String s : NOMINEES) if (s.startsWith(y + ":")) { String t = s.substring(5).split(",")[op == DEM ? 0 : 1]; if (t.startsWith(c.id + ">")) vid = t.substring(c.id.length() + 1); }
+            re.oppVp = vid != null && !vid.isEmpty() ? candById(vid) : null;
+            if (re.oppVp == g.pres || re.oppVp == g.vp) re.oppVp = null;
+            g.log(NK_BIG, (c.name() + " clinches the " + PARTY[op] + " nomination").toUpperCase(), null, 3);
+        }
+
+        /** A made-up nominee when history runs out. */
+        static Cand makeCand(Game g, int party) {
+            Random r = new Random(g.set.seed ^ (party * 977L + g.week));
+            Cand c = new Cand();
+            boolean f = genFemale(r, 0.45);
+            c.id = "gen_" + party + "_" + g.week; c.first = genFirst(r, f); c.last = genLast(r); c.party = party; c.fictional = true;
+            c.role = "Governor of " + STATES[Hill.swingState(r)].name; c.born = yearNow(g) - 52 - r.nextInt(14);
+            for (int i = 0; i < NA; i++) c.a[i] = 50 + r.nextInt(25);
+            c.a[A_SCA] = 20 + r.nextInt(30);
+            c.home = Hill.swingState(r); c.homeAb = STATES[c.home].ab;
+            c.faction = party == DEM ? F_LIB : F_GOV; c.econ = party == DEM ? -0.4 : 0.5; c.cult = party == DEM ? -0.4 : 0.5;
+            c.look = Creator.randomLook(r); c.look.female = f; Cabinet.femaleLook(c.look, f, r); genSkin(c.look, r);
+            c.bio = "A " + (f ? "woman" : "man") + " the party trusts to take on the White House. Fictional.";
+            return c;
+        }
+
+        /** The national margin for the president's party (points), before the day's noise. */
+        static double national(Game g) {
+            Reelect re = g.re;
+            Econ e = g.econ;
+            Cand me = re.nominee != null ? re.nominee : g.pres, op = re.opp;
+            double appK = re.running ? 0.85 : 0.6;
+            double pol = g.era.polarization;
+            double m = appK * (g.approval - 50) * (1.25 - 0.35 * pol) + (re.running ? 1.2 : -0.5) + 0.5 * (e.gdp - 2) - 0.3 * (e.unemp - e.uRef);
+            if (op != null) m += 0.06 * (me.a[A_CHA] - op.a[A_CHA]) + 0.05 * (me.a[A_XOV] - op.a[A_XOV]) - 0.03 * (me.a[A_SCA] - op.a[A_SCA]);
+            m += re.conv - re.oppConv;
+            for (double d : re.debate) m += d;
+            m += re.money;
+            m += themeFit(g) * (re.running ? 1 : 0.5);
+            if (re.chalShare > 30) m -= (re.chalShare - 30) * 0.06;
+            int held = g.term + g.prior;
+            if (!re.running && held >= 2) m -= 2 + 1.2 * (held - 2);                // time for a change
+            for (War x : g.world.wars) if (x.stage == 2 && x.support < 40) m -= (40 - x.support) * 0.05;
+            m -= Math.min(4, g.scandal * 0.08);
+            if (g.set.difficulty == 0) m += 1; if (g.set.difficulty == 2) m -= 1;
+            m += re.mood;
+            // landslides have a ceiling: past a dozen points, every extra point is harder to win
+            double a = Math.abs(m);
+            if (a > 12) m = (m > 0 ? 1 : -1) * (12 + (a - 12) * 0.6);
+            return m;
+        }
+
+        static double themeFit(Game g) {
+            Reelect re = g.re;
+            switch (re.theme) {
+                case 0: return (g.approval - 48) * 0.08;
+                case 1: return re.opp != null ? (g.pres.a[A_CHA] - re.opp.a[A_CHA]) * 0.02 + (g.approval < 47 ? 0.8 : 0.2) : 0.3;
+                default: return (g.presAge() < 60 ? 0.5 : 0) + (g.approval < 45 ? 0.4 : 0.1) + (g.pres.a[A_SPE] - 60) * 0.01;
+            }
+        }
+
+        static double stateMargin(Game g, int s, double nat) {
+            Reelect re = g.re;
+            double sign = g.party == DEM ? 1 : -1;
+            double m = sign * (leanIn(s, re.year) - backlash(g, s, re.year)) + nat;
+            Cand me = re.nominee != null ? re.nominee : g.pres;
+            double hk = re.year < 1990 ? 5 : 3;
+            if (me.home == s) m += hk;
+            if (re.opp != null && re.opp.home == s) m -= hk;
+            Cand myVp = re.running ? g.vp : re.nomVp;
+            if (myVp != null && myVp.home == s) m += hk * 0.4;
+            if (re.oppVp != null && re.oppVp.home == s) m -= hk * 0.4;
+            m += Math.min(4, re.effort[s] * 0.9) + g.stateBump[s] * 0.15;
+            return m;
+        }
+
+        static final String[] SOUTH = {"MS:60", "AL:55", "GA:45", "LA:45", "SC:40", "AR:15", "FL:12", "NC:12", "TN:8", "VA:8", "TX:8"};
+
+        /** The South breaks with the Democrats once a Democratic president has signed civil rights into law (1964 to 1972;
+         *  from 1976 the election results the leans are built on carry it). Points off the Democratic margin. */
+        static double backlash(Game g, int s, int year) {
+            if (year < 1964 || year > 1975) return 0;
+            boolean signed = g.era.year >= 1965;
+            if (!signed && g.party == DEM) for (Bill b : g.cong.bills) if (b.stage == ST_LAW && b.def().area == PI_RIGHTS && b.cult() < -0.3) { signed = true; break; }
+            if (!signed) return 0;
+            for (String t : SOUTH) if (t.startsWith(STATES[s].ab + ":")) return Double.parseDouble(t.substring(3));
+            return 0;
+        }
+
+        static void poll(Game g) {
+            Reelect re = g.re;
+            double nat = national(g) + g.rng.nextGaussian() * 1.2;
+            re.nat = re.nat == 0 ? nat : re.nat * 0.6 + nat * 0.4;
+            for (int s = 0; s < NS; s++) re.st[s] = stateMargin(g, s, re.nat);
+        }
+
+        /** Electoral votes the polls point to. */
+        static int forecastEv(Game g) {
+            int ev = 0;
+            for (int s = 0; s < NS; s++) if (votes(s, g.re.year) && g.re.st[s] > 0) ev += STATES[s].ev;
+            return ev;
+        }
+
+        static void decide(Game g, Decision d, int k) {
+            Reelect re = g.re;
+            if (re == null) return;
+            if (d.a == 0) {
+                if (k == 0) {
+                    re.running = true; re.stage = 2; re.nominee = g.pres; re.nomVp = g.vp;
+                    g.log(NK_BIG, ("President " + g.pres.last + " announces a campaign for a " + (g.term == 1 ? "second" : g.term == 2 ? "third" : "fourth") + " term").toUpperCase(), null, 3);
+                    if (g.approval < 42 && g.rng.nextDouble() < 0.4 + (42 - g.approval) * 0.04) {
+                        Random r = g.rng;
+                        boolean f = genFemale(r, 0.4);
+                        re.challenger = (r.nextBoolean() ? "Senator " : "Governor ") + genFirst(r, f) + " " + genLast(r);
+                        re.chal = 38 + (42 - g.approval) * 1.2;
+                        g.log(NK_BAD, (re.challenger + " launches a primary challenge to the president").toUpperCase(), "The challenger says the party can't win with " + g.pres.last + " at the top of the ticket.", 3);
+                    }
+                } else {
+                    re.running = false; re.stage = 3;
+                    re.nominee = successor(g); re.nomVp = null;
+                    g.log(NK_BIG, ("President " + g.pres.last + " will not seek another term").toUpperCase(), re.nominee.name() + " is the early favorite for the nomination.", 4.5);
+                    g.perf += 1;
+                    g.capital = Math.max(0, g.capital - 10);
+                }
+            } else if (d.a == 1) {
+                re.theme = k;
+                double fit = themeFit(g);
+                re.conv = 2 + (g.pres.a[A_SPE] - 60) / 15.0 + fit * 2 + g.rng.nextGaussian() * 0.8;
+                g.log(re.conv > 2.5 ? NK_GOOD : NK_INFO, "The president's acceptance speech " + (re.conv > 3.5 ? "brings the hall to its feet" : re.conv > 2 ? "is well received" : "falls a little flat"), null, 2);
+            } else if (d.a == 2) {
+                int i = d.b;
+                Cand op = re.opp;
+                double fit = k == 0 ? (g.approval - 48) * 0.05 : k == 1 ? (op != null ? (55 - op.a[A_INT]) * 0.03 : 0) + 0.2 : k == 2 ? 0.25 + (g.pres.a[A_SPE] - 60) * 0.01 : 0;
+                double s = (g.pres.a[A_DEB] - (op != null ? op.a[A_DEB] : 60)) / 25.0 + fit + g.rng.nextGaussian() * (k == 3 ? 1.5 : 0.8);
+                re.debate[i] = clamp(s, -3, 3);
+                String who = s >= 0 ? "the president" : op.name();
+                g.log(s >= 0 ? NK_GOOD : NK_BAD, "Snap polls say " + who + " won the " + (i == 0 ? "first" : i == 1 ? "second" : "final") + " debate" + (k == 3 && Math.abs(s) > 1.5 ? (s > 0 ? "; your line is everywhere" : "; your attempt at a zinger misfires") : ""), null, 2);
+            }
+        }
+
+        static int auto(Game g, Decision d) {
+            if (d.a == 0) return g.approval >= 36 ? 0 : 1;
+            if (d.a == 1) return g.approval >= 50 ? 0 : g.approval < 44 ? 1 : 2;
+            return g.approval >= 50 ? 0 : 1;
+        }
+
+        // ---- election day ----
+        static void election(Game g) {
+            Reelect re = g.re;
+            if (re.opp == null) pickOpp(g);
+            Random r = g.rng;
+            double nat = national(g) + r.nextGaussian() * 1.6;
+            double[] reg = new double[6];
+            for (int i = 0; i < reg.length; i++) reg[i] = r.nextGaussian() * 1.6;
+            re.evMe = 0; re.evOpp = 0; re.evTotal = 0;
+            double vMe = 0, vOpp = 0;
+            for (int s = 0; s < NS; s++) {
+                if (!votes(s, re.year)) { re.margin[s] = 0; continue; }
+                double m = stateMargin(g, s, nat) + reg[regionOf(s)] + r.nextGaussian() * 2.4;
+                re.margin[s] = m;
+                int ev = STATES[s].ev;
+                re.evTotal += ev;
+                if (m > 0) re.evMe += ev; else re.evOpp += ev;
+                double w = STATES[s].t24 > 0 ? STATES[s].t24 : 1;
+                double share = clamp(50 + m / 2, 5, 95);
+                vMe += w * share; vOpp += w * (100 - share);
+            }
+            re.popMe = vMe / (vMe + vOpp) * 100; re.popOpp = 100 - re.popMe;
+            int need = re.evTotal / 2 + 1;
+            boolean won = re.evMe >= need || re.evMe * 2 == re.evTotal && Hill.majority(g, HOUSE, g.party);
+            re.won = won;
+            re.done = true; re.stage = 4;
+            congress(g, nat);
+            Cand me = re.nominee != null ? re.nominee : g.pres;
+            String head = won ? (re.running ? "PRESIDENT " + g.pres.last.toUpperCase() + " WINS RE-ELECTION" : me.name().toUpperCase() + " WINS THE PRESIDENCY") : re.opp.name().toUpperCase() + " IS ELECTED PRESIDENT";
+            String body = me.last + " " + re.evMe + ", " + re.opp.last + " " + re.evOpp + " in the Electoral College; the popular vote " + fmt1(re.popMe) + "% to " + fmt1(re.popOpp) + "%.";
+            g.log(NK_BIG, head, body, 6);
+            g.milestones.add(dateStr(electionDay(g)) + ": " + (won ? (re.running ? "re-elected, " : me.name() + " elected, ") : (re.running ? "defeated, " : me.name() + " defeated, ")) + re.evMe + "-" + re.evOpp);
+            if (re.running && !won) g.ending = END_LOST;
+            if (re.running && won) { g.lastEvWon = re.evMe; g.lastEvTotal = re.evTotal; }
+            if (won && re.running) g.perf += 2;
+            g.night = true;
+        }
+
+        static int regionOf(int s) {
+            String r = STATES[s].region;
+            if (r == null) return 0;
+            return Math.abs(r.hashCode()) % 6;
+        }
+
+        /** The House and the Senate on the same day: coattails, and in older eras plenty of ticket-splitting. */
+        static void congress(Game g, double nat) {
+            Reelect re = g.re;
+            Random r = g.rng;
+            double natD = (g.party == DEM ? nat : -nat);
+            int y = re.year;
+            boolean hB = Hill.majority(g, HOUSE, g.party), sB = Hill.majority(g, SENATE, g.party);
+            g.houseD = clampi((int) Math.round(houseBase(y) + houseSlope(y) * natD * 0.8 + r.nextGaussian() * 6), 120, 340);
+            int dUp = 0, dWon = 0;
+            for (String tok : senateUp(y, g.senateD).split(" ")) {
+                String[] p = tok.split(":");
+                int s = stateIdx(p[0]);
+                if (s < 0) continue;
+                boolean dHeld = p[1].equals("D");
+                if (dHeld) dUp++;
+                double m = leanIn(s, y) + natD * (y >= 1995 ? 0.7 : 0.35) + (dHeld ? 1 : -1) * (y >= 1995 ? 3 : 6) + r.nextGaussian() * 4;
+                if (m > 0) dWon++;
+            }
+            g.senateD = clampi(g.senateD - dUp + dWon, 20, 80);
+            re.houseD1 = g.houseD; re.senateD1 = g.senateD;
+            Hill.seats(g);
+            boolean hA = Hill.majority(g, HOUSE, g.party), sA = Hill.majority(g, SENATE, g.party);
+            Leaders.reshuffle(g, hB != hA, sB != sA);
+            g.log(NK_INFO, PARTIES[g.party] + " will hold " + g.myHouse() + " House seats and " + g.mySenate() + " Senate seats in the new Congress", null, 2.4);
+        }
+    }
+
+    /** The House a party can expect at an even split, and how fast it moves with the national vote. */
+    static double houseBase(int y) { return y < 1939 ? 300 : y < 1995 ? 255 : 222; }
+
+    static double houseSlope(int y) { return y < 1995 ? 2.0 : 3.8; }
+
+    static int other(int p) { return p == REP ? DEM : REP; }
+    // =====================================================================
+    //  38.  CAMPAIGN HEADQUARTERS AND ELECTION NIGHT
+    // =====================================================================
+    static final class CampaignUI {
+        static void draw(ResoluteDesk u, Graphics2D g, Game game) {
+            Reelect re = game.re;
+            if (re == null) {
+                u.panel(g, 48, 160, DW - 96, 652, "The next election");
+                int y = Reelection.year(game);
+                boolean can = Terms.eligible(game);
+                wrap(g, "The " + y + " presidential election is " + Math.max(0, Reelection.weeksTo(game)) + " weeks away. " + (can ? "About a year before it, you'll decide whether to run for another term." : "You can't run again: the Constitution limits a president to two terms. You can still help your party's nominee in the fall.")
+                        + " Until then, everything you do here is the campaign: the economy, your approval, your record in Congress and abroad.", 66, 200, 900, F_S, C_TEXT);
+                return;
+            }
+            Cand me = re.nominee != null ? re.nominee : game.pres;
+            double lx = 48, lw = 700;
+            u.panel(g, lx, 160, lw, 652, re.year + ": " + (re.running ? "your campaign" : me.name() + "'s campaign"));
+            Portrait.draw(g, me, lx + 18, 196, 96, 116, u.tsec, 0, true, true);
+            text(g, me.name(), lx + 126, 218, F_H3, partyColor(game.party));
+            text(g, re.running ? "The incumbent" : re.denied ? "Nominee after your defeat in the primaries" : "Your party's nominee", lx + 126, 238, F_XS, C_DIM);
+            if (re.opp != null) {
+                Portrait.draw(g, re.opp, lx + lw - 114, 196, 96, 116, u.tsec, 0, true, true);
+                textR(g, re.opp.name(), lx + lw - 126, 218, F_H3, partyColor(re.opp.party));
+                textR(g, re.opp.role != null ? re.opp.role : "", lx + lw - 126, 238, F_XS, C_DIM);
+            } else textR(g, "The other party hasn't chosen yet", lx + lw - 126, 218, F_S, C_DIM);
+            double y = 340;
+            if (re.stage == 1) { wrap(g, "You haven't said yet whether you're running. Your decision is in the inbox.", lx + 18, y, lw - 36, F_S, C_AMBER); return; }
+            double m = re.nat;
+            text(g, "National polls", lx + 18, y, F_SB, C_TEXT);
+            textR(g, (m >= 0 ? me.last + " +" : (re.opp != null ? re.opp.last : "Opponent") + " +") + fmt1(Math.abs(m)), lx + lw - 18, y, F_H3, m >= 0 ? C_GOOD : C_BAD);
+            y += 16;
+            double share = clamp(50 + m / 2, 5, 95);
+            g.setColor(partyColor(game.party)); g.fill(new Rectangle2D.Double(lx + 18, y, (lw - 36) * share / 100, 12));
+            g.setColor(partyColor(other(game.party))); g.fill(new Rectangle2D.Double(lx + 18 + (lw - 36) * share / 100, y, (lw - 36) * (1 - share / 100), 12));
+            y += 34;
+            int fev = Reelection.forecastEv(game);
+            text(g, "Electoral votes if the election were today: " + fev + " of " + evTotal(evFor(re.year)) + " (" + (evTotal(evFor(re.year)) / 2 + 1) + " to win)", lx + 18, y, F_S, fev * 2 > evTotal(evFor(re.year)) ? C_GOOD : C_AMBER);
+            y += 30;
+            if (re.challenger != null) {
+                text(g, "Primary challenge: " + re.challenger + (re.chalShare > 0 ? ", " + Math.round(re.chalShare) + "% of the vote so far" : ""), lx + 18, y, F_S, re.chalShare > 45 ? C_BAD : C_AMBER);
+                y += 26;
+            }
+            label(g, "Message", lx + 18, y, C_GOLD); y += 10;
+            u.segmented(g, lx + 18, y, lw - 36, 30, THEME, re.theme, i -> re.theme = i, THEME_DESC);
+            y += 44;
+            label(g, "Money", lx + 18, y, C_GOLD); y += 12;
+            text(g, "Ground game", lx + 18, y + 14, F_XS, C_TEXT);
+            u.slider(g, lx + 120, y + 8, lw - 260, re.adsMix / 100.0, C_GOLD, v -> re.adsMix = (int) Math.round(v * 100), "How your money is split between television ads and organizers.");
+            textR(g, "Television " + re.adsMix + "%", lx + lw - 18, y + 14, F_XS, C_TEXT);
+            y += 40;
+            text(g, "Party war chest: " + partyMoney(game.funds) + ". Fundraisers on your calendar add to it.", lx + 18, y, F_XS, C_DIM);
+            y += 30;
+            label(g, "The calendar", lx + 18, y, C_GOLD); y += 18;
+            int wt = Reelection.weeksTo(game);
+            String[] steps = {"Primaries", "The other party's convention", "Your convention", "Labor Day: the fall campaign", "Debates", "Election Day"};
+            int[] at = {44, 15, 11, 9, Reelection.debatesHeld(re.year) ? 6 : -1, 0};
+            for (int i = 0; i < steps.length; i++) {
+                if (at[i] < 0) continue;
+                boolean past = wt < at[i] || i == 5 && re.done;
+                text(g, (past ? "Done: " : "In " + Math.max(0, wt - at[i]) + " weeks: ") + steps[i], lx + 18, y, F_XS, past ? C_FAINT : C_TEXT);
+                y += 18;
+            }
+            if (Reelection.season(game)) wrap(g, "It's the fall campaign: schedule campaign stops in swing states from your calendar (the Desk). Each one moves that state.", lx + 18, y + 6, lw - 36, F_XS, C_GOLD);
+            // the map
+            double mx = lx + lw + 16, mw = DW - 48 - mx;
+            u.panel(g, mx, 160, mw, 652, "The map, by the polls");
+            for (int s = 0; s < NS; s++) {
+                if (!votes(s, re.year)) { USMap.paint[s] = rgb(0x2a3346); USMap.tags[s] = ""; continue; }
+                double sm = game.party == DEM ? re.st[s] : -re.st[s];
+                USMap.paint[s] = marginColor(sm, 1);
+                USMap.tags[s] = String.valueOf(STATES[s].ev);
+            }
+            USMap.markState = -1; USMap.markCand = null;
+            double[] f = USMap.draw(u, g, mx + 10, 196, mw - 20, 420, -1, true);
+            int hs = USMap.stateAt(f, u.mx, u.my);
+            if (hs >= 0 && votes(hs, re.year)) u.tip = STATES[hs].name + " (" + STATES[hs].ev + "): " + (re.st[hs] >= 0 ? me.last : re.opp != null ? re.opp.last : "the other side") + " +" + fmt1(Math.abs(re.st[hs])) + (re.effort[hs] > 0 ? ". Your stops: " + fmt1(re.effort[hs]) : "");
+            USMap.scale(g, mx + 18, 640, C_REP, C_STATE, C_DEM, "R+20", "D+20", "margin in the polls");
+            // the closest states
+            Integer[] ord = new Integer[NS];
+            for (int i = 0; i < NS; i++) ord[i] = i;
+            Arrays.sort(ord, (a, b) -> Double.compare(Math.abs(re.st[a]), Math.abs(re.st[b])));
+            text(g, "Closest states:", mx + 18, 690, F_XSB, C_TEXT);
+            double xx = mx + 130;
+            for (int n = 0, k = 0; n < NS && k < 6; n++) {
+                int s = ord[n];
+                if (!votes(s, re.year)) continue;
+                String t = STATES[s].ab + " " + (re.st[s] >= 0 ? "+" : "") + fmt1(re.st[s]);
+                text(g, t, xx, 690, F_XS, re.st[s] >= 0 ? C_GOOD : C_BAD);
+                xx += strW(g, t, F_XS) + 16;
+                k++;
+            }
+            if (re.done) u.button(g, mx + 18, 720, 260, 34, "Election night results", B_GOLD, () -> Night.begin(u));
+        }
+    }
+
+    // ---- election night ----
+    static final class Night {
+        static double t0;
+        static int[] order;
+        static boolean all;
+
+        static void begin(ResoluteDesk u) {
+            Game g = u.game;
+            if (g == null || g.re == null) return;
+            g.night = false;
+            Integer[] o = new Integer[NS];
+            for (int i = 0; i < NS; i++) o[i] = i;
+            Arrays.sort(o, (a, b) -> Double.compare(STATES[a].cx + Math.abs(g.re.margin[a]) * 2, STATES[b].cx + Math.abs(g.re.margin[b]) * 2));
+            order = new int[NS];
+            for (int i = 0; i < NS; i++) order[i] = o[i];
+            t0 = u.tsec;
+            all = false;
+            u.go(SC_NIGHT);
+            snd(Sfx.OPEN);
+        }
+
+        static void draw(ResoluteDesk u, Graphics2D g) {
+            Game game = u.game;
+            if (game == null || game.re == null) { u.go(SC_OVAL); return; }
+            Reelect re = game.re;
+            Cand me = re.nominee != null ? re.nominee : game.pres;
+            g.setPaint(new GradientPaint(0, 0, rgb(0x070b16), 0, DH, rgb(0x15213d)));
+            g.fill(new Rectangle2D.Double(0, 0, DW, DH));
+            label(g, "ELECTION NIGHT " + re.year, 48, 50, C_GOLD);
+            text(g, me.name() + " vs. " + re.opp.name(), 48, 84, F_DISPLAY, Color.white);
+            double el = (u.tsec - t0) * 4.5;
+            int shown = all ? NS : (int) Math.min(NS, el);
+            int a = 0, b = 0;
+            boolean[] in = new boolean[NS];
+            for (int i = 0; i < shown; i++) in[order[i]] = true;
+            for (int s = 0; s < NS; s++) {
+                if (!votes(s, re.year)) { USMap.paint[s] = rgb(0x1d2434); USMap.tags[s] = ""; continue; }
+                if (in[s]) {
+                    double sm = game.party == DEM ? re.margin[s] : -re.margin[s];
+                    USMap.paint[s] = marginColor(sm, 1);
+                    USMap.tags[s] = String.valueOf(STATES[s].ev);
+                    if (re.margin[s] > 0) a += STATES[s].ev; else b += STATES[s].ev;
+                } else { USMap.paint[s] = rgb(0x3a4256); USMap.tags[s] = ""; }
+            }
+            USMap.markState = -1; USMap.markCand = null;
+            double[] f = USMap.draw(u, g, 300, 120, 1000, 600, -1, true);
+            int hs = USMap.stateAt(f, u.mx, u.my);
+            if (hs >= 0 && in[hs] && votes(hs, re.year)) u.tip = STATES[hs].name + ": " + (re.margin[hs] > 0 ? me.last : re.opp.last) + " wins by " + fmt1(Math.abs(re.margin[hs])) + " points";
+            int need = re.evTotal / 2 + 1;
+            // the scoreboard
+            tally(g, 48, 150, me, a, need, partyColor(game.party));
+            tally(g, DW - 288, 150, re.opp, b, need, partyColor(re.opp.party));
+            double p = (double) shown / NS;
+            text(g, Math.round(p * 100) + "% of states reporting", 48, 760, F_S, C_DIM);
+            boolean finished = shown >= NS;
+            if (finished) {
+                String head = re.won ? me.name().toUpperCase() + " WINS" : re.opp.name().toUpperCase() + " WINS";
+                g.setColor(new Color(8, 13, 26, 230));
+                g.fill(new RoundRectangle2D.Double(DW / 2 - 420, 726, 840, 70, 14, 14));
+                textC(g, head, DW / 2, 770, F_H1, re.won ? C_GOLD : C_BAD);
+                text(g, "Popular vote: " + me.last + " " + fmt1(re.popMe) + "%, " + re.opp.last + " " + fmt1(re.popOpp) + "%", 48, 790, F_S, C_TEXT);
+                boolean cont = re.won && re.running;
+                u.button(g, DW - 48 - 300, 832, 300, 44, cont ? "Four more years" : "Back to the Oval Office", B_GOLD, () -> { u.go(SC_OVAL); if (cont) u.toast("You'll be sworn in again on January 20.", C_GOLD); });
+                if (!cont) u.button(g, DW - 48 - 620, 832, 300, 44, "Skip to the end of the term", B_NORM, () -> Legacy.finishTerm(u));
+                if (!re.nightSeen) { re.nightSeen = true; snd(re.won ? Sfx.CHEER : Sfx.OPEN); }
+                if (game.watch && u.tsec - t0 > NS / 4.5 + 3) u.go(SC_OVAL);
+            } else u.button(g, DW - 48 - 300, 832, 300, 44, "Skip to the result", B_NORM, () -> all = true);
+        }
+
+        static void tally(Graphics2D g, double x, double y, Cand c, int ev, int need, Color col) {
+            Portrait.draw(g, c, x, y, 120, 144, 0, 0, true, true);
+            text(g, c.name(), x, y + 170, F_H3, col);
+            text(g, String.valueOf(ev), x, y + 230, new Font(SERIF, Font.BOLD, 56), ev >= need ? C_GOLD : Color.white);
+            text(g, "electoral votes", x, y + 254, F_XS, C_DIM);
+            bar(g, x, y + 266, 200, 10, Math.min(1, ev / (double) need), col);
+            text(g, need + " to win", x, y + 294, F_XS, C_FAINT);
+        }
+    }
+    // =====================================================================
+    //  39.  THE VERDICT OF HISTORY
+    //  When the presidency ends: the historians' ten measures and where you rank among the real presidents,
+    //  the record, an epilogue, your presidential library, achievements and the Hall of Fame.
+    // =====================================================================
+    /** The C-SPAN 2021 Presidential Historians Survey, in rank order; scores are an internal scale used only to place you. */
+    static final String[] RANKED = {"Abraham Lincoln", "George Washington", "Franklin D. Roosevelt", "Theodore Roosevelt", "Dwight D. Eisenhower", "Harry S. Truman", "Thomas Jefferson",
+            "John F. Kennedy", "Ronald Reagan", "Barack Obama", "Lyndon B. Johnson", "James Monroe", "Woodrow Wilson", "William McKinley", "John Adams", "James Madison", "John Quincy Adams",
+            "James K. Polk", "Bill Clinton", "Ulysses S. Grant", "George H. W. Bush", "Andrew Jackson", "William Howard Taft", "Calvin Coolidge", "Grover Cleveland", "Jimmy Carter",
+            "James A. Garfield", "Gerald Ford", "George W. Bush", "Chester A. Arthur", "Richard Nixon", "Benjamin Harrison", "Rutherford B. Hayes", "Martin Van Buren", "Zachary Taylor",
+            "Herbert Hoover", "Warren G. Harding", "Millard Fillmore", "John Tyler", "William Henry Harrison", "Donald Trump", "Franklin Pierce", "Andrew Johnson", "James Buchanan"};
+    static final int[] RANK_SCORE = {897, 851, 841, 785, 734, 713, 704, 699, 681, 664, 654, 643, 617, 612, 609, 604, 603, 599, 594, 590, 585, 568, 543, 535, 523, 507, 506, 498, 495,
+            472, 463, 448, 443, 435, 430, 396, 380, 370, 360, 350, 312, 305, 265, 227};
+    static final String[] MEASURE = {"Public persuasion", "Crisis leadership", "Economic management", "Moral authority", "International relations", "Administrative skills",
+            "Relations with Congress", "Vision and agenda", "Pursued equal justice for all", "Performance within the times"};
+
+    static final String[][] ACH = {
+            {"twoterms", "Eight years", "Serve two full terms."}, {"thirdterm", "Breaking tradition", "Win a third term (possible before 1951)."}, {"fourth", "Four times", "Win a fourth term."},
+            {"landslide", "Landslide", "Win re-election with 400 or more electoral votes."}, {"squeaker", "By a whisker", "Win re-election with no more than 15 electoral votes to spare."},
+            {"whatif", "What if?", "Win re-election as a president history didn't choose."}, {"lawmaker", "Lawmaker", "Sign 10 laws."}, {"newdeal", "A new deal", "Sign 20 laws."},
+            {"civilrights", "Equal justice", "Sign a civil rights law."}, {"midterm", "Defy the midterms", "Gain House seats in a midterm election."}, {"victory", "Victory", "Win a war."},
+            {"peace", "Peacemaker", "End a war by agreement."}, {"dove", "No new wars", "Serve a full term without going to war."}, {"recovery", "The recovery", "Cut unemployment by five points."},
+            {"fullemp", "Full employment", "Leave office with unemployment under 4%."}, {"slayer", "Inflation slayer", "Cut inflation by five points."}, {"surplus", "In the black", "Leave office with a budget surplus."},
+            {"bull", "Bull market", "Leave the stock market at least twice as high as you found it."}, {"beloved", "Beloved", "Leave office with approval of 60% or more."},
+            {"comeback", "The comeback kid", "Win re-election after your approval fell below 40%."}, {"survivor", "Survivor", "Be impeached and not removed."}, {"court3", "A court of your own", "Appoint three Supreme Court justices."},
+            {"summits", "Statesman", "Reach five agreements with foreign leaders."}, {"crises", "Steady hand", "See ten crises and turning points go your way."}, {"top10", "The greats", "Historians rank you in the top ten."},
+            {"lincoln", "Above Lincoln", "Historians rank you first."}, {"hard", "The hard way", "Finish a term on Hard."}, {"stepdown", "Cincinnatus", "Step aside when you could have run again."},
+            {"import", "From the campaign trail", "Take office from Battleground 2028."}, {"eras", "A student of history", "Finish presidencies in five different eras."}, {"moon", "Moonshot", "Commit the country to the Moon, and get there."},
+            {"tour", "Globetrotter", "Make ten trips abroad."}};
+
+    static final class Legacy {
+        /** Does the bill's name take "the" ("the Civil Rights Act", "the North American Free Trade Agreement")? */
+        static boolean takesThe(String n) {
+            return n.contains("Act") || n.contains("Agreement") || n.contains("Amendments") || n.contains("Appropriation") || n.contains("Treaty") || n.contains("Charter");
+        }
+
+        /** "The Civil Rights Act became law", "The Senate ratified the North Atlantic Treaty", "Congress approved the Apollo program". */
+        static String passed(Bill b) {
+            String n = b.name, id = b.def().id;
+            String bare = n.startsWith("The ") ? n.substring(4) : n;
+            if (id.equals("un_charter") || id.equals("nato_treaty") || id.equals("panama")) return "The Senate ratified the " + bare;
+            if (n.startsWith("The ")) return "Congress approved the " + bare;
+            if (n.endsWith("Authority") || n.endsWith("Corps")) return "Congress created the " + n;
+            return (takesThe(n) ? "The " : "") + n + " became law";
+        }
+
+        /** "A pen used to sign the Civil Rights Act", "... to sign Medicare and Medicaid into law". */
+        static String pen(Bill b) {
+            String n = b.name;
+            if (n.startsWith("The ")) return "A pen used to sign the " + n.substring(4);
+            return takesThe(n) ? "A pen used to sign the " + n : "A pen used to sign " + n + " into law";
+        }
+
+        static int tab;
+        static int[] lastScores;
+        static String rankLine, rankShort;
+        static int rankPos;
+
+        static double clamp100(double v) { return clamp(v, 0, 100); }
+
+        static double avgApproval(Game g) { double s = 0; for (double[] h : g.hist) s += h[H_APP]; return g.hist.isEmpty() ? g.approval : s / g.hist.size(); }
+
+        static double first(Game g, int col) { return g.hist.isEmpty() ? 0 : g.hist.get(0)[col]; }
+
+        static int lawsOurs(Game g) { int n = 0; for (Bill b : g.cong.bills) if (b.stage == ST_LAW && b.ours) n++; return n; }
+
+        static int lawsAll(Game g) { int n = 0; for (Bill b : g.cong.bills) if (b.stage == ST_LAW) n++; return n; }
+
+        static int wars(Game g, int stage) { int n = 0; for (War x : g.world.wars) if (x.stage == stage && x.started >= 0) n++; return n; }
+
+        static int warsEnded(Game g, int stage) { int n = 0; for (War x : g.world.wars) if (x.stage == stage && x.ended >= 0) n++; return n; }
+
+        /** The ten measures, 0 to 100 each. */
+        static int[] scores(Game g) {
+            Econ e = g.econ;
+            Exec x = g.ex;
+            World w = g.world;
+            double[] s = new double[10];
+            double avg = avgApproval(g);
+            double yrs = Math.max(1, g.week / 52.0);
+            s[0] = clamp100(46 + (avg - 50) * 1.8 + Math.min(6, g.home.speeches * 0.5));
+            int nCr = g.okCount + g.failCount;
+            s[1] = clamp100(28 + (nCr > 0 ? 45.0 * g.okCount / nCr : 22) + Math.min(8, nCr * 0.3) + 12 * warsEnded(g, 3) + 4 * warsEnded(g, 5) - 18 * warsEnded(g, 4));
+            double u0 = first(g, H_UNEMP), pi0 = first(g, H_INFL), sp0 = first(g, H_STOCKS);
+            double gsum = 0; for (double[] h : g.hist) gsum += h[H_GDP];
+            double gavg = g.hist.isEmpty() ? e.gdp : gsum / g.hist.size();
+            s[2] = clamp100(52 + 3.2 * (u0 - e.unemp) + 4 * (gavg - e.potential) - 2.5 * Math.max(0, Economy.piEff(e.infl) - Math.max(3, Economy.piEff(pi0))) + 2.5 * Math.max(0, Economy.piEff(pi0) - Math.max(3, Economy.piEff(e.infl)))
+                    + 6 * Math.log(Math.max(0.2, e.stocks / Math.max(0.01, sp0))) - 0.15 * Math.max(0, e.debt - first(g, H_DEBT)));
+            int sc = 0; double sev = 0;
+            for (Scandal k : x.scandals) if (k.kind != SK_LEAK) { sc++; sev += k.severity; }
+            s[3] = clamp100(72 - sev * 1.5 - x.impeachments * 15 - (g.removed ? 45 : 0) - x.pardons * 0.5 + g.justice * 4 + (g.ending == END_RETIRED && g.term == 1 ? 4 : 0));
+            double allies = 0; int na = 0;
+            for (int c = 0; c < NC; c++) if (!gone(g, c) && align(g, c) == AL_TREATY) { allies += w.rel[c]; na++; }
+            allies = na > 0 ? allies / na : 50;
+            s[4] = clamp100(36 + (allies - 50) * 0.5 + Math.min(18, w.deals * 2.5) + 8 * warsEnded(g, 3) + 5 * warsEnded(g, 5) - 14 * warsEnded(g, 4) + Math.min(6, sumVisits(w) * 0.5));
+            double mor = 0; for (Person p : Cabinet.everyone(g)) mor += p.morale; mor /= Math.max(1, Cabinet.everyone(g).size());
+            s[5] = clamp100(52 + (mor - 55) * 0.6 - x.departures / yrs * 3.5 - x.failures * 3 + (Cabinet.sq(g, S_COS) - 0.6) * 40);
+            Congress c = g.cong;
+            s[6] = clamp100(34 + Math.min(34, lawsAll(g) / yrs * 7) - c.overrides * 5 - c.shutdowns * 6 + (g.hill - 50) * 0.4 + (c.defaulted ? -25 : 0));
+            double big = 0;
+            for (Bill b : c.bills) if (b.stage == ST_LAW && (b.ours || b.def().lean == g.party)) big += 3 + Math.max(0, b.def().support - 50) * 0.08 + Math.abs(b.def().cost) * 0.004;
+            s[7] = clamp100(24 + Math.min(62, big * 1.5));
+            double civil = 0;
+            for (Bill b : c.bills) if (b.stage == ST_LAW && b.def().area == PI_RIGHTS && b.cult() < -0.3) civil += 1;
+            s[8] = clamp100(38 + civil * 10 + g.justice * 8 + (g.issueApp[PI_RIGHTS] - 50) * 0.25);
+            double hard = Math.max(0, u0 - 6) * 1.5 + Math.max(0, Economy.piEff(pi0) - 5) * 2 + wars(g, 2) * 6 + (g.era.year < 1946 && g.era.year > 1936 ? 6 : 0);
+            s[9] = clamp100(45 + hard + (avg - 50) * 0.8 + (g.term >= 2 ? 6 : 0) - (g.ending == END_LOST ? 8 : 0) - (g.removed ? 25 : 0));
+            if (g.set.difficulty == 2) for (int i = 0; i < 10; i++) s[i] = clamp100(s[i] + 3);
+            if (g.set.difficulty == 0) for (int i = 0; i < 10; i++) s[i] = clamp100(s[i] - 3);
+            int[] out = new int[10];
+            for (int i = 0; i < 10; i++) out[i] = (int) Math.round(s[i]);
+            return out;
+        }
+
+        static double sumVisits(World w) { double v = 0; for (int c = 0; c < NC; c++) v += w.visits[c]; return v; }
+
+        static int total(int[] s) { int t = 0; for (int v : s) t += v; return t; }
+
+        /** Where the president lands among the real presidents; the real one, if you are playing them, is set aside. */
+        static void rank(Game g, int score) {
+            List<String> names = new ArrayList<String>();
+            List<Integer> sc = new ArrayList<Integer>();
+            String me = g.pres.name();
+            for (int i = 0; i < RANKED.length; i++) {
+                if (sameName(RANKED[i], g.pres)) continue;
+                names.add(RANKED[i]); sc.add(RANK_SCORE[i]);
+            }
+            int pos = 0;
+            while (pos < sc.size() && sc.get(pos) > score) pos++;
+            rankPos = pos + 1;
+            int n = names.size() + 1;
+            String above = pos > 0 ? names.get(pos - 1) : null, below = pos < names.size() ? names.get(pos) : null;
+            rankShort = ordinal(rankPos) + " of " + n;
+            rankLine = "Historians rank you " + ordinal(rankPos) + " of " + n + " presidents" + (above != null && below != null ? ", between " + above + " and " + below : above == null ? ", ahead of " + below : ", behind " + above) + ".";
+            for (int i = 0; i < RANKED.length; i++) if (sameName(RANKED[i], g.pres)) rankLine += " The real " + RANKED[i] + " ranked " + ordinal(i + 1) + " in the 2021 C-SPAN survey of historians.";
+        }
+
+        static boolean sameName(String a, Cand c) {
+            if (c == null || c.last == null) return false;
+            if (!a.endsWith(" " + c.last)) return false;
+            String f = c.first.replace(".", "");
+            String a2 = a.replace(".", "");
+            return a2.startsWith(f) || a2.startsWith(f.split(" ")[0]) && (c.first.length() < 3 || a2.contains(f));
+        }
+
+        static String ordinal(int n) { int m = n % 100; String suf = m >= 11 && m <= 13 ? "th" : n % 10 == 1 ? "st" : n % 10 == 2 ? "nd" : n % 10 == 3 ? "rd" : "th"; return n + suf; }
+
+        /** Achievements earned in this presidency. */
+        static List<String> earned(Game g, int rank) {
+            List<String> l = new ArrayList<String>();
+            Econ e = g.econ;
+            int wonElections = g.term - 1;
+            if (g.term >= 2 && g.ending != END_REMOVED) l.add("twoterms");
+            if (g.term + g.prior >= 3) l.add("thirdterm");
+            if (g.term + g.prior >= 4) l.add("fourth");
+            if (lastWinEv(g) >= 400) l.add("landslide");
+            if (lastWinEv(g) > 0 && lastWinMargin(g) <= 15) l.add("squeaker");
+            if (wonElections > 0 && (g.set.custom != null || g.era.winnerId == null || !g.pres.id.equals(g.era.winnerId))) l.add("whatif");
+            if (lawsAll(g) >= 10) l.add("lawmaker");
+            if (lawsAll(g) >= 20) l.add("newdeal");
+            for (Bill b : g.cong.bills) if (b.stage == ST_LAW && b.def().area == PI_RIGHTS && b.cult() < -0.3) { l.add("civilrights"); break; }
+            if (g.midGain) l.add("midterm");
+            if (warsEnded(g, 3) > 0) l.add("victory");
+            if (warsEnded(g, 5) > 0) l.add("peace");
+            if (g.warsStarted == 0 && g.week >= 200) l.add("dove");
+            if (first(g, H_UNEMP) - e.unemp >= 5) l.add("recovery");
+            if (e.unemp < 4) l.add("fullemp");
+            if (first(g, H_INFL) - e.infl >= 5) l.add("slayer");
+            if (e.deficit < 0) l.add("surplus");
+            if (first(g, H_STOCKS) > 0 && e.stocks >= 2 * first(g, H_STOCKS)) l.add("bull");
+            if (g.approval >= 60 && !g.removed) l.add("beloved");
+            if (wonElections > 0 && g.minApproval < 40) l.add("comeback");
+            if (g.ex.impeachments > 0 && !g.removed) l.add("survivor");
+            if (g.ex.justices >= 3) l.add("court3");
+            if (g.world.deals >= 5) l.add("summits");
+            if (g.okCount >= 10) l.add("crises");
+            if (rank <= 10) l.add("top10");
+            if (rank == 1) l.add("lincoln");
+            if (g.set.difficulty == 2 && g.week >= 200) l.add("hard");
+            if (g.ending == END_RETIRED) l.add("stepdown");
+            if (g.set.bgLine != null) l.add("import");
+            for (String s : g.histOk) if (s.startsWith("Going to the Moon")) { l.add("moon"); break; }
+            if (sumVisits(g.world) >= 10) l.add("tour");
+            if (erasPlayed(g) >= 5) l.add("eras");
+            return l;
+        }
+
+        static int lastWinEv(Game g) { return g.lastEvWon; }
+
+        static int lastWinMargin(Game g) { return g.lastEvWon - (g.lastEvTotal / 2 + 1); }
+
+        static int erasPlayed(Game g) {
+            List<String> eras = new ArrayList<String>();
+            for (String[] e : entries()) if (e.length > 3 && !eras.contains(e[3])) eras.add(e[3]);
+            String mine = String.valueOf(g.era.year);
+            if (!eras.contains(mine)) eras.add(mine);
+            return eras.size();
+        }
+
+        static String achName(String id) { for (String[] a : ACH) if (a[0].equals(id)) return a[1]; return id; }
+
+        static String achDesc(String id) { for (String[] a : ACH) if (a[0].equals(id)) return a[2]; return ""; }
+
+        // ---- the Hall of Fame: one line per finished presidency ----
+        static String readAll() { return HallStore.read(); }
+
+        static List<String[]> entries() {
+            List<String[]> l = new ArrayList<String[]>();
+            for (String line : readAll().split("\n")) { String[] t = line.split("\\|", -1); if (t.length >= 10) l.add(t); }
+            Collections.sort(l, (a, b) -> Integer.compare(parseIntSafe(b[6]), parseIntSafe(a[6])));
+            return l;
+        }
+
+        static int parseIntSafe(String s) { try { return Integer.parseInt(s.trim()); } catch (Throwable t) { return 0; } }
+
+        static List<String> unlocked() {
+            List<String> u = new ArrayList<String>();
+            for (String[] e : entries()) for (String id : e[8].split(",")) if (id.length() > 0 && !u.contains(id)) u.add(id);
+            return u;
+        }
+
+        /** Closes the books: scores, rank, achievements, a Hall of Fame line. */
+        static void record(Game g) {
+            int[] s = scores(g);
+            lastScores = s;
+            int tot = total(s);
+            rank(g, tot);
+            if (g.recorded) return;
+            g.recorded = true;
+            List<String> a = earned(g, rankPos);
+            StringBuilder ids = new StringBuilder();
+            for (String x : a) ids.append(ids.length() > 0 ? "," : "").append(x);
+            String line = dateStr(g.day()) + "|" + g.pres.name().replace("|", "/") + "|" + PARTY_SHORT[g.party] + "|" + g.era.year + "|" + g.term + "|" + (g.removed ? END_NAME[END_REMOVED] : END_NAME[Math.max(1, g.ending)]) + "|"
+                    + tot + "|" + rankShort + "|" + ids + "|" + (g.set.difficulty == 0 ? "Easy" : g.set.difficulty == 2 ? "Hard" : "Normal");
+            if (!HallStore.off) HallStore.write(readAll() + line + "\n");
+            g.legacyScore = tot;
+            g.legacyRank = rankPos;
+            g.achievements = a;
+        }
+
+        static void begin(ResoluteDesk u) {
+            Game g = u.game;
+            if (g == null) return;
+            if (g.removed) g.ending = END_REMOVED;
+            if (g.ending == END_NONE) g.ending = END_SERVED;
+            g.over = true;
+            g.watch = false;
+            record(g);
+            epilogue(g);
+            SaveGame.save(u, SaveGame.AUTO);
+            tab = 0;
+            u.go(SC_LEGACY);
+            snd(Sfx.CHEER);
+        }
+
+        /** After a lost or last election: play out the lame-duck weeks on autopilot. */
+        static void finishTerm(ResoluteDesk u) {
+            Game g = u.game;
+            int guard = 0;
+            while (!g.over && !g.removed && guard++ < 20) {
+                Decisions.autoAll(g);
+                Week.resolve(g);
+            }
+            Decisions.autoAll(g);
+            begin(u);
+        }
+
+        // ---- the epilogue ----
+        static List<String[]> epi;
+
+        static void epilogue(Game g) {
+            List<String[]> l = new ArrayList<String[]>();
+            Econ e = g.econ;
+            int y0 = g.era.year, y1 = dateOf(g.day())[0];
+            int years = Math.max(1, Math.round((g.week) / 52f));
+            Reelect re = g.re;
+            String how;
+            switch (g.ending) {
+                case END_REMOVED: how = "The Senate removed you from office on " + dateLong(g.day()) + ". " + (g.vp != null ? g.vp.name() + " was sworn in within the hour." : "Your vice president was sworn in within the hour."); break;
+                case END_LOST: how = "You lost your bid for another term" + (re != null && re.opp != null ? " to " + re.opp.name() + ", " + re.evOpp + " electoral votes to " + re.evMe : "") + ", and handed over the office on January 20, " + y1 + "."; break;
+                case END_DENIED: how = "Your own party turned you out" + (re != null && re.challenger != null ? ": " + re.challenger + " beat you in the primaries" : "") + ". You left office on January 20, " + y1 + "."; break;
+                case END_RETIRED: how = "You chose not to run again, and left office on January 20, " + y1 + ", after " + years + " years."; break;
+                default: how = "You served " + (g.term == 1 ? "a full term" : g.term + " terms") + " and left office on January 20, " + y1 + ", after " + years + " years in the White House."; break;
+            }
+            l.add(new String[]{"How it ended", how});
+            if (re != null && re.done && re.opp != null) {
+                Cand me = re.nominee != null ? re.nominee : g.pres;
+                Cand winner = re.won ? me : re.opp;
+                if (winner != g.pres) l.add(new String[]{"Your successor", winner.name() + " won the " + re.year + " election, " + Math.max(re.evMe, re.evOpp) + " electoral votes to " + Math.min(re.evMe, re.evOpp)
+                        + (winner.party == g.party ? ", keeping the White House in your party's hands." : ", and the White House changed parties.")});
+            }
+            double u0 = first(g, H_UNEMP), pi0 = first(g, H_INFL), sp0 = first(g, H_STOCKS), d0 = first(g, H_DEBT);
+            l.add(new String[]{"The economy", "You inherited unemployment of " + fmt1(u0) + "% and left it at " + fmt1(e.unemp) + "%. Inflation went from " + fmt1(pi0) + "% to " + fmt1(e.infl) + "%, and the public debt from "
+                    + Math.round(d0) + "% to " + Math.round(e.debt) + "% of the economy. Stocks " + (e.stocks >= sp0 ? "rose " : "fell ") + Math.round(Math.abs(e.stocks / Math.max(0.01, sp0) - 1) * 100) + "% while you were in office."});
+            StringBuilder laws = new StringBuilder();
+            int n = 0;
+            for (Bill b : g.cong.bills) {
+                if (b.stage != ST_LAW || n >= 6) continue;
+                String imp = impactOf(b);
+                laws.append(n > 0 ? " " : "").append(passed(b)).append(imp != null ? ": " + imp : ".");
+                n++;
+            }
+            l.add(new String[]{"Your laws", n == 0 ? "No major legislation became law on your watch." : laws.toString() + (lawsAll(g) > n ? " And " + (lawsAll(g) - n) + " more." : "")});
+            StringBuilder world = new StringBuilder();
+            for (War x : g.world.wars) if (x.stage >= 3 && (x.started >= 0 || x.ended >= 0)) world.append(x.name).append(x.stage == 3 ? " was won" : x.stage == 4 ? " was lost" : " ended in an agreement").append(", at a cost of ").append(thousands(Math.round(x.kia))).append(" American lives. ");
+            for (War x : g.world.wars) if (x.stage == 2) world.append(x.name).append(" was still going on, with ").append(thousands(Math.round(x.troops * 1000))).append(" Americans deployed. ");
+            world.append(g.world.deals == 0 ? "You reached no agreements with foreign leaders." : "You reached " + g.world.deals + (g.world.deals == 1 ? " agreement" : " agreements") + " with foreign leaders.");
+            if (!g.world.record.isEmpty()) {
+                String lw = g.world.record.get(g.world.record.size() - 1).replaceAll("^[A-Z][a-z]+ \\d+, \\d+: ", "").replaceAll("\\.$", "");
+                boolean warEnd = false;
+                for (War x : g.world.wars) if (x.stage >= 3 && lw.toLowerCase().startsWith(x.name.toLowerCase())) warEnd = true;
+                if (!warEnd) world.append(" The last word from abroad: ").append(lw.substring(0, 1).toUpperCase()).append(lw.substring(1)).append(".");
+            }
+            l.add(new String[]{"The world", world.toString()});
+            List<String> js = new ArrayList<String>();
+            for (Justice j : g.ex.court) if (!j.real) js.add(j.name.replace("Judge ", ""));
+            if (!js.isEmpty()) l.add(new String[]{"The Court", "Your appointees to the Supreme Court, " + String.join(", ", js) + ", would shape the law for a generation."});
+            int sc = 0; for (Scandal k : g.ex.scandals) if (k.kind != SK_LEAK && k.severity >= 4) sc++;
+            if (sc > 0 || g.ex.impeachments > 0) l.add(new String[]{"The scandals", (g.ex.impeachments > 0 ? "You were impeached" + (g.removed ? " and removed. " : " but not removed. ") : "") + (sc > 0 ? sc + " serious " + (sc == 1 ? "scandal" : "scandals") + " dogged your administration." : "")});
+            Random r = new Random(g.set.seed ^ 0x1EADL);
+            String[] after = {"You wrote two volumes of memoirs; the first was a bestseller.", "You spent your retirement building homes for families who needed them.", "You returned home and took up painting, badly and happily.",
+                    "You became a roving ambassador for peace, monitoring elections around the world.", "You raised money for your library and gave speeches for large fees.", "You went back to teaching law and wrote a well-reviewed history of the presidency.",
+                    "You ran a foundation fighting disease in the poorest countries.", "You stayed out of politics, and out of the papers, for the rest of your life."};
+            l.add(new String[]{"After the White House", after[r.nextInt(after.length)] + " Your presidential library opened in " + cityOf(g.pres.home) + " in " + (y1 + 4 + r.nextInt(4)) + "."});
+            l.add(new String[]{"The verdict", rankLine});
+            epi = l;
+            g.epilogue = new ArrayList<String>();
+            for (String[] p : l) g.epilogue.add(p[0] + "|" + p[1]);
+        }
+
+        // ---- the screens ----
+        static void draw(ResoluteDesk u, Graphics2D g) {
+            Game game = u.game;
+            if (game == null) { u.go(SC_HOME); return; }
+            if (lastScores == null) { record(game); }
+            if (epi == null) epilogue(game);
+            u.backdrop(g);
+            label(g, "THE VERDICT OF HISTORY", 48, 46, C_GOLD);
+            text(g, game.pres.name() + ", " + game.era.year + "-" + dateOf(game.day())[0], 48, 84, F_DISPLAY, Color.white);
+            u.segmented(g, 48, 104, 760, 30, new String[]{"The verdict", "The record", "The library", "Epilogue", "Achievements"}, tab, i -> tab = i, null);
+            switch (tab) {
+                case 1: recordTab(u, g, game); break;
+                case 2: library(u, g, game); break;
+                case 3: epilogueTab(u, g, game); break;
+                case 4: achievementsTab(u, g, game); break;
+                default: verdict(u, g, game); break;
+            }
+            u.button(g, 48, 832, 200, 44, "Main menu", B_GHOST, () -> u.go(SC_HOME));
+            u.button(g, DW - 48 - 240, 832, 240, 44, "Hall of Fame", B_GOLD, () -> u.go(SC_HALL));
+        }
+
+        static void verdict(ResoluteDesk u, Graphics2D g, Game game) {
+            int[] s = lastScores;
+            u.panel(g, 48, 150, 760, 664, "The historians' ten measures");
+            double y = 196;
+            for (int i = 0; i < 10; i++) {
+                text(g, MEASURE[i], 66, y + 12, F_S, C_TEXT);
+                bar(g, 300, y + 3, 400, 12, s[i] / 100.0, s[i] >= 70 ? C_GOOD : s[i] >= 45 ? C_GOLD : C_BAD);
+                textR(g, String.valueOf(s[i]), 790, y + 14, F_BB, Color.white);
+                y += 34;
+            }
+            y += 10;
+            text(g, "Total: " + total(s) + " of 1,000", 66, y + 20, F_H2, C_GOLD);
+            wrap(g, rankLine, 66, y + 50, 720, F_B, Color.white);
+            wrap(g, "The measures follow the C-SPAN Presidential Historians Survey. Real presidents are placed by their 2021 ranks; where you'd land is this game's estimate, not the historians'.", 66, y + 110, 720, F_XS, C_DIM);
+            double px = 824, pw = DW - 48 - px;
+            u.panel(g, px, 150, pw, 664, "Among the presidents");
+            List<String> names = new ArrayList<String>();
+            for (String nm : RANKED) if (!sameName(nm, game.pres)) names.add(nm);
+            int pos = rankPos - 1;
+            int lo = Math.max(0, pos - 9), hi = Math.min(names.size(), lo + 18);
+            double yy = 192;
+            for (int i = lo; i <= hi && yy < 790; i++) {
+                if (i == pos) {
+                    g.setColor(new Color(242, 193, 78, 40));
+                    g.fill(new RoundRectangle2D.Double(px + 12, yy - 16, pw - 24, 26, 8, 8));
+                    text(g, ordinal(i + 1), px + 24, yy, F_BB, C_GOLD);
+                    text(g, game.pres.name() + " (you)", px + 84, yy, F_BB, C_GOLD);
+                    yy += 30;
+                }
+                if (i < names.size()) {
+                    text(g, ordinal(i + (i >= pos ? 2 : 1)), px + 24, yy, F_S, C_DIM);
+                    text(g, names.get(i), px + 84, yy, F_S, C_TEXT);
+                    yy += 28;
+                }
+            }
+        }
+
+        static void recordTab(ResoluteDesk u, Graphics2D g, Game game) {
+            u.panel(g, 48, 150, 900, 664, "Approval, week by week");
+            double cx = 70, cy = 190, cw = 856, ch = 260;
+            g.setColor(new Color(255, 255, 255, 18));
+            for (int k = 20; k <= 80; k += 20) { double yy = cy + ch - (k - 10) / 80.0 * ch; g.draw(new Line2D.Double(cx, yy, cx + cw, yy)); text(g, k + "%", cx - 4 - 22, yy + 4, F_T, C_FAINT); }
+            int n = game.hist.size();
+            Path2D p = new Path2D.Double();
+            for (int i = 0; i < n; i++) {
+                double v = game.hist.get(i)[H_APP];
+                double xx = cx + cw * i / Math.max(1, n - 1), yy = cy + ch - (v - 10) / 80.0 * ch;
+                if (i == 0) p.moveTo(xx, yy); else p.lineTo(xx, yy);
+            }
+            g.setColor(C_GOLD);
+            g.setStroke(new BasicStroke(2f));
+            g.draw(p);
+            g.setStroke(new BasicStroke(1f));
+            double y = 490;
+            Econ e = game.econ;
+            String[][] rows = {{"Average approval", Math.round(avgApproval(game)) + "%"}, {"Highest / lowest", Math.round(game.maxApproval) + "% / " + Math.round(game.minApproval) + "%"},
+                    {"Unemployment", fmt1(first(game, H_UNEMP)) + "% to " + fmt1(e.unemp) + "%"}, {"Inflation", fmt1(first(game, H_INFL)) + "% to " + fmt1(e.infl) + "%"},
+                    {"Public debt", Math.round(first(game, H_DEBT)) + "% to " + Math.round(e.debt) + "% of GDP"}, {"Laws signed", String.valueOf(lawsAll(game))}, {"Vetoes (overridden)", game.cong.vetoes + " (" + game.cong.overrides + ")"},
+                    {"Shutdowns", String.valueOf(game.cong.shutdowns)}, {"Justices appointed", String.valueOf(game.ex.justices)}, {"Crises that went your way / badly", game.okCount + " / " + game.failCount}};
+            for (int i = 0; i < rows.length; i++) {
+                double xx = i < 5 ? 70 : 510, yy = y + (i % 5) * 28;
+                text(g, rows[i][0], xx, yy, F_S, C_TEXT);
+                textR(g, rows[i][1], xx + 410, yy, F_BB, Color.white);
+            }
+            double px = 964, pw = DW - 48 - px;
+            u.panel(g, px, 150, pw, 664, "Milestones");
+            double yy = 190;
+            for (int i = 0; i < game.milestones.size() && yy < 790; i++) yy += wrap(g, game.milestones.get(i), px + 18, yy, pw - 36, F_XS, C_TEXT) + 6;
+        }
+
+        static void epilogueTab(ResoluteDesk u, Graphics2D g, Game game) {
+            u.panel(g, 48, 150, DW - 96, 664, "What came after");
+            double y = 192;
+            for (String[] p : epi) {
+                text(g, p[0], 66, y, F_H3, C_GOLD);
+                y += 6 + wrap(g, p[1], 250, y, DW - 96 - 230, F_B, C_TEXT) + 12;
+                if (y > 790) break;
+            }
+        }
+
+        static void achievementsTab(ResoluteDesk u, Graphics2D g, Game game) {
+            List<String> mine = game.achievements != null ? game.achievements : new ArrayList<String>();
+            List<String> all = unlocked();
+            u.panel(g, 48, 150, DW - 96, 664, "Achievements: " + mine.size() + " this presidency, " + all.size() + " of " + ACH.length + " unlocked in all");
+            double colw = (DW - 96 - 48) / 3.0;
+            for (int i = 0; i < ACH.length; i++) {
+                double x = 66 + (i % 3) * colw, y = 186 + (i / 3) * 56;
+                boolean now = mine.contains(ACH[i][0]), ever = all.contains(ACH[i][0]);
+                g.setColor(now ? new Color(242, 193, 78, 45) : new Color(255, 255, 255, ever ? 14 : 6));
+                g.fill(new RoundRectangle2D.Double(x, y, colw - 14, 48, 10, 10));
+                text(g, ACH[i][1], x + 12, y + 20, F_BB, now ? C_GOLD : ever ? Color.white : C_FAINT);
+                textFit(g, ACH[i][2], x + 12, y + 38, colw - 40, F_XS, ever ? C_DIM : C_FAINT);
+            }
+        }
+
+        // ---- the presidential library ----
+        static void library(ResoluteDesk u, Graphics2D g, Game game) {
+            int y0 = game.era.year, y1 = dateOf(game.day())[0];
+            String city = cityOf(game.pres.home);
+            String st = game.pres.home >= 0 ? STATES[game.pres.home].name : "Washington, D.C.";
+            u.panel(g, 48, 150, 900, 664, "The " + game.pres.name() + " Presidential Library and Museum");
+            text(g, city + ", " + st, 66, 190, F_S, C_DIM);
+            building(g, game, 66, 210, 864, 300, u.tsec);
+            double y = 540;
+            label(g, "Galleries", 66, y, C_GOLD);
+            y += 22;
+            List<String> gal = galleries(game);
+            for (int i = 0; i < gal.size() && i < 8; i++) {
+                double x = 66 + (i % 2) * 432, yy = y + (i / 2) * 58;
+                g.setColor(new Color(255, 255, 255, 12));
+                g.fill(new RoundRectangle2D.Double(x, yy, 418, 50, 8, 8));
+                String[] t = gal.get(i).split("\\|");
+                text(g, t[0], x + 12, yy + 20, F_SB, Color.white);
+                textFit(g, t[1], x + 12, yy + 38, 396, F_XS, C_DIM);
+            }
+            double px = 964, pw = DW - 48 - px;
+            u.panel(g, px, 150, pw, 664, "In the collection");
+            double yy = 192;
+            for (String a : artifacts(game)) { yy += wrap(g, "- " + a, px + 18, yy, pw - 36, F_XS, C_TEXT) + 8; if (yy > 760) break; }
+            int visitors = 150 + (game.legacyScore - 400) / 2;
+            text(g, "About " + Math.max(60, visitors) + ",000 visitors a year", px + 18, 796, F_XSB, C_GOLD);
+        }
+
+        static List<String> galleries(Game g) {
+            List<String> l = new ArrayList<String>();
+            l.add("The Oval Office|A full-size replica, as it looked on your last day: " + (g.era.year < 1950 ? "the Resolute Desk and a wall of ship paintings" : "the Resolute Desk, the family photos and the flags") + ".");
+            l.add("The road to the White House|Your life before the presidency, from " + (g.pres.homeAb != null ? STATES[Math.max(0, g.pres.home)].name : "home") + " to the inaugural stand in " + g.era.year + ".");
+            int n = 0;
+            for (Bill b : g.cong.bills) if (b.stage == ST_LAW && b.ours && n < 2) { l.add(b.name + "|" + (impactOf(b) != null ? impactOf(b) : b.def().desc)); n++; }
+            for (War x : g.world.wars) if (x.stage >= 2 && (x.started >= 0 || x.ended >= 0)) { l.add(x.name + "|" + (x.stage == 3 ? "From the first battles to victory" : x.stage == 5 ? "The fighting, and the long road to a settlement" : x.stage == 4 ? "A hard war and a bitter end" : "The war that outlasted your presidency") + "; " + thousands(Math.round(x.kia)) + " names on the memorial wall."); break; }
+            if (!g.histOk.isEmpty()) l.add("Decisions|" + g.histOk.get(g.histOk.size() - 1).replace(":", ": you chose to") + ".");
+            if (g.re != null && g.re.done) l.add("The " + g.re.year + " campaign|Buttons, posters and the election-night map: " + g.re.evMe + " to " + g.re.evOpp + ".");
+            l.add("The first family|Life in the Residence: the dinners, the pets and the Christmas trees.");
+            l.add("Your legacy|An interactive gallery where visitors vote on your hardest decisions.");
+            return l;
+        }
+
+        static List<String> artifacts(Game g) {
+            List<String> l = new ArrayList<String>();
+            int y = g.era.year;
+            for (Bill b : g.cong.bills) if (b.stage == ST_LAW && l.size() < 3) l.add(pen(b));
+            if (y < 1950) l.add("The microphone from your radio addresses");
+            else if (y < 1990) l.add("The teleprompter glass from your addresses to the nation");
+            else if (y < 2009) l.add("Your first White House e-mail");
+            else l.add("The phone you posted from, retired");
+            for (String s : g.histOk) if (l.size() < 9) l.add("Documents from \"" + s.split(":")[0] + "\"");
+            if (g.re != null && g.re.done && g.re.won) l.add("Your " + g.re.year + " victory speech, with your handwritten edits");
+            l.add("Gifts from foreign leaders, " + Math.max(12, g.world.deals * 9 + (int) sumVisits(g.world) * 4) + " of them on display");
+            l.add("The family Bible you took the oath on");
+            return l;
+        }
+
+        /** A library in the style of its era: a classical temple, a modernist slab or a glass pavilion. */
+        static void building(Graphics2D g, Game game, double x, double y, double w, double h, double t) {
+            g.setPaint(new GradientPaint(0, (float) y, rgb(0x7fb4e6), 0, (float) (y + h), rgb(0xd9ecf8)));
+            g.fill(new RoundRectangle2D.Double(x, y, w, h, 10, 10));
+            g.setColor(rgb(0x6aa35a));
+            g.fill(new Rectangle2D.Double(x, y + h * 0.8, w, h * 0.2));
+            double cx = x + w / 2, base = y + h * 0.82;
+            int era = game.era.year < 1960 ? 0 : game.era.year < 1995 ? 1 : 2;
+            Random r = new Random(game.set.seed);
+            if (era == 0) {
+                double bw = w * 0.56, bh = h * 0.42;
+                g.setColor(rgb(0xeee6d4)); g.fill(new Rectangle2D.Double(cx - bw / 2, base - bh, bw, bh));
+                Path2D ped = new Path2D.Double(); ped.moveTo(cx - bw / 2 - 10, base - bh); ped.lineTo(cx, base - bh - h * 0.16); ped.lineTo(cx + bw / 2 + 10, base - bh); ped.closePath();
+                g.setColor(rgb(0xf6f0e2)); g.fill(ped);
+                g.setColor(rgb(0xd2c8b2));
+                for (int i = 0; i < 8; i++) g.fill(new Rectangle2D.Double(cx - bw / 2 + 18 + i * (bw - 44) / 7, base - bh + 14, 12, bh - 14));
+                g.setColor(rgb(0xc9bfa8)); g.fill(new Rectangle2D.Double(cx - bw / 2 - 20, base - 10, bw + 40, 10));
+            } else if (era == 1) {
+                double bw = w * 0.5, bh = h * 0.5;
+                g.setColor(rgb(0xd8d3c8)); g.fill(new Rectangle2D.Double(cx - bw / 2, base - bh, bw, bh));
+                g.setColor(rgb(0x3d4656));
+                for (int i = 0; i < 6; i++) g.fill(new Rectangle2D.Double(cx - bw / 2 + 20 + i * (bw - 40) / 6, base - bh + 16, (bw - 40) / 6 - 10, bh * 0.25));
+                g.setColor(rgb(0xbfb8aa)); g.fill(new Rectangle2D.Double(cx + bw / 2 - 10, base - bh * 0.6, w * 0.16, bh * 0.6));
+                g.setColor(rgb(0x2e3542)); g.fill(new Rectangle2D.Double(cx - 30, base - bh * 0.35, 60, bh * 0.35));
+            } else {
+                double bw = w * 0.6, bh = h * 0.36;
+                g.setColor(new Color(170, 205, 230, 220)); g.fill(new Rectangle2D.Double(cx - bw / 2, base - bh, bw, bh));
+                g.setColor(new Color(255, 255, 255, 120));
+                for (int i = 0; i <= 12; i++) g.draw(new Line2D.Double(cx - bw / 2 + i * bw / 12, base - bh, cx - bw / 2 + i * bw / 12, base));
+                g.setColor(rgb(0xe9e6df)); g.fill(new Rectangle2D.Double(cx - bw / 2 - 30, base - bh - 18, bw + 60, 18));
+            }
+            // the flag
+            double fx = x + w * 0.12, fy = base - h * 0.55;
+            g.setColor(rgb(0xcfcfcf)); g.fill(new Rectangle2D.Double(fx - 1.5, fy, 3, base - fy));
+            for (int k = 0; k < 7; k++) { g.setColor(k % 2 == 0 ? rgb(0xb22234) : Color.white); g.fill(new Rectangle2D.Double(fx, fy + k * 5 + Math.sin(t * 2 + k * 0.4) * 1.5, 54, 5)); }
+            g.setColor(rgb(0x3c3b6e)); g.fill(new Rectangle2D.Double(fx, fy, 22, 20));
+            // trees
+            for (int i = 0; i < 9; i++) { double tx = x + 30 + r.nextDouble() * (w - 60); if (Math.abs(tx - cx) < w * 0.33) continue; g.setColor(rgb(0x3f7a3a)); g.fill(new Ellipse2D.Double(tx - 16, base - 40, 32, 36)); g.setColor(rgb(0x5a3a22)); g.fill(new Rectangle2D.Double(tx - 2, base - 8, 4, 10)); }
+            textC(g, game.pres.last.toUpperCase() + " LIBRARY", cx, base + 24, F_SERIF, rgb(0x2a2a2a));
+        }
+
+        // ---- the Hall of Fame ----
+        static void hall(ResoluteDesk u, Graphics2D g) {
+            u.backdrop(g);
+            label(g, "THE HALL OF FAME", 48, 46, C_GOLD);
+            text(g, "Your finished presidencies, best first", 48, 84, F_DISPLAY, Color.white);
+            List<String[]> l = entries();
+            u.panel(g, 48, 120, 1000, 694, l.size() + (l.size() == 1 ? " presidency" : " presidencies"));
+            String[] head = {"President", "Era", "Terms", "How it ended", "Score", "Rank"};
+            double[] cx = {66, 360, 450, 520, 760, 850};
+            for (int i = 0; i < head.length; i++) text(g, head[i], cx[i], 156, F_TB, C_FAINT);
+            double top = 166, hh = 640;
+            double off = u.beginScroll(g, "hall", 58, top, 980, hh);
+            int h0 = u.hits.size();
+            for (int i = 0; i < l.size(); i++) {
+                String[] e = l.get(i);
+                double yy = top - off + i * 30 + 20;
+                text(g, (i + 1) + ". " + e[1] + " (" + e[2] + ")", cx[0], yy, F_S, i == 0 ? C_GOLD : Color.white);
+                text(g, e[3], cx[1], yy, F_S, C_TEXT);
+                text(g, e[4], cx[2], yy, F_S, C_TEXT);
+                textFit(g, e[5], cx[3], yy, 230, F_S, C_TEXT);
+                text(g, e[6], cx[4], yy, F_SB, Color.white);
+                text(g, e[7], cx[5], yy, F_S, C_DIM);
+            }
+            u.clipHits(h0, top, top + hh);
+            u.endScroll(g, "hall", l.size() * 30 + 30);
+            if (l.isEmpty()) wrap(g, "No finished presidencies yet. Serve out a term, or lose trying, and it lands here.", 66, 200, 900, F_S, C_DIM);
+            double px = 1064, pw = DW - 48 - px;
+            List<String> all = unlocked();
+            u.panel(g, px, 120, pw, 694, "Achievements: " + all.size() + " of " + ACH.length);
+            double yy = 160;
+            for (String[] a : ACH) {
+                boolean got = all.contains(a[0]);
+                text(g, (got ? "* " : "  ") + a[1], px + 18, yy, F_XSB, got ? C_GOLD : C_FAINT);
+                yy += 19;
+                if (yy > 800) break;
+            }
+            u.button(g, 48, 832, 200, 44, "Back", B_GHOST, () -> u.go(u.game != null && u.game.over ? SC_LEGACY : SC_HOME));
+        }
+    }
+
+    /** Where the Hall of Fame lives: a text file next to the saves (in the browser, local storage). */
+    static final class HallStore {
+        static boolean off;                 // the test harness keeps its games out of the Hall of Fame
+
+        static String read() {
+            try {
+                File f = new File(SaveGame.dir(), "hall.txt");
+                if (!f.exists()) return "";
+                BufferedReader r = new BufferedReader(new FileReader(f));
+                StringBuilder b = new StringBuilder();
+                String line;
+                while ((line = r.readLine()) != null) b.append(line).append('\n');
+                r.close();
+                return b.toString();
+            } catch (Throwable t) { return ""; }
+        }
+
+        static void write(String text) {
+            try {
+                FileWriter w = new FileWriter(new File(SaveGame.dir(), "hall.txt"));
+                w.write(text);
+                w.close();
+            } catch (Throwable t) { /* best effort */ }
+        }
+    }
+    // =====================================================================
+    //  40.  HISTORY HAPPENS
+    //  The world as it was in each era (its countries, leaders and alliances), the wars America fought,
+    //  and the turning points that arrive on their real dates. What you do about them is up to you.
+    // =====================================================================
+    static final class War implements Serializable {
+        private static final long serialVersionUID = 1L;
+        String id, name;
+        int enemy = -1, ally = -1;
+        int stage;                          // 0 not begun, 2 fighting, 3 won, 4 lost or abandoned, 5 ended by agreement
+        int strategy = 1;                   // 0 hold the line, 1 balanced, 2 on the offensive, 3 seek a settlement
+        double front = 50, troops, kia, support = 60, talks, weeks;
+        double need, drift, lethal, cost, stakes;
+        int started = -1, ended = -1;
+    }
+
+    static final String[] WAR_NAME = {"The war against Germany", "The war against Japan", "The Korean War", "The Vietnam War", "The Gulf War", "The war in Afghanistan", "The Iraq War", "The campaign against ISIS"};
+    static final String[] WAR_ID = {"ww2e", "ww2p", "korea", "vietnam", "gulf", "afghan", "iraq", "isis"};
+    /** enemy|ally|troops needed to hold (thousands)|drift|deaths per 1,000 troops a week|cost (% of GDP per 1,000 troops)|starting support|stakes */
+    static final String[] WAR_SPEC = {"DE|GB|5000|0.0|0.18|0.0028|92|3", "JP|AU|3500|0.0|0.22|0.0028|92|3", "KP|KR|300|0.0|0.6|0.02|65|1.2", "-|VN|550|-0.06|0.5|0.006|60|0.8",
+            "IQ|SA|450|0.7|0.05|0.002|75|1.5", "-|-|90|-0.02|0.04|0.012|88|1.5", "-|IQ|160|-0.05|0.07|0.007|70|0.9", "-|IQ|6|0.15|0.05|0.04|72|1.2"};
+    static final String[] STRATEGY = {"Hold the line", "Balanced", "On the offensive", "Seek a settlement"};
+    static final String[] WAR_STAGE = {"Not begun", "", "Fighting", "Won", "Lost", "Ended by agreement"};
+
+    /** The wars under way on inauguration day: "year|id:front:troops:support:talks ...". */
+    static final String[] WAR_START = {"1945|ww2e:94:5500:88:0 ww2p:70:3500:90:0", "1953|korea:50:300:40:60", "1965|vietnam:45:23:70:0", "1969|vietnam:45:536:38:20",
+            "1973|vietnam:50:24:30:92", "2005|iraq:45:150:45:0 afghan:60:20:70:0", "2009|iraq:62:140:35:60 afghan:48:34:55:0", "2013|afghan:50:66:35:30",
+            "2017|afghan:50:8.4:40:10 isis:55:5:70:0", "2021|afghan:45:2.5:40:80"};
+
+    /** The world on each inauguration day: "year|CC=name;leader;title;rel;align;power^...", blank fields keep today's value, "CC=-" means not a country then. */
+    static final String[] WORLD_ERA = {
+            "1933|CN=China;Chiang Kai-shek;Chairman;30;0;3^RU=Soviet Union;Joseph Stalin;General Secretary;-35;0;7^DE=Germany;Adolf Hitler;Chancellor;-15;0;8^IT=Italy;Benito Mussolini;Prime Minister;10;0;6^JP=Japan;Makoto Saito;Prime Minister;-15;0;7"
+                    + "^GB=;Ramsay MacDonald;Prime Minister;50;1;9^FR=;Edouard Daladier;Prime Minister;45;1;8^CA=;R. B. Bennett;Prime Minister;60;1;4^MX=;Abelardo Rodriguez;President;15;0;3^IR=Persia;Reza Shah;Shah;5;0;2^SA=;Ibn Saud;King;5;0;1"
+                    + "^TR=;Mustafa Kemal Ataturk;President;10;0;3^EG=;King Fuad;King;5;0;2^IQ=;King Faisal I;King;0;0;1^BR=;Getulio Vargas;President;30;1;3^CU=;Gerardo Machado;President;10;0;1^AU=;Joseph Lyons;Prime Minister;45;1;3^ZA=;J. B. M. Hertzog;Prime Minister;30;0;2"
+                    + "^VE=;Juan Vicente Gomez;President;10;0;1^PL=;Ignacy Moscicki;President;20;0;4^HU=;Gyula Gombos;Prime Minister;0;0;2",
+            "1937|CN=China;Chiang Kai-shek;Generalissimo;40;1;3^RU=Soviet Union;Joseph Stalin;General Secretary;-20;0;8^DE=Germany;Adolf Hitler;Chancellor;-35;0;9^IT=Italy;Benito Mussolini;Prime Minister;-20;0;6^JP=Japan;Koki Hirota;Prime Minister;-30;0;7"
+                    + "^GB=;Stanley Baldwin;Prime Minister;55;1;9^FR=;Leon Blum;Prime Minister;50;1;8^CA=;Mackenzie King;Prime Minister;65;1;4^MX=;Lazaro Cardenas;President;10;0;3^IR=Iran;Reza Shah;Shah;5;0;2^SA=;Ibn Saud;King;10;0;1"
+                    + "^TR=;Mustafa Kemal Ataturk;President;15;0;3^EG=;King Farouk;King;10;0;2^IQ=;King Ghazi;King;0;0;1^BR=;Getulio Vargas;President;30;1;3^AU=;Joseph Lyons;Prime Minister;50;1;3^ZA=;J. B. M. Hertzog;Prime Minister;30;0;2^PL=;Ignacy Moscicki;President;25;0;4^HU=;Kalman Daranyi;Prime Minister;-5;0;2",
+            "1941|CN=China;Chiang Kai-shek;Generalissimo;50;1;4^RU=Soviet Union;Joseph Stalin;Premier;-15;0;9^DE=Germany;Adolf Hitler;Fuhrer;-70;3;10^IT=Italy;Benito Mussolini;Prime Minister;-55;3;6^JP=Japan;Fumimaro Konoe;Prime Minister;-55;3;8"
+                    + "^GB=;Winston Churchill;Prime Minister;75;1;9^FR=Vichy France;Philippe Petain;Chief of State;-10;0;4^CA=;Mackenzie King;Prime Minister;75;1;5^MX=;Manuel Avila Camacho;President;35;1;3^IR=Iran;Reza Shah;Shah;0;0;2^SA=;Ibn Saud;King;20;0;2"
+                    + "^TR=;Ismet Inonu;President;15;0;3^EG=;King Farouk;King;10;0;2^IQ=;King Faisal II;King;-10;0;1^BR=;Getulio Vargas;President;40;1;3^AU=;Robert Menzies;Prime Minister;65;1;3^ZA=;Jan Smuts;Prime Minister;55;1;2^PL=-^DK=Denmark (occupied);Christian X;King;20;0;1^HU=;Laszlo Bardossy;Prime Minister;-40;3;2^FI=;Risto Ryti;President;0;0;2",
+            "1945|CN=China;Chiang Kai-shek;Generalissimo;60;1;4^RU=Soviet Union;Joseph Stalin;Premier;40;1;9^DE=Germany;Adolf Hitler;Fuhrer;-95;3;8^IT=Italy;Ivanoe Bonomi;Prime Minister;30;1;3^JP=Japan;Kuniaki Koiso;Prime Minister;-95;3;7"
+                    + "^GB=;Winston Churchill;Prime Minister;85;2;9^FR=;Charles de Gaulle;Head of the Provisional Government;60;1;5^CA=;Mackenzie King;Prime Minister;80;2;5^MX=;Manuel Avila Camacho;President;50;1;3^IR=Iran;Mohammad Reza Shah;Shah;30;0;2^SA=;Ibn Saud;King;35;1;2"
+                    + "^TR=;Ismet Inonu;President;30;0;3^EG=;King Farouk;King;20;0;2^IQ=;King Faisal II;King;15;0;1^BR=;Getulio Vargas;President;55;1;3^AU=;John Curtin;Prime Minister;80;2;3^ZA=;Jan Smuts;Prime Minister;60;1;2^PL=;Boleslaw Bierut;President;10;0;2^DK=Denmark (occupied);Christian X;King;40;0;1^HU=;Ferenc Szalasi;Leader;-60;3;1^FI=;Gustaf Mannerheim;President;0;0;2",
+            "1949|TW=-^CN=China;Chiang Kai-shek;President;25;1;5^RU=Soviet Union;Joseph Stalin;Premier;-60;3;9^DE=West Germany;Konrad Adenauer;Chancellor;50;1;5^IT=;Alcide De Gasperi;Prime Minister;55;2;4^JP=Japan (occupied);Shigeru Yoshida;Prime Minister;35;1;3"
+                    + "^GB=;Clement Attlee;Prime Minister;80;2;8^FR=;Henri Queuille;Prime Minister;65;2;6^CA=;Louis St. Laurent;Prime Minister;80;2;5^MX=;Miguel Aleman;President;50;1;3^IR=;Mohammad Reza Shah;Shah;35;1;2^SA=;Ibn Saud;King;40;1;3^TR=;Ismet Inonu;President;50;1;3"
+                    + "^EG=;King Farouk;King;20;0;2^IQ=;King Faisal II;King;20;0;1^SY=;Shukri al-Quwatli;President;0;0;1^JO=Jordan;King Abdullah I;King;30;0;1^IL=;David Ben-Gurion;Prime Minister;55;1;2^IN=;Jawaharlal Nehru;Prime Minister;35;0;4^PK=;Liaquat Ali Khan;Prime Minister;30;0;2"
+                    + "^KR=;Syngman Rhee;President;45;1;1^KP=;Kim Il Sung;Premier;-70;3;2^BR=;Eurico Dutra;President;55;1;3^AR=;Juan Peron;President;5;0;3^AU=;Ben Chifley;Prime Minister;70;1;3^ZA=;Daniel Malan;Prime Minister;35;0;2^CU=;Carlos Prio Socarras;President;45;1;1"
+                    + "^PL=;Boleslaw Bierut;President;-45;3;3^HU=;Matyas Rakosi;General Secretary;-50;3;2^DK=;Hans Hedtoft;Prime Minister;55;2;2^FI=;Juho Paasikivi;President;10;0;2^PH=;Elpidio Quirino;President;65;1;2^ID=;Sukarno;President;10;0;3^VE=;Carlos Delgado Chalbaud;Head of the Junta;30;0;2",
+            "1953|CN=China;Mao Zedong;Chairman;-85;3;5^TW=Taiwan;Chiang Kai-shek;President;60;2;2^RU=Soviet Union;Joseph Stalin;Premier;-70;3;9^DE=West Germany;Konrad Adenauer;Chancellor;55;1;5^IT=;Alcide De Gasperi;Prime Minister;55;2;4^JP=;Shigeru Yoshida;Prime Minister;50;2;4"
+                    + "^GB=;Winston Churchill;Prime Minister;80;2;8^FR=;Rene Mayer;Prime Minister;60;2;6^CA=;Louis St. Laurent;Prime Minister;80;2;5^MX=;Adolfo Ruiz Cortines;President;50;1;3^IR=;Mohammad Reza Shah;Shah;20;0;2^SA=;Ibn Saud;King;45;1;3^TR=;Celal Bayar;President;60;2;3"
+                    + "^EG=;Mohamed Naguib;President;20;0;2^IQ=;King Faisal II;King;30;1;1^SY=;Adib Shishakli;President;0;0;1^JO=Jordan;King Hussein;King;35;1;1^IL=;David Ben-Gurion;Prime Minister;55;1;2^IN=;Jawaharlal Nehru;Prime Minister;30;0;4^PK=;Khawaja Nazimuddin;Prime Minister;40;1;2"
+                    + "^KR=;Syngman Rhee;President;60;1;1^KP=;Kim Il Sung;Premier;-95;3;2^BR=;Getulio Vargas;President;50;1;3^AR=;Juan Peron;President;0;0;3^AU=;Robert Menzies;Prime Minister;75;2;3^ZA=;Daniel Malan;Prime Minister;35;0;2^CU=;Fulgencio Batista;President;45;1;1"
+                    + "^PL=;Boleslaw Bierut;Premier;-55;3;3^HU=;Matyas Rakosi;Premier;-55;3;2^DK=;Erik Eriksen;Prime Minister;55;2;2^FI=;Juho Paasikivi;President;10;0;2^PH=;Elpidio Quirino;President;70;2;2^ID=;Sukarno;President;10;0;3^VE=;Marcos Perez Jimenez;President;30;0;2^NG=-^UA=-",
+            "1957|CN=China;Mao Zedong;Chairman;-75;3;6^TW=Taiwan;Chiang Kai-shek;President;65;2;2^RU=Soviet Union;Nikita Khrushchev;First Secretary;-55;3;9^DE=West Germany;Konrad Adenauer;Chancellor;60;2;6^IT=;Antonio Segni;Prime Minister;55;2;4^JP=;Tanzan Ishibashi;Prime Minister;55;2;5"
+                    + "^GB=;Harold Macmillan;Prime Minister;70;2;7^FR=;Guy Mollet;Prime Minister;50;2;6^CA=;Louis St. Laurent;Prime Minister;80;2;5^MX=;Adolfo Ruiz Cortines;President;50;1;3^IR=;Mohammad Reza Shah;Shah;50;1;2^SA=;King Saud;King;45;1;3^TR=;Celal Bayar;President;60;2;3"
+                    + "^EG=;Gamal Abdel Nasser;President;-25;0;3^IQ=;King Faisal II;King;40;1;2^SY=;Shukri al-Quwatli;President;-20;0;1^JO=Jordan;King Hussein;King;40;1;1^IL=;David Ben-Gurion;Prime Minister;40;1;2^IN=;Jawaharlal Nehru;Prime Minister;30;0;4^PK=;Huseyn Suhrawardy;Prime Minister;50;2;2"
+                    + "^KR=;Syngman Rhee;President;65;2;2^KP=;Kim Il Sung;Premier;-85;3;2^VN=South Vietnam;Ngo Dinh Diem;President;55;1;1^BR=;Juscelino Kubitschek;President;50;1;3^AR=;Pedro Aramburu;President;30;0;3^AU=;Robert Menzies;Prime Minister;75;2;3^ZA=;J. G. Strijdom;Prime Minister;30;0;2^CU=;Fulgencio Batista;President;40;1;1"
+                    + "^PL=;Wladyslaw Gomulka;First Secretary;-40;3;3^HU=;Janos Kadar;First Secretary;-65;3;2^DK=;H. C. Hansen;Prime Minister;55;2;2^FI=;Urho Kekkonen;President;10;0;2^PH=;Ramon Magsaysay;President;70;2;2^ID=;Sukarno;President;0;0;3^VE=;Marcos Perez Jimenez;President;30;0;2^NG=-^UA=-",
+            "1961|CN=China;Mao Zedong;Chairman;-80;3;6^TW=Taiwan;Chiang Kai-shek;President;65;2;2^RU=Soviet Union;Nikita Khrushchev;First Secretary;-60;3;9^DE=West Germany;Konrad Adenauer;Chancellor;65;2;6^IT=;Amintore Fanfani;Prime Minister;55;2;4^JP=;Hayato Ikeda;Prime Minister;55;2;5"
+                    + "^GB=;Harold Macmillan;Prime Minister;75;2;7^FR=;Charles de Gaulle;President;50;2;6^CA=;John Diefenbaker;Prime Minister;65;2;5^MX=;Adolfo Lopez Mateos;President;45;1;3^IR=;Mohammad Reza Shah;Shah;55;1;2^SA=;King Saud;King;45;1;3^TR=;Cemal Gursel;Head of State;55;2;3"
+                    + "^EG=;Gamal Abdel Nasser;President;-25;0;3^IQ=;Abd al-Karim Qasim;Prime Minister;-30;0;2^SY=-^JO=Jordan;King Hussein;King;40;1;1^IL=;David Ben-Gurion;Prime Minister;45;1;2^IN=;Jawaharlal Nehru;Prime Minister;35;0;4^PK=;Ayub Khan;President;55;2;2"
+                    + "^KR=;Yun Posun;President;60;2;2^KP=;Kim Il Sung;Premier;-85;3;2^VN=South Vietnam;Ngo Dinh Diem;President;60;1;1^BR=;Janio Quadros;President;45;1;3^AR=;Arturo Frondizi;President;40;1;3^AU=;Robert Menzies;Prime Minister;75;2;3^ZA=;Hendrik Verwoerd;Prime Minister;15;0;2^CU=;Fidel Castro;Prime Minister;-70;3;1"
+                    + "^PL=;Wladyslaw Gomulka;First Secretary;-45;3;3^HU=;Janos Kadar;First Secretary;-55;3;2^DK=;Viggo Kampmann;Prime Minister;55;2;2^FI=;Urho Kekkonen;President;10;0;2^PH=;Carlos Garcia;President;70;2;2^ID=;Sukarno;President;0;0;3^VE=;Romulo Betancourt;President;45;1;2^NG=;Abubakar Tafawa Balewa;Prime Minister;30;0;2^UA=-",
+            "1965|CN=China;Mao Zedong;Chairman;-85;3;6^TW=Taiwan;Chiang Kai-shek;President;65;2;2^RU=Soviet Union;Leonid Brezhnev;First Secretary;-50;3;9^DE=West Germany;Ludwig Erhard;Chancellor;65;2;6^IT=;Aldo Moro;Prime Minister;55;2;4^JP=;Eisaku Sato;Prime Minister;55;2;6"
+                    + "^GB=;Harold Wilson;Prime Minister;70;2;7^FR=;Charles de Gaulle;President;35;2;6^CA=;Lester Pearson;Prime Minister;70;2;5^MX=;Gustavo Diaz Ordaz;President;45;1;3^IR=;Mohammad Reza Shah;Shah;55;1;2^SA=;King Faisal;King;50;1;3^TR=;Ismet Inonu;Prime Minister;55;2;3"
+                    + "^EG=;Gamal Abdel Nasser;President;-30;0;3^IQ=;Abdul Salam Arif;President;-25;0;2^SY=;Amin al-Hafiz;President;-40;0;1^JO=Jordan;King Hussein;King;45;1;1^IL=;Levi Eshkol;Prime Minister;55;1;2^IN=;Lal Bahadur Shastri;Prime Minister;35;0;4^PK=;Ayub Khan;President;50;2;2"
+                    + "^KR=;Park Chung-hee;President;65;2;2^KP=;Kim Il Sung;Premier;-85;3;2^VN=South Vietnam;Tran Van Huong;Prime Minister;60;2;1^BR=;Humberto Castelo Branco;President;50;1;3^AR=;Arturo Illia;President;40;1;3^AU=;Robert Menzies;Prime Minister;75;2;3^ZA=;Hendrik Verwoerd;Prime Minister;10;0;2^CU=;Fidel Castro;Prime Minister;-75;3;1"
+                    + "^PL=;Wladyslaw Gomulka;First Secretary;-40;3;3^HU=;Janos Kadar;First Secretary;-45;3;2^DK=;Jens Otto Krag;Prime Minister;55;2;2^FI=;Urho Kekkonen;President;15;0;2^PH=;Diosdado Macapagal;President;70;2;2^ID=;Sukarno;President;-20;0;3^VE=;Raul Leoni;President;45;1;2^NG=;Abubakar Tafawa Balewa;Prime Minister;35;0;2^UA=-",
+            "1969|CN=China;Mao Zedong;Chairman;-80;3;6^TW=Taiwan;Chiang Kai-shek;President;60;2;2^RU=Soviet Union;Leonid Brezhnev;General Secretary;-50;3;9^DE=West Germany;Kurt Georg Kiesinger;Chancellor;60;2;7^IT=;Mariano Rumor;Prime Minister;55;2;4^JP=;Eisaku Sato;Prime Minister;55;2;6"
+                    + "^GB=;Harold Wilson;Prime Minister;65;2;6^FR=;Charles de Gaulle;President;35;2;6^CA=;Pierre Trudeau;Prime Minister;60;2;5^MX=;Gustavo Diaz Ordaz;President;45;1;3^IR=;Mohammad Reza Shah;Shah;60;1;3^SA=;King Faisal;King;50;1;3^TR=;Cevdet Sunay;President;50;2;3"
+                    + "^EG=;Gamal Abdel Nasser;President;-45;0;3^IQ=;Ahmed Hassan al-Bakr;President;-45;0;2^SY=;Nureddin al-Atassi;President;-55;3;1^JO=Jordan;King Hussein;King;45;1;1^IL=;Levi Eshkol;Prime Minister;60;1;3^IN=;Indira Gandhi;Prime Minister;30;0;4^PK=;Ayub Khan;President;45;2;2"
+                    + "^KR=;Park Chung-hee;President;65;2;2^KP=;Kim Il Sung;Premier;-90;3;2^VN=South Vietnam;Nguyen Van Thieu;President;55;2;1^BR=;Artur da Costa e Silva;President;45;1;3^AR=;Juan Carlos Ongania;President;35;1;3^AU=;John Gorton;Prime Minister;75;2;3^ZA=;John Vorster;Prime Minister;10;0;2^CU=;Fidel Castro;Prime Minister;-70;3;1"
+                    + "^PL=;Wladyslaw Gomulka;First Secretary;-40;3;3^HU=;Janos Kadar;First Secretary;-40;3;2^DK=;Hilmar Baunsgaard;Prime Minister;55;2;2^FI=;Urho Kekkonen;President;15;0;2^PH=;Ferdinand Marcos;President;65;2;2^ID=;Suharto;President;35;1;3^VE=;Rafael Caldera;President;45;1;2^NG=;Yakubu Gowon;Head of State;25;0;3^UA=-",
+            "1973|CN=China;Mao Zedong;Chairman;-30;0;6^TW=Taiwan;Chiang Kai-shek;President;55;2;2^RU=Soviet Union;Leonid Brezhnev;General Secretary;-35;3;9^DE=West Germany;Willy Brandt;Chancellor;60;2;7^IT=;Giulio Andreotti;Prime Minister;55;2;4^JP=;Kakuei Tanaka;Prime Minister;55;2;7"
+                    + "^GB=;Edward Heath;Prime Minister;65;2;6^FR=;Georges Pompidou;President;45;2;6^CA=;Pierre Trudeau;Prime Minister;55;2;5^MX=;Luis Echeverria;President;40;1;3^IR=;Mohammad Reza Shah;Shah;65;1;3^SA=;King Faisal;King;45;1;4^TR=;Naim Talu;Prime Minister;50;2;3"
+                    + "^EG=;Anwar Sadat;President;-25;0;3^IQ=;Ahmed Hassan al-Bakr;President;-45;0;2^SY=;Hafez al-Assad;President;-50;3;1^JO=Jordan;King Hussein;King;45;1;1^IL=;Golda Meir;Prime Minister;65;1;3^IN=;Indira Gandhi;Prime Minister;15;0;4^PK=;Zulfikar Ali Bhutto;President;45;2;2"
+                    + "^KR=;Park Chung-hee;President;60;2;3^KP=;Kim Il Sung;Premier;-85;3;2^VN=South Vietnam;Nguyen Van Thieu;President;50;2;1^BR=;Emilio Medici;President;45;1;3^AR=;Alejandro Lanusse;President;30;0;3^AU=;Gough Whitlam;Prime Minister;60;2;3^ZA=;John Vorster;Prime Minister;5;0;2^CU=;Fidel Castro;Prime Minister;-65;3;1"
+                    + "^PL=;Edward Gierek;First Secretary;-30;3;3^HU=;Janos Kadar;First Secretary;-35;3;2^DK=;Anker Jorgensen;Prime Minister;55;2;2^FI=;Urho Kekkonen;President;15;0;2^PH=;Ferdinand Marcos;President;60;2;2^ID=;Suharto;President;40;1;3^VE=;Rafael Caldera;President;40;1;2^NG=;Yakubu Gowon;Head of State;25;0;3^AE=;Zayed bin Sultan;President;20;0;1^QA=;Khalifa bin Hamad;Emir;15;0;1^UA=-",
+            "1977|CN=China;Hua Guofeng;Chairman;-10;0;6^TW=Taiwan;Chiang Ching-kuo;Premier;50;2;2^RU=Soviet Union;Leonid Brezhnev;General Secretary;-40;3;9^DE=West Germany;Helmut Schmidt;Chancellor;60;2;7^IT=;Giulio Andreotti;Prime Minister;55;2;5^JP=;Takeo Fukuda;Prime Minister;55;2;7"
+                    + "^GB=;James Callaghan;Prime Minister;65;2;6^FR=;Valery Giscard d'Estaing;President;50;2;6^CA=;Pierre Trudeau;Prime Minister;55;2;5^MX=;Jose Lopez Portillo;President;40;1;4^IR=;Mohammad Reza Shah;Shah;65;1;3^SA=;King Khalid;King;50;1;5^TR=;Suleyman Demirel;Prime Minister;45;2;3"
+                    + "^EG=;Anwar Sadat;President;40;1;3^IQ=;Ahmed Hassan al-Bakr;President;-40;0;2^SY=;Hafez al-Assad;President;-35;0;2^JO=Jordan;King Hussein;King;45;1;1^IL=;Yitzhak Rabin;Prime Minister;65;1;3^IN=;Indira Gandhi;Prime Minister;15;0;4^PK=;Zulfikar Ali Bhutto;Prime Minister;35;1;2"
+                    + "^KR=;Park Chung-hee;President;55;2;3^KP=;Kim Il Sung;President;-85;3;2^VN=Vietnam;Le Duan;General Secretary;-60;3;2^BR=;Ernesto Geisel;President;40;1;4^AR=;Jorge Videla;President;10;0;3^AU=;Malcolm Fraser;Prime Minister;70;2;3^ZA=;John Vorster;Prime Minister;0;0;2^CU=;Fidel Castro;President;-55;3;1"
+                    + "^PL=;Edward Gierek;First Secretary;-25;3;3^HU=;Janos Kadar;First Secretary;-30;3;2^DK=;Anker Jorgensen;Prime Minister;55;2;2^FI=;Urho Kekkonen;President;20;0;2^PH=;Ferdinand Marcos;President;55;2;2^ID=;Suharto;President;40;1;3^VE=;Carlos Andres Perez;President;40;1;2^NG=;Olusegun Obasanjo;Head of State;30;0;3^AE=;Zayed bin Sultan;President;25;0;1^QA=;Khalifa bin Hamad;Emir;20;0;1^UA=-",
+            "1981|CN=China;Deng Xiaoping;Paramount Leader;25;1;6^TW=Taiwan;Chiang Ching-kuo;President;45;1;2^RU=Soviet Union;Leonid Brezhnev;General Secretary;-65;3;9^DE=West Germany;Helmut Schmidt;Chancellor;60;2;7^IT=;Arnaldo Forlani;Prime Minister;55;2;5^JP=;Zenko Suzuki;Prime Minister;55;2;8"
+                    + "^GB=;Margaret Thatcher;Prime Minister;75;2;6^FR=;Valery Giscard d'Estaing;President;50;2;6^CA=;Pierre Trudeau;Prime Minister;55;2;5^MX=;Jose Lopez Portillo;President;35;1;4^IR=;Ruhollah Khomeini;Supreme Leader;-85;3;3^SA=;King Khalid;King;50;1;5^TR=;Kenan Evren;Head of State;50;2;3"
+                    + "^EG=;Anwar Sadat;President;60;1;3^IQ=;Saddam Hussein;President;-15;0;3^SY=;Hafez al-Assad;President;-45;0;2^JO=Jordan;King Hussein;King;45;1;1^IL=;Menachem Begin;Prime Minister;65;1;3^IN=;Indira Gandhi;Prime Minister;15;0;4^PK=;Muhammad Zia-ul-Haq;President;35;1;2"
+                    + "^KR=;Chun Doo-hwan;President;55;2;3^KP=;Kim Il Sung;President;-85;3;2^VN=Vietnam;Le Duan;General Secretary;-55;3;2^BR=;Joao Figueiredo;President;40;1;4^AR=;Jorge Videla;President;15;0;3^AU=;Malcolm Fraser;Prime Minister;70;2;3^ZA=;P. W. Botha;Prime Minister;5;0;2^CU=;Fidel Castro;President;-60;3;1"
+                    + "^PL=;Stanislaw Kania;First Secretary;-30;3;3^HU=;Janos Kadar;First Secretary;-30;3;2^DK=;Anker Jorgensen;Prime Minister;55;2;2^FI=;Urho Kekkonen;President;20;0;2^PH=;Ferdinand Marcos;President;55;2;2^ID=;Suharto;President;40;1;3^VE=;Luis Herrera Campins;President;40;1;2^NG=;Shehu Shagari;President;30;0;3^AE=;Zayed bin Sultan;President;30;0;2^QA=;Khalifa bin Hamad;Emir;25;0;1^UA=-",
+            "1985|CN=China;Deng Xiaoping;Paramount Leader;30;1;7^TW=Taiwan;Chiang Ching-kuo;President;45;1;2^RU=Soviet Union;Konstantin Chernenko;General Secretary;-60;3;9^DE=West Germany;Helmut Kohl;Chancellor;65;2;7^IT=;Bettino Craxi;Prime Minister;55;2;5^JP=;Yasuhiro Nakasone;Prime Minister;60;2;8"
+                    + "^GB=;Margaret Thatcher;Prime Minister;80;2;6^FR=;Francois Mitterrand;President;50;2;6^CA=;Brian Mulroney;Prime Minister;65;2;5^MX=;Miguel de la Madrid;President;35;1;4^IR=;Ruhollah Khomeini;Supreme Leader;-85;3;3^SA=;King Fahd;King;50;1;5^TR=;Turgut Ozal;Prime Minister;50;2;3"
+                    + "^EG=;Hosni Mubarak;President;55;1;3^IQ=;Saddam Hussein;President;0;0;3^SY=;Hafez al-Assad;President;-55;3;2^JO=Jordan;King Hussein;King;45;1;1^IL=;Shimon Peres;Prime Minister;70;1;3^IN=;Rajiv Gandhi;Prime Minister;20;0;4^PK=;Muhammad Zia-ul-Haq;President;45;1;2"
+                    + "^KR=;Chun Doo-hwan;President;55;2;3^KP=;Kim Il Sung;President;-85;3;2^VN=Vietnam;Le Duan;General Secretary;-50;3;2^BR=;Joao Figueiredo;President;40;1;4^AR=;Raul Alfonsin;President;40;1;3^AU=;Bob Hawke;Prime Minister;70;2;3^ZA=;P. W. Botha;State President;0;0;2^CU=;Fidel Castro;President;-65;3;1"
+                    + "^PL=;Wojciech Jaruzelski;First Secretary;-40;3;3^HU=;Janos Kadar;General Secretary;-25;3;2^DK=;Poul Schluter;Prime Minister;55;2;2^FI=;Mauno Koivisto;President;25;0;2^PH=;Ferdinand Marcos;President;45;2;2^ID=;Suharto;President;40;1;3^VE=;Jaime Lusinchi;President;40;1;2^NG=;Muhammadu Buhari;Head of State;20;0;3^AE=;Zayed bin Sultan;President;30;0;2^QA=;Khalifa bin Hamad;Emir;25;0;1^UA=-",
+            "1989|CN=China;Deng Xiaoping;Paramount Leader;30;1;7^TW=Taiwan;Lee Teng-hui;President;45;1;3^RU=Soviet Union;Mikhail Gorbachev;General Secretary;-25;3;9^DE=West Germany;Helmut Kohl;Chancellor;65;2;7^IT=;Ciriaco De Mita;Prime Minister;55;2;5^JP=;Noboru Takeshita;Prime Minister;55;2;9"
+                    + "^GB=;Margaret Thatcher;Prime Minister;80;2;6^FR=;Francois Mitterrand;President;50;2;6^CA=;Brian Mulroney;Prime Minister;65;2;5^MX=;Carlos Salinas;President;45;1;4^IR=;Ruhollah Khomeini;Supreme Leader;-80;3;3^SA=;King Fahd;King;50;1;5^TR=;Turgut Ozal;Prime Minister;50;2;3"
+                    + "^EG=;Hosni Mubarak;President;55;1;3^IQ=;Saddam Hussein;President;-5;0;3^SY=;Hafez al-Assad;President;-50;3;2^JO=Jordan;King Hussein;King;45;1;1^IL=;Yitzhak Shamir;Prime Minister;65;1;3^IN=;Rajiv Gandhi;Prime Minister;20;0;4^PK=;Benazir Bhutto;Prime Minister;45;1;2"
+                    + "^KR=;Roh Tae-woo;President;60;2;3^KP=;Kim Il Sung;President;-85;3;2^VN=Vietnam;Nguyen Van Linh;General Secretary;-40;3;2^BR=;Jose Sarney;President;40;1;4^AR=;Raul Alfonsin;President;40;1;3^AU=;Bob Hawke;Prime Minister;70;2;3^ZA=;P. W. Botha;State President;-10;0;2^CU=;Fidel Castro;President;-65;3;1"
+                    + "^PL=;Wojciech Jaruzelski;First Secretary;-20;3;3^HU=;Karoly Grosz;General Secretary;-10;3;2^DK=;Poul Schluter;Prime Minister;55;2;2^FI=;Mauno Koivisto;President;25;0;2^PH=;Corazon Aquino;President;60;2;2^ID=;Suharto;President;40;1;3^VE=;Carlos Andres Perez;President;40;1;2^NG=;Ibrahim Babangida;Head of State;20;0;3^AE=;Zayed bin Sultan;President;35;1;2^QA=;Khalifa bin Hamad;Emir;30;0;1^PA=;Manuel Noriega;Military ruler;-60;3;1^UA=-",
+            "1993|CN=;Jiang Zemin;President;0;0;7^TW=Taiwan;Lee Teng-hui;President;45;1;3^RU=Russia;Boris Yeltsin;President;30;1;7^UA=;Leonid Kravchuk;President;30;0;3^DE=Germany;Helmut Kohl;Chancellor;65;2;7^IT=;Giuliano Amato;Prime Minister;50;2;5^JP=;Kiichi Miyazawa;Prime Minister;55;2;9"
+                    + "^GB=;John Major;Prime Minister;70;2;6^FR=;Francois Mitterrand;President;50;2;6^CA=;Brian Mulroney;Prime Minister;65;2;5^MX=;Carlos Salinas;President;50;1;4^IR=;Ali Khamenei;Supreme Leader;-75;3;3^SA=;King Fahd;King;60;1;5^TR=;Suleyman Demirel;Prime Minister;50;2;3"
+                    + "^EG=;Hosni Mubarak;President;55;1;3^IQ=;Saddam Hussein;President;-85;3;2^SY=;Hafez al-Assad;President;-35;0;2^JO=Jordan;King Hussein;King;40;1;1^IL=;Yitzhak Rabin;Prime Minister;70;1;3^IN=;P. V. Narasimha Rao;Prime Minister;25;0;4^PK=;Nawaz Sharif;Prime Minister;25;0;2"
+                    + "^KR=;Roh Tae-woo;President;60;2;3^KP=;Kim Il Sung;President;-80;3;2^VN=Vietnam;Do Muoi;General Secretary;-15;0;2^BR=;Itamar Franco;President;40;1;4^AR=;Carlos Menem;President;50;1;3^AU=;Paul Keating;Prime Minister;65;2;3^ZA=;F. W. de Klerk;State President;35;0;2^CU=;Fidel Castro;President;-60;3;1"
+                    + "^PL=;Lech Walesa;President;50;1;3^HU=;Jozsef Antall;Prime Minister;45;1;2^DK=;Poul Schluter;Prime Minister;55;2;2^FI=;Mauno Koivisto;President;35;0;2^PH=;Fidel Ramos;President;55;2;2^ID=;Suharto;President;35;1;3^VE=;Carlos Andres Perez;President;40;1;2^NG=;Ibrahim Babangida;Head of State;15;0;3^AE=;Zayed bin Sultan;President;45;1;2^QA=;Khalifa bin Hamad;Emir;35;1;1^PA=;Guillermo Endara;President;40;1;1",
+            "1997|CN=;Jiang Zemin;President;5;0;8^TW=Taiwan;Lee Teng-hui;President;45;1;3^RU=Russia;Boris Yeltsin;President;15;1;6^UA=;Leonid Kuchma;President;35;0;3^DE=Germany;Helmut Kohl;Chancellor;65;2;7^IT=;Romano Prodi;Prime Minister;55;2;5^JP=;Ryutaro Hashimoto;Prime Minister;55;2;9"
+                    + "^GB=;John Major;Prime Minister;70;2;6^FR=;Jacques Chirac;President;45;2;6^CA=;Jean Chretien;Prime Minister;65;2;5^MX=;Ernesto Zedillo;President;50;1;4^IR=;Ali Khamenei;Supreme Leader;-75;3;3^SA=;King Fahd;King;55;1;5^TR=;Necmettin Erbakan;Prime Minister;40;2;3"
+                    + "^EG=;Hosni Mubarak;President;55;1;3^IQ=;Saddam Hussein;President;-85;3;2^SY=;Hafez al-Assad;President;-35;0;2^JO=Jordan;King Hussein;King;50;1;1^IL=;Benjamin Netanyahu;Prime Minister;60;1;3^IN=;H. D. Deve Gowda;Prime Minister;25;0;5^PK=;Benazir Bhutto;Prime Minister;25;0;2"
+                    + "^KR=;Kim Young-sam;President;60;2;4^KP=;Kim Jong Il;Chairman;-80;3;2^VN=Vietnam;Do Muoi;General Secretary;5;0;2^BR=;Fernando Henrique Cardoso;President;50;1;4^AR=;Carlos Menem;President;55;1;3^AU=;John Howard;Prime Minister;65;2;3^ZA=;Nelson Mandela;President;45;0;3^CU=;Fidel Castro;President;-60;3;1"
+                    + "^PL=;Aleksander Kwasniewski;President;55;1;3^HU=;Gyula Horn;Prime Minister;50;1;2^DK=;Poul Nyrup Rasmussen;Prime Minister;55;2;2^FI=;Martti Ahtisaari;President;40;0;2^PH=;Fidel Ramos;President;55;2;2^ID=;Suharto;President;35;1;3^VE=;Rafael Caldera;President;40;1;2^NG=;Sani Abacha;Head of State;-10;0;3^AE=;Zayed bin Sultan;President;45;1;2^QA=;Hamad bin Khalifa;Emir;40;1;1^PA=;Ernesto Perez Balladares;President;40;1;1",
+            "2001|CN=;Jiang Zemin;President;-10;0;8^TW=;Chen Shui-bian;President;50;1;3^RU=Russia;Vladimir Putin;President;10;0;6^UA=;Leonid Kuchma;President;30;0;3^DE=Germany;Gerhard Schroeder;Chancellor;60;2;7^IT=;Giuliano Amato;Prime Minister;55;2;5^JP=;Yoshiro Mori;Prime Minister;60;2;8"
+                    + "^GB=;Tony Blair;Prime Minister;75;2;6^FR=;Jacques Chirac;President;45;2;6^CA=;Jean Chretien;Prime Minister;60;2;5^MX=;Vicente Fox;President;55;1;4^IR=;Ali Khamenei;Supreme Leader;-70;3;3^SA=;King Fahd;King;50;1;5^TR=;Bulent Ecevit;Prime Minister;50;2;4"
+                    + "^EG=;Hosni Mubarak;President;50;1;3^IQ=;Saddam Hussein;President;-85;3;2^SY=;Bashar al-Assad;President;-40;0;2^JO=;King Abdullah II;King;50;1;1^IL=;Ehud Barak;Prime Minister;65;1;4^IN=;Atal Bihari Vajpayee;Prime Minister;30;0;5^PK=;Pervez Musharraf;Chief Executive;0;0;3"
+                    + "^KR=;Kim Dae-jung;President;60;2;5^KP=;Kim Jong Il;Chairman;-80;3;2^VN=Vietnam;Le Kha Phieu;General Secretary;10;0;2^BR=;Fernando Henrique Cardoso;President;50;1;4^AR=;Fernando de la Rua;President;50;1;3^AU=;John Howard;Prime Minister;70;2;3^ZA=;Thabo Mbeki;President;35;0;3^CU=;Fidel Castro;President;-55;3;1"
+                    + "^PL=;Aleksander Kwasniewski;President;60;2;3^HU=;Viktor Orban;Prime Minister;55;2;2^DK=;Poul Nyrup Rasmussen;Prime Minister;55;2;2^FI=;Tarja Halonen;President;45;0;2^PH=;Gloria Macapagal Arroyo;President;55;2;2^ID=;Abdurrahman Wahid;President;25;0;3^VE=;Hugo Chavez;President;-15;0;2^NG=;Olusegun Obasanjo;President;30;0;3^AE=;Zayed bin Sultan;President;45;1;2^QA=;Hamad bin Khalifa;Emir;40;1;2^PA=;Mireya Moscoso;President;35;1;1",
+            "2005|CN=;Hu Jintao;President;-15;0;9^TW=;Chen Shui-bian;President;50;1;3^RU=Russia;Vladimir Putin;President;-10;0;6^UA=;Viktor Yushchenko;President;45;1;3^DE=Germany;Gerhard Schroeder;Chancellor;50;2;7^IT=;Silvio Berlusconi;Prime Minister;60;2;5^JP=;Junichiro Koizumi;Prime Minister;65;2;8"
+                    + "^GB=;Tony Blair;Prime Minister;75;2;6^FR=;Jacques Chirac;President;30;2;6^CA=;Paul Martin;Prime Minister;55;2;5^MX=;Vicente Fox;President;45;1;4^IR=;Ali Khamenei;Supreme Leader;-80;3;4^SA=;King Fahd;King;45;1;5^TR=;Recep Tayyip Erdogan;Prime Minister;40;2;4"
+                    + "^EG=;Hosni Mubarak;President;45;1;3^IQ=;Iyad Allawi;Prime Minister;40;1;2^SY=;Bashar al-Assad;President;-55;3;2^JO=;King Abdullah II;King;55;1;1^IL=;Ariel Sharon;Prime Minister;70;1;4^IN=;Manmohan Singh;Prime Minister;40;1;5^PK=;Pervez Musharraf;President;30;1;3"
+                    + "^KR=;Roh Moo-hyun;President;50;2;5^KP=;Kim Jong Il;Chairman;-85;3;2^VN=Vietnam;Nong Duc Manh;General Secretary;15;0;2^BR=;Luiz Inacio Lula da Silva;President;40;1;5^AR=;Nestor Kirchner;President;30;0;3^AU=;John Howard;Prime Minister;75;2;4^ZA=;Thabo Mbeki;President;25;0;3^CU=;Fidel Castro;President;-60;3;1"
+                    + "^PL=;Aleksander Kwasniewski;President;65;2;3^HU=;Ferenc Gyurcsany;Prime Minister;55;2;2^DK=;Anders Fogh Rasmussen;Prime Minister;60;2;2^FI=;Tarja Halonen;President;45;0;2^PH=;Gloria Macapagal Arroyo;President;55;2;2^ID=;Susilo Bambang Yudhoyono;President;35;0;3^VE=;Hugo Chavez;President;-45;3;2^NG=;Olusegun Obasanjo;President;30;0;3^AE=;Khalifa bin Zayed;President;45;1;2^QA=;Hamad bin Khalifa;Emir;45;1;2^PA=;Martin Torrijos;President;35;1;1",
+            "2009|CN=;Hu Jintao;President;-15;3;9^TW=;Ma Ying-jeou;President;55;1;3^RU=Russia;Dmitry Medvedev;President;-25;3;7^UA=;Viktor Yushchenko;President;45;1;3^DE=Germany;Angela Merkel;Chancellor;60;2;7^IT=;Silvio Berlusconi;Prime Minister;55;2;5^JP=;Taro Aso;Prime Minister;65;2;8"
+                    + "^GB=;Gordon Brown;Prime Minister;70;2;6^FR=;Nicolas Sarkozy;President;55;2;6^CA=;Stephen Harper;Prime Minister;60;2;5^MX=;Felipe Calderon;President;45;1;4^IR=;Ali Khamenei;Supreme Leader;-75;3;4^SA=;King Abdullah;King;45;1;5^TR=;Recep Tayyip Erdogan;Prime Minister;40;2;4"
+                    + "^EG=;Hosni Mubarak;President;40;1;3^IQ=;Nouri al-Maliki;Prime Minister;45;1;2^SY=;Bashar al-Assad;President;-45;0;2^JO=;King Abdullah II;King;55;1;1^IL=;Ehud Olmert;Prime Minister;70;1;4^IN=;Manmohan Singh;Prime Minister;45;1;6^PK=;Asif Ali Zardari;President;20;0;3"
+                    + "^KR=;Lee Myung-bak;President;65;2;5^KP=;Kim Jong Il;Chairman;-85;3;3^VN=Vietnam;Nong Duc Manh;General Secretary;20;0;2^BR=;Luiz Inacio Lula da Silva;President;40;1;5^AR=;Cristina Fernandez de Kirchner;President;25;0;3^AU=;Kevin Rudd;Prime Minister;70;2;4^ZA=;Kgalema Motlanthe;President;25;0;3^CU=;Raul Castro;President;-55;3;1"
+                    + "^PL=;Donald Tusk;Prime Minister;60;2;3^HU=;Ferenc Gyurcsany;Prime Minister;50;2;2^DK=;Anders Fogh Rasmussen;Prime Minister;60;2;2^FI=;Tarja Halonen;President;50;1;2^PH=;Gloria Macapagal Arroyo;President;55;2;2^ID=;Susilo Bambang Yudhoyono;President;35;0;3^VE=;Hugo Chavez;President;-50;3;2^NG=;Umaru Yar'Adua;President;25;0;3^AE=;Khalifa bin Zayed;President;45;1;3^QA=;Hamad bin Khalifa;Emir;45;1;2^PA=;Martin Torrijos;President;35;1;1",
+            "2013|CN=;Hu Jintao;President;-25;3;10^TW=;Ma Ying-jeou;President;55;1;3^RU=Russia;Vladimir Putin;President;-30;3;7^UA=;Viktor Yanukovych;President;30;0;3^DE=Germany;Angela Merkel;Chancellor;60;2;7^IT=;Mario Monti;Prime Minister;55;2;5^JP=;Shinzo Abe;Prime Minister;65;2;7"
+                    + "^GB=;David Cameron;Prime Minister;70;2;7^FR=;Francois Hollande;President;55;2;7^CA=;Stephen Harper;Prime Minister;60;2;6^MX=;Enrique Pena Nieto;President;40;1;5^IR=;Ali Khamenei;Supreme Leader;-65;3;5^SA=;King Abdullah;King;45;1;5^TR=;Recep Tayyip Erdogan;Prime Minister;35;2;5"
+                    + "^EG=;Mohamed Morsi;President;15;1;3^IQ=;Nouri al-Maliki;Prime Minister;35;1;2^SY=;Bashar al-Assad;President;-70;3;2^JO=;King Abdullah II;King;55;1;2^IL=;Benjamin Netanyahu;Prime Minister;65;1;5^IN=;Manmohan Singh;Prime Minister;45;1;7^PK=;Asif Ali Zardari;President;10;0;4"
+                    + "^KR=;Lee Myung-bak;President;65;2;5^KP=;Kim Jong Un;Supreme Leader;-85;3;4^VN=Vietnam;Nguyen Phu Trong;General Secretary;20;0;3^BR=;Dilma Rousseff;President;35;0;5^AR=;Cristina Fernandez de Kirchner;President;20;0;3^AU=;Julia Gillard;Prime Minister;70;2;5^ZA=;Jacob Zuma;President;20;0;3^CU=;Raul Castro;President;-40;3;1"
+                    + "^PL=;Donald Tusk;Prime Minister;60;2;4^HU=;Viktor Orban;Prime Minister;40;2;2^DK=;Helle Thorning-Schmidt;Prime Minister;55;2;3^FI=;Sauli Niinisto;President;50;1;3^PH=;Benigno Aquino III;President;60;2;3^ID=;Susilo Bambang Yudhoyono;President;30;0;4^VE=;Hugo Chavez;President;-55;3;2^NG=;Goodluck Jonathan;President;20;0;3^AE=;Khalifa bin Zayed;President;45;1;3^QA=;Tamim bin Hamad Al Thani;Emir;40;1;3^PA=;Ricardo Martinelli;President;35;1;1",
+            "2017|CN=;Xi Jinping;President;-30;3;10^TW=;Tsai Ing-wen;President;60;1;4^RU=Russia;Vladimir Putin;President;-50;3;8^UA=;Petro Poroshenko;President;50;1;4^DE=Germany;Angela Merkel;Chancellor;55;2;7^IT=;Paolo Gentiloni;Prime Minister;55;2;5^JP=;Shinzo Abe;Prime Minister;65;2;7"
+                    + "^GB=;Theresa May;Prime Minister;65;2;7^FR=;Francois Hollande;President;55;2;7^CA=;Justin Trudeau;Prime Minister;55;2;6^MX=;Enrique Pena Nieto;President;35;1;5^IR=;Ali Khamenei;Supreme Leader;-60;3;5^SA=;King Salman;King;45;1;5^TR=;Recep Tayyip Erdogan;President;25;2;5"
+                    + "^EG=;Abdel Fattah el-Sisi;President;35;1;4^IQ=;Haider al-Abadi;Prime Minister;45;1;2^SY=;Bashar al-Assad;President;-75;3;2^JO=;King Abdullah II;King;55;1;2^IL=;Benjamin Netanyahu;Prime Minister;65;1;5^IN=;Narendra Modi;Prime Minister;50;1;7^PK=;Nawaz Sharif;Prime Minister;0;0;4"
+                    + "^KR=;Hwang Kyo-ahn;Acting President;60;2;5^KP=;Kim Jong Un;Supreme Leader;-90;3;4^VN=Vietnam;Nguyen Phu Trong;General Secretary;25;0;3^BR=;Michel Temer;President;40;0;5^AR=;Mauricio Macri;President;50;1;3^AU=;Malcolm Turnbull;Prime Minister;65;2;5^ZA=;Jacob Zuma;President;15;0;3^CU=;Raul Castro;President;-25;3;1"
+                    + "^PL=;Beata Szydlo;Prime Minister;55;2;4^HU=;Viktor Orban;Prime Minister;35;2;2^DK=;Lars Lokke Rasmussen;Prime Minister;55;2;3^FI=;Sauli Niinisto;President;55;1;3^PH=;Rodrigo Duterte;President;35;2;3^ID=;Joko Widodo;President;30;0;4^VE=;Nicolas Maduro;President;-60;3;2^NG=;Muhammadu Buhari;President;20;0;3^AE=;Khalifa bin Zayed;President;50;1;3^QA=;Tamim bin Hamad Al Thani;Emir;40;1;3^PA=;Juan Carlos Varela;President;35;1;1",
+            "2021|CN=;Xi Jinping;President;-40;3;10^TW=;Tsai Ing-wen;President;60;1;4^RU=Russia;Vladimir Putin;President;-55;3;8^UA=;Volodymyr Zelensky;President;55;1;4^DE=Germany;Angela Merkel;Chancellor;55;2;7^IT=;Giuseppe Conte;Prime Minister;55;2;5^JP=;Yoshihide Suga;Prime Minister;65;2;7"
+                    + "^GB=;Boris Johnson;Prime Minister;65;2;7^FR=;Emmanuel Macron;President;55;2;7^CA=;Justin Trudeau;Prime Minister;55;2;6^MX=;Andres Manuel Lopez Obrador;President;35;1;5^IR=;Ali Khamenei;Supreme Leader;-70;3;5^SA=;Mohammed bin Salman;Crown Prince;35;1;5^TR=;Recep Tayyip Erdogan;President;20;2;5"
+                    + "^EG=;Abdel Fattah el-Sisi;President;30;1;4^IQ=;Mustafa al-Kadhimi;Prime Minister;40;1;2^SY=;Bashar al-Assad;President;-75;3;2^JO=;King Abdullah II;King;55;1;2^IL=;Benjamin Netanyahu;Prime Minister;65;1;5^IN=;Narendra Modi;Prime Minister;45;1;7^PK=;Imran Khan;Prime Minister;0;0;4"
+                    + "^KR=;Moon Jae-in;President;60;2;5^KP=;Kim Jong Un;Supreme Leader;-85;3;4^VN=Vietnam;Nguyen Phu Trong;General Secretary;25;0;3^BR=;Jair Bolsonaro;President;35;0;5^AR=;Alberto Fernandez;President;35;1;3^AU=;Scott Morrison;Prime Minister;65;2;5^ZA=;Cyril Ramaphosa;President;20;0;3^CU=;Miguel Diaz-Canel;President;-50;3;1"
+                    + "^PL=;Mateusz Morawiecki;Prime Minister;60;2;4^HU=;Viktor Orban;Prime Minister;30;2;2^DK=;Mette Frederiksen;Prime Minister;55;2;3^FI=;Sauli Niinisto;President;55;1;3^PH=;Rodrigo Duterte;President;35;2;3^ID=;Joko Widodo;President;30;0;4^VE=;Nicolas Maduro;President;-60;3;2^NG=;Muhammadu Buhari;President;20;0;3^AE=;Mohamed bin Zayed;Crown Prince;45;1;3^QA=;Tamim bin Hamad Al Thani;Emir;40;1;3^PA=;Laurentino Cortizo;President;35;1;1"};
+
+    /** Who had the bomb, and from when. */
+    static final String NUKES = "RU:1949 GB:1952 FR:1960 CN:1964 IL:1967 IN:1974 PK:1998 KP:2006";
+    /** Countries not yet independent (or not yet founded) before a year. */
+    static final String BORN = "UA:1992 KR:1948 KP:1948 TW:1949 IN:1947 PK:1947 IL:1948 JO:1946 SY:1946 QA:1971 AE:1971 PH:1946 ID:1949 VN:1954 NG:1960";
+
+    /** The turning points: "yyyy-mm-dd|weeks|condition|title|body|effects on arrival|options". */
+    static final String[] FLASH = {
+            // ---- the Depression and the coming of war
+            "1933-03-05|1||The banks are closing|On your first full day, governors in most states have shut their banks, and depositors are pulling cash from the rest. The financial system is days from collapse. What do you do first?||"
+                    + "Declare a national bank holiday and call Congress back|Treasury secretary|s|0.85|perf=3 fin=4 econ=0.4 demand=2|perf=-1 fin=-2|The holiday stops the run. When the banks reopen, Americans line up to put money back in.|Too many banks reopen too weak; the panic flares again.;;"
+                    + "Let the banks sort themselves out|Political director|s|0.25|fin=1|perf=-3 fin=-5 demand=-2|Some banks recover on their own.|Thousands more banks fail. Savings vanish.",
+            "1933-03-12|1||Your first fireside chat|Radio networks offer you a half hour on Sunday night to explain the banking crisis to the country, in plain language, from the White House.||"
+                    + "Talk to them like neighbors|Communications director|c|0.85|perf=2 rally=3 econ=0.2|perf=0.5|Sixty million listen. Mail floods the White House: people believe the banks are safe again.|The talk lands softly; the papers call it folksy.;;"
+                    + "Leave it to the Treasury|Chief of staff|s|1|perf=-0.5|perf=-0.5|A dry statement from the Treasury.|A dry statement from the Treasury.",
+            "1933-04-18|2||Leaving the gold standard|Prices keep falling, and farmers and debtors are being crushed by a dollar that buys more every month. Your advisers propose ending gold payments and letting the dollar fall, to push prices up. Your budget director calls it the end of Western civilization.||"
+                    + "Take the dollar off gold|Treasury secretary|s|0.8|infl=5 demand=2 fin=1 perf=1 st:IA=2 st:KS=2|infl=3 fin=-1|Prices and farm incomes start to climb; stocks rally.|The markets are spooked, but prices do start to rise.;;"
+                    + "Defend the gold standard|Budget director|s|0.9|fin=0.5|infl=-1 demand=-1 perf=-1|Bankers are relieved.|Deflation grinds on.",
+            "1933-06-20|2||The London Economic Conference|Sixty-six nations meet in London to stabilize currencies and cut tariffs. Your delegation wants instructions: tie the dollar back to the pound and the franc, or keep your hands free to raise prices at home?||"
+                    + "Keep the dollar free to fight deflation|Treasury secretary|s|0.7|demand=1 infl=0.8 rel:GB=-6 rel:FR=-6|demand=0.3 rel:GB=-10 rel:FR=-10|Prices start to rise at home; Europe is furious.|The conference collapses in recrimination.;;"
+                    + "Agree to stabilize currencies|Secretary of State|d|0.6|rel:GB=8 rel:FR=8 demand=-0.5|demand=-1 perf=-0.5|A currency truce is signed.|The truce ties your hands while prices keep falling.",
+            "1933-11-10|3||Recognizing the Soviet Union|For sixteen years the United States has refused to recognize the Soviet government. Moscow is offering trade and promises not to spread propaganda here.||"
+                    + "Establish diplomatic relations|Secretary of State|d|0.8|rel:RU=25 for=0.1|rel:RU=10 base=-1|Ambassadors are exchanged; business hopes for big orders.|Recognition stirs anger at home and the trade never comes.;;"
+                    + "Keep refusing|National security adviser|d|1|rel:RU=-5|rel:RU=-5|Nothing changes.|Nothing changes.",
+            "1934-05-10|3||Dust storms bury the Plains|A storm carries 350 million tons of topsoil from the Great Plains to the East Coast; it falls on ships in the Atlantic. Farm families are leaving by the thousands.||"
+                    + "Pay farmers to rest the land and plant shelter belts|Agriculture secretary|s|0.75|perf=1 st:KS=3 st:OK=3 st:NE=2 def=0.2|perf=-0.5 def=0.2|A soil conservation program starts, and relief reaches the worst counties.|The money is slow to arrive.;;"
+                    + "Emergency relief only|Budget director|s|0.8|perf=0.3|perf=-1 st:KS=-2 st:OK=-2|Relief trucks roll west.|The relief is too little; the exodus continues.",
+            "1935-10-03|4||Italy invades Ethiopia|Mussolini's army has crossed into Ethiopia. The League of Nations is debating sanctions, and wants to know whether America will cut off oil.||"
+                    + "Stay strictly neutral|Political director|d|1|rel:IT=2|rel:IT=2|You stay out; Congress is relieved.|You stay out; Congress is relieved.;;"
+                    + "Discourage oil sales to Italy|Secretary of State|d|0.5|rel:IT=-15 rel:GB=8 for=0.1|rel:IT=-15 perf=-0.5|A moral embargo slows the oil.|Oil companies ignore you, and isolationists howl.",
+            "1936-12-30|4||Sit-down strikes in Flint|Autoworkers have occupied General Motors plants in Flint, Michigan, demanding recognition of their union. The governor asks whether you want the National Guard to clear them.||"
+                    + "Push both sides to negotiate|Labor secretary|s|0.7|perf=0.5 st:MI=3 g20=2|perf=-0.5 supply=-0.2|GM recognizes the union after 44 days. Organizing spreads across the country.|The strike drags on and the plants stay idle.;;"
+                    + "Back clearing the plants|Attorney general|j|0.5|base=-2 opp=3|perf=-2 st:MI=-4 protest=10|The plants are cleared, but labor turns on you.|Violence at the plant gates makes national headlines.",
+            "1937-07-07|3||Japan invades China|After a clash at the Marco Polo Bridge, Japan has launched a full invasion of China. Chiang Kai-shek's government is pleading for help.||"
+                    + "Aid China quietly and condemn Japan|Secretary of State|d|0.65|rel:CN=12 rel:JP=-12|rel:JP=-10 perf=-0.5|A speech calls for a quarantine of aggressors; credits flow to China.|Isolationists accuse you of steering toward war.;;"
+                    + "Stay neutral|Political director|d|1|rel:CN=-8|rel:CN=-8|You stay out of it.|You stay out of it.",
+            "1938-09-20|2||Czechoslovakia and Munich|Hitler demands the German-speaking Sudetenland from Czechoslovakia. Britain and France are about to agree at Munich. They want to know where America stands.||"
+                    + "Appeal for peace but promise nothing|Secretary of State|d|1|perf=0.2|perf=0.2|You cable Hitler urging peace. The deal goes through.|You cable Hitler urging peace. The deal goes through.;;"
+                    + "Warn Germany publicly and speed up rearmament|National security adviser|m|0.6|rel:DE=-15 rel:GB=8 def=0.4 sec=0.2|rel:DE=-15 base=-1 def=0.4|You ask Congress for warplanes. Europe takes note.|Congress balks, and Berlin calls your bluff.",
+            "1938-11-15|3||Refugees from Germany|After a night of pogroms across Germany, tens of thousands of Jews are trying to flee. The immigration quota is mostly unfilled because of red tape, and a bill would admit 20,000 refugee children.||"
+                    + "Extend visitor visas and back the children's bill|Secretary of State|d|0.5|rights=0.2 for=0.1 rel:DE=-10|base=-1 perf=-0.5|Twelve thousand refugees can stay; the children's bill stalls but the cause is heard.|The bill dies in committee and nativists attack you.;;"
+                    + "Keep the quotas as they are|Political director|s|1|perf=0.2|perf=0.2|Nothing changes.|Nothing changes.",
+            "1939-09-01|2||Germany invades Poland|German armies have crossed into Poland; Britain and France have declared war. The Neutrality Act bans selling them arms.||"
+                    + "Ask Congress for cash and carry|Secretary of State|d|0.7|rel:GB=12 rel:FR=12 rel:DE=-15 demand=0.5|rel:DE=-10 base=-1|Congress repeals the arms embargo; the Allies can buy if they pay and carry.|The debate drags on for weeks.;;"
+                    + "Strict neutrality|Political director|d|1|rel:GB=-8|rel:GB=-8|America sits it out.|America sits it out.",
+            "1940-06-10|2||France is falling|German armies have broken through; France will surrender within days. Britain stands alone and asks for fifty old destroyers to guard its convoys.||"
+                    + "Trade the destroyers for bases|National security adviser|d|0.75|rel:GB=15 rel:DE=-15 sec=0.2 def=0.2|rel:GB=10 base=-1|Fifty destroyers sail for Britain; America gets bases from Newfoundland to the Caribbean.|Isolationists accuse you of dragging the country toward war.;;"
+                    + "Rearm at home first|Defense secretary|m|0.85|def=0.6 sec=0.2|def=0.6|Congress funds a two-ocean navy.|Congress funds a two-ocean navy.",
+            "1941-06-22|2||Germany invades the Soviet Union|Three million German troops have attacked the Soviet Union along a thousand-mile front. Stalin is asking for help.||"
+                    + "Extend Lend-Lease to Moscow|Secretary of State|d|0.6|rel:RU=30 align:RU=1 rel:DE=-10|rel:RU=15 base=-1.5|Convoys head for Murmansk; the Soviets hold on.|Many Americans balk at arming Stalin.;;"
+                    + "Let them fight it out|Political director|d|1|rel:RU=-5|rel:RU=-5|You stay out of it.|You stay out of it.",
+            "1941-07-26|2||Oil for Japan|Japan has moved into southern Indochina. Your advisers propose freezing Japanese assets, which would cut off its American oil.||"
+                    + "Freeze the assets|Secretary of State|d|0.6|rel:JP=-25 rel:CN=10 oil=1|rel:JP=-30 terror=5|Japan's oil supply is cut by nine-tenths. Tokyo must decide whether to negotiate or fight.|Tokyo's war party gains the upper hand.;;"
+                    + "Keep talking and keep selling|Chief of staff|d|0.6|rel:JP=5 rel:CN=-10|rel:JP=-5 rel:CN=-15|Talks continue in Washington.|Japan keeps advancing anyway.",
+            "1941-12-07|1||Pearl Harbor is attacked|Japanese carrier planes have struck the Pacific Fleet at Pearl Harbor; battleships are burning and more than 2,000 Americans are dead. Japanese forces are attacking the Philippines, Guam and Malaya.|warstart:ww2p=1800 rally=14 strat:ww2p=2 stress=20 kia=2400|"
+                    + "Ask Congress to declare war|National security adviser|d|1|sec=0.3 perf=2|sec=0.3|Congress declares war with one dissenting vote. Four days later Germany and Italy declare war on America.|Congress declares war.",
+            "1941-12-11|2|war_ww2p>1,war_ww2p<3|Germany declares war|Hitler has declared war on the United States. Your military chiefs urge a Germany-first strategy; the public's fury is directed at Japan.|warstart:ww2e=1200 strat:ww2e=2|"
+                    + "Germany first|Defense secretary|m|0.85|war:ww2e=4 rel:GB=10 rel:RU=10|war:ww2p=-3|You agree with Churchill: Germany is the main enemy.|The Pacific is starved of ships for months.;;"
+                    + "Japan first|Political director|m|0.75|war:ww2p=5 rel:GB=-10|war:ww2e=-4 rel:GB=-15|The Pacific gets most of the new ships.|Britain is left to hold the line in Europe nearly alone.",
+            "1942-02-19|2||An order to remove Japanese Americans|Generals on the West Coast want authority to remove 120,000 people of Japanese descent, most of them citizens, to inland camps. Your attorney general says there is no evidence of sabotage.||"
+                    + "Refuse: no mass removal|Attorney general|j|0.7|rights=0.4 perf=-1 st:CA=-3|rights=0.3 perf=-2 sec=-0.2|You refuse. Arrests of actual suspects continue; the camps are never built.|A storm of criticism on the West Coast follows.;;"
+                    + "Sign the order|Defense secretary|m|1|sec=0.1 rights=-0.6 g22=-15|rights=-0.6|120,000 people are sent to camps behind barbed wire. History will judge this harshly.|120,000 people are sent to camps.",
+            "1942-06-04|1|war_ww2p>1,war_ww2p<3|The Battle of Midway|Codebreakers have learned Japan is about to strike Midway with its main carrier fleet. Your admirals want to ambush it with every carrier you have left.||"
+                    + "Ambush the fleet|Defense secretary|m|0.7|war:ww2p=7 rally=3|war:ww2p=-4 kia=300|Four Japanese carriers are sunk. The tide in the Pacific turns.|The ambush is spotted; both fleets take heavy losses.;;"
+                    + "Hold the carriers back|Political director|m|0.9|war:ww2p=-2|war:ww2p=-5|Midway falls; the fleet survives.|Midway falls.",
+            "1944-01-16|3|war_ww2e>1,war_ww2e<3|Saving Europe's Jews|Treasury officials report that the State Department has been blocking efforts to rescue Jews from Nazi-occupied Europe. They urge a War Refugee Board with real power.||"
+                    + "Create the War Refugee Board|Treasury secretary|d|0.8|rights=0.3 for=0.1|perf=-0.3|The board helps save tens of thousands.|The board is starved of money.;;"
+                    + "Winning the war is the only rescue|Defense secretary|m|1|war:ww2e=1|war:ww2e=1|Nothing new is done.|Nothing new is done.",
+            "1944-06-06|1|war_ww2e>1,war_ww2e<3|D-Day|The invasion of France is ready: 156,000 men, 7,000 ships. The weather is marginal; the next window is weeks away.||"
+                    + "Go now|Defense secretary|m|0.75|war:ww2e=9 rally=4 kia=4400|war:ww2e=2 kia=9000|The landings succeed. Allied armies are ashore in France.|The beaches are a bloodbath, but a foothold holds.;;"
+                    + "Wait for better weather|National security adviser|m|0.6|war:ww2e=6 kia=2000|war:ww2e=-3|The landings come two weeks later and succeed.|The delay costs the element of surprise.",
+            "1945-02-04|2|war_ww2e>1,war_ww2e<3|The Yalta conference|Churchill and Stalin meet you at Yalta to settle the postwar world: Poland, Germany, the United Nations, and Soviet entry into the war against Japan.||"
+                    + "Trade concessions in Poland for Soviet help against Japan|Secretary of State|d|0.7|rel:RU=10 war:ww2p=5|rel:RU=-5 base=-1|Stalin agrees to enter the war against Japan within three months of Germany's surrender.|Critics say you gave away Eastern Europe.;;"
+                    + "Hold firm on free elections in Poland|National security adviser|d|0.4|rel:RU=-10 for=0.2|rel:RU=-15|Stalin promises elections; whether he means it is another matter.|The talks sour.",
+            "1945-07-16|2|war_ww2p>1,war_ww2p<3|The bomb works|A weapon of unprecedented power has been tested in the New Mexico desert. Your generals say an invasion of Japan could cost hundreds of thousands of American lives. How do you end the war?||"
+                    + "Use it on a Japanese city|Defense secretary|m|0.85|warend:ww2p=3 rel:RU=-10|war:ww2p=15|Japan surrenders days after two cities are destroyed. The atomic age has begun.|Japan holds out for weeks more.;;"
+                    + "Demonstrate it, then demand surrender|Secretary of State|d|0.35|warend:ww2p=3 for=0.2|war:ww2p=6 kia=6000|Japan's leaders see the demonstration and accept surrender.|Tokyo dismisses the demonstration; the war grinds on.;;"
+                    + "Blockade and wait for Soviet entry|National security adviser|m|0.55|war:ww2p=12 rel:RU=10|war:ww2p=4 kia=8000|With the Soviets attacking in Manchuria, Japan gives up.|The blockade starves Japan slowly; Americans keep dying.",
+            "1946-04-01|4|year<1947|Strikes sweep the country|With wartime controls ending, steelworkers, coal miners and railroad men are striking for raises; the country is short of nearly everything.||"
+                    + "Seize the railroads and broker a deal|Labor secretary|s|0.6|supply=0.2 perf=0.5|base=-1 supply=-0.3|The trains run again.|Labor feels betrayed and the strikes spread.;;"
+                    + "Let collective bargaining work|Chief of staff|s|0.5|base=1|supply=-0.4 perf=-1|The settlements come, at a price.|Shortages drag on for months.",
+            "1947-03-01|3|rel_RU<-20|Greece and Turkey|Britain can no longer afford to support Greece against communist guerrillas or Turkey against Soviet pressure. It asks America to take over.||"
+                    + "Promise to support free peoples everywhere|Secretary of State|d|0.75|rel:TR=15 rel:RU=-15 for=0.3 def=0.2|rel:RU=-15 base=-1 def=0.2|Congress approves $400 million; the doctrine bearing your name is born.|Critics warn of an open-ended commitment.;;"
+                    + "Let Britain withdraw|Political director|d|1|rel:TR=-10 rel:GB=-8|rel:TR=-10|The region is left to its own devices.|The region is left to its own devices.",
+            "1948-05-14|1||Israel declares independence|Jewish leaders in Palestine have proclaimed the State of Israel. Your secretary of state opposes recognition; your political advisers favor it. Arab armies are massing.||"
+                    + "Recognize Israel at once|Political director|d|1|rel:IL=30 rel:SA=-10 rel:EG=-10|rel:IL=30|America becomes the first country to recognize Israel, eleven minutes after its birth.|America recognizes Israel.;;"
+                    + "Wait for a UN settlement|Secretary of State|d|1|rel:IL=-15 rel:SA=5|rel:IL=-15|You hold off; the Soviets recognize Israel first.|You hold off.",
+            "1948-06-25|2|rel_RU<-20|The Berlin blockade|Soviet forces have cut every road and rail line into West Berlin. Two million people have a month of food. Your generals offer an armed convoy or an airlift.||"
+                    + "Supply the city by air|Defense secretary|m|0.8|rel:DE=20 rel:GB=10 for=0.4 rally=3|for=-0.2 perf=-1|Planes land every three minutes. After eleven months, Stalin lifts the blockade.|The airlift struggles through a hard winter.;;"
+                    + "Force an armed convoy through|National security adviser|m|0.45|for=0.3 defcon=3|defcon=2 kia=40 rel:RU=-20|The Soviets back down at the checkpoint.|Shots are fired; the world holds its breath.;;"
+                    + "Negotiate a withdrawal|Secretary of State|d|0.5|rel:RU=10|rel:DE=-30 for=-0.6 perf=-2|A face-saving deal is found.|The West abandons Berlin. Europe wonders who is next.",
+            "1948-07-26|2||Desegregating the armed forces|Black leaders are threatening a campaign of civil disobedience against the draft unless the military ends segregation. Southern Democrats warn of revolt.||"
+                    + "Order equal treatment in the services|Political director|j|1|rights=0.4 g10=6 st:MS=-6 st:AL=-6 st:SC=-6|rights=0.4|You sign an executive order. Southern delegates walk out of your party's convention.|You sign the order.;;"
+                    + "Wait until after the election|Chief of staff|s|1|g10=-4|g10=-4|The order waits.|The order waits.",
+            "1949-04-04|3|year<1950|Signing the North Atlantic Treaty|Twelve nations are ready to sign a treaty saying an attack on one is an attack on all: the first peacetime alliance in American history.||"
+                    + "Sign and send it to the Senate|Secretary of State|d|0.85|align:GB=2 align:FR=2 align:IT=2 align:CA=2 align:DK=2 nato=20 for=0.3|nato=10 base=-1|The Senate ratifies the treaty 82 to 13. NATO is born.|The Senate debate is bruising, but the treaty passes.;;"
+                    + "Keep America's hands free|Political director|d|1|rel:GB=-15 rel:FR=-15|rel:GB=-15|Europe is left to arm itself.|Europe is left to arm itself.",
+            "1949-08-29|2||The Soviets have the bomb|American planes have detected radioactive debris over the Pacific: the Soviet Union has tested an atomic bomb, years earlier than expected.|nuke:RU=1 stress=8 sec=-0.3|"
+                    + "Build the hydrogen bomb|Defense secretary|m|0.9|sec=0.3 def=0.4|sec=0.2 def=0.4|A crash program begins.|A crash program begins.;;"
+                    + "Propose international control|Secretary of State|d|0.2|rel:RU=10 for=0.1|sec=-0.2|Moscow surprises everyone by talking.|Moscow refuses.",
+            "1949-10-01|2||Mao takes China|Mao Zedong has proclaimed the People's Republic of China; Chiang Kai-shek's government is fleeing to Taiwan. Republicans ask who lost China.|leader:CN=Mao_Zedong;Chairman align:CN=3 rel:CN=-60 power:CN=5 gone:TW=0 leader:TW=Chiang_Kai-shek;President rel:TW=50|"
+                    + "Defend Taiwan and refuse to recognize Beijing|National security adviser|d|0.9|rel:TW=15 rel:CN=-15 base=1|rel:CN=-15|The Seventh Fleet moves into the Taiwan Strait.|The Seventh Fleet moves into the Taiwan Strait.;;"
+                    + "Wait for the dust to settle|Secretary of State|d|1|base=-2 for=-0.2|base=-2|You stay out of China's civil war; Republicans attack.|You stay out.",
+            "1950-06-25|1||North Korea invades the South|North Korean tanks have crossed the 38th parallel; Seoul will fall within days. The UN Security Council can act while the Soviets are boycotting it.||"
+                    + "Commit American forces under the UN|Defense secretary|m|0.8|warstart:korea=80 rally=6 for=0.3|warstart:korea=60 war:korea=-15 rally=4|Congress and the country rally behind a police action.|The first units are thrown back toward the sea.;;"
+                    + "Send arms and air support only|Secretary of State|m|0.4|rel:KR=-10|gone:KR=1 for=-0.8 perf=-3 rel:KR=-60|South Korea holds the line with American air power.|South Korea is overrun.",
+            "1950-10-01|3|war_korea>1,war_korea<3,front_korea>58|Crossing the 38th parallel|After the landing at Inchon, the North Korean army is broken. Your commander wants to drive to the Chinese border. Beijing warns it will not stand idle.||"
+                    + "Stop at the parallel|Secretary of State|d|0.8|talks:korea=30 rel:CN=5|talks:korea=10|The war could end where it began.|The North regroups.;;"
+                    + "Drive to the Yalu|Defense secretary|m|0.4|war:korea=25|war:korea=-35 kia=4000 rel:CN=-25|The North collapses and Korea is reunified.|Hundreds of thousands of Chinese troops pour across the border.",
+            "1951-04-05|3|war_korea>1,war_korea<3|Your commander goes public|Your commanding general in Korea has publicly demanded bombing China and using Nationalist troops, against your policy. A Republican leader read his letter on the House floor.||"
+                    + "Relieve him of command|Chief of staff|s|1|perf=-3 talks:korea=10|perf=-3|You fire him. He comes home to a hero's welcome, and your approval sinks.|You fire him.;;"
+                    + "Reprimand him privately|Political director|s|0.5|perf=0.5|perf=-1 war:korea=-4|He backs down.|He keeps talking, and allies wonder who is in charge.",
+            "1952-04-08|2|year<1953|A steel strike in wartime|Steelworkers will strike at midnight. Without steel, the war effort in Korea stalls. You could seize the mills.||"
+                    + "Seize the steel mills|Attorney general|j|0.3|supply=0.2|perf=-2 supply=-0.4|The mills keep running under federal control.|The Supreme Court rules the seizure unconstitutional.;;"
+                    + "Let the strike happen and mediate|Labor secretary|s|0.6|base=1|supply=-0.5 perf=-1|A settlement comes after seven weeks.|The strike drags on.",
+            "1953-07-01|6|war_korea>1,war_korea<3|An armistice in Korea|The negotiators have a draft armistice: a line roughly where the armies stand, a demilitarized zone, prisoners free to choose where they go. South Korea's president opposes it.||"
+                    + "Sign the armistice|Secretary of State|d|0.85|warend:korea=5 perf=2|talks:korea=20|The guns fall silent along the 38th parallel.|The South balks; the talks stall again.;;"
+                    + "Threaten wider war to win better terms|Defense secretary|m|0.5|war:korea=6 talks:korea=20|kia=2000 war:korea=-5|Beijing gives a little ground.|The fighting flares at a terrible cost.",
+            "1953-08-15|3|rel_IR<60|A coup in Iran|Iran's prime minister has nationalized British oil. The CIA proposes a covert operation to remove him and restore the Shah's power.||"
+                    + "Approve the operation|CIA director|i|0.6|rel:IR=20 oil=-1 rel:GB=10|rel:IR=-30 scandal=2|The prime minister falls; the Shah returns with American support.|The plot is exposed and the Shah flees.;;"
+                    + "Stay out of it|Secretary of State|d|1|rel:GB=-10|rel:GB=-10|Iran's oil dispute festers.|Iran's oil dispute festers.",
+            "1954-04-05|3||The French at Dien Bien Phu|A French army is surrounded at Dien Bien Phu in Indochina. Paris begs for American air strikes; your joint chiefs are split.||"
+                    + "Stay out|Chief of staff|d|1|rel:FR=-10|rel:FR=-10|The fortress falls; Vietnam is partitioned at Geneva.|The fortress falls.;;"
+                    + "Strike from the air|Defense secretary|m|0.35|rel:FR=15 war:vietnam=0|kia=50 rel:FR=5 perf=-1|The bombing buys the French time.|The strikes fail to break the siege.",
+            "1954-05-17|2||The Court strikes down segregation|The Supreme Court has ruled unanimously that segregated public schools are unconstitutional. Southern governors vow resistance. The country is watching you.||"
+                    + "Promise to enforce the law|Attorney general|j|1|rights=0.4 g10=5 st:MS=-4 st:AL=-4 st:GA=-4|rights=0.4|You say the Court has spoken and the law will be obeyed.|You promise enforcement.;;"
+                    + "Say little|Political director|s|1|g10=-3|g10=-3|You keep your own counsel.|You keep your own counsel.",
+            "1956-10-29|2||Suez|Israel, Britain and France have attacked Egypt to retake the Suez Canal. Moscow is threatening rockets. Your allies acted without telling you.||"
+                    + "Force them to withdraw|Secretary of State|d|0.75|rel:EG=20 rel:GB=-15 rel:FR=-15 for=0.3|rel:GB=-25 oil=2|Under American pressure the invasion stops; the British prime minister is finished.|The crisis drags on and oil prices spike.;;"
+                    + "Back your allies|National security adviser|d|0.5|rel:GB=10 rel:EG=-30 defcon=4|rel:EG=-30 oil=4 for=-0.3|The canal is retaken.|The Arab world turns against the West.",
+            "1956-11-04|2||Soviet tanks in Budapest|Hungarians who rose against communist rule are being crushed by Soviet tanks. Radio Free Europe encouraged them. They are begging for help.||"
+                    + "Condemn, take in refugees, but don't intervene|Secretary of State|d|1|rights=0.1 rel:HU=-10|for=-0.2|200,000 Hungarians flee West; America takes 38,000.|The uprising is crushed.;;"
+                    + "Warn Moscow with military moves|Defense secretary|m|0.2|for=0.3 defcon=3|defcon=2 for=-0.4|The Soviets hesitate.|Moscow ignores you and the uprising is crushed anyway.",
+            "1957-09-04|2||Little Rock|Arkansas's governor has used the National Guard to block nine Black students from entering Central High School, defying a federal court.||"
+                    + "Send the 101st Airborne|Attorney general|j|0.9|rights=0.6 g10=8 st:AR=-8 st:MS=-5|rights=0.3 protest=10|Paratroopers escort the nine students into the school.|The students get in, but the city is in uproar.;;"
+                    + "Negotiate with the governor|Chief of staff|s|0.3|rights=0.2|rights=-0.4 g10=-6|The governor stands down.|The governor defies you again; the world watches.",
+            "1957-10-04|2||Sputnik|The Soviet Union has put a satellite into orbit. It beeps over America every 96 minutes. The country is in a panic about falling behind.|stress=5 sec=-0.2 tech=-0.3|"
+                    + "Launch a crash program in science and space|Chief of staff|s|0.85|tech=0.5 edu=0.3 def=0.3 sec=0.2|tech=0.2 def=0.3|You create NASA and pour money into science education.|Our first launch blows up on the pad.;;"
+                    + "Calm the country: our missiles are ahead|National security adviser|c|0.5|perf=0.5|perf=-1.5 tech=-0.3|The panic subsides.|Nobody believes you.",
+            "1959-01-02|3||Castro takes Cuba|Fidel Castro's guerrillas have toppled the Batista dictatorship. He says he is not a communist; your ambassador is less sure.|leader:CU=Fidel_Castro;Prime_Minister rel:CU=-20|"
+                    + "Recognize the new government and offer aid|Secretary of State|d|0.4|rel:CU=25|rel:CU=-15|Havana and Washington stay on speaking terms.|Castro nationalizes American property anyway.;;"
+                    + "Keep him at arm's length|National security adviser|d|1|rel:CU=-15|rel:CU=-15|Relations sour.|Relations sour.",
+            "1960-05-05|2|rel_RU<-20|A spy plane is shot down|The Soviets say they shot down an American plane over their territory. A summit in Paris is days away. They don't know yet whether the pilot is alive.||"
+                    + "Admit it was a spy flight|Secretary of State|d|0.6|rel:RU=-10 ethics=0|rel:RU=-25|You take responsibility; the summit collapses but your honesty is noted.|The summit collapses in fury.;;"
+                    + "Call it a weather plane|CIA director|i|0.15|rel:RU=-5|rel:RU=-25 scandal=4 perf=-2|The story holds.|Moscow produces the pilot, alive, and the wreckage.",
+            "1961-04-15|2|rel_CU<-30|The Bay of Pigs|The CIA has trained 1,400 Cuban exiles to land at the Bay of Pigs and spark an uprising against Castro. It was planned under the last administration. Go or cancel?||"
+                    + "Cancel the invasion|Secretary of State|d|1|rel:CU=5|rel:CU=5|The exiles stand down.|The exiles stand down.;;"
+                    + "Go, with American air cover|Defense secretary|m|0.3|rel:CU=-30 for=0.3 leader:CU=a_provisional_government;President align:CU=1|rel:CU=-40 kia=10 perf=-2 for=-0.4|The landing succeeds; Castro's regime falls.|The landing fails. Americans are captured; the world sees the hand of Washington.;;"
+                    + "Go, but no American forces|CIA director|i|0.1|rel:CU=-30|rel:CU=-40 perf=-1 for=-0.5|Against the odds, the exiles hold the beach.|The exiles are crushed on the beach within three days.",
+            "1961-05-25|2||Going to the Moon|Your space advisers say America could land a man on the Moon within the decade, at a cost of $20 billion or more.||"
+                    + "Set the goal before Congress|Chief of staff|c|0.9|tech=0.6 perf=1 def=0.3|tech=0.2 def=0.3|You ask Congress to commit to landing a man on the Moon before the decade is out.|Congress is skeptical, but funds the start.;;"
+                    + "Too expensive|Budget director|s|1|tech=-0.2|tech=-0.2|The Soviets keep the lead in space.|The Soviets keep the lead in space.",
+            "1961-08-13|2|rel_RU<-20|A wall through Berlin|East German troops have sealed the border through Berlin with barbed wire, soon to be concrete. West Berliners fear they will be abandoned.||"
+                    + "Reinforce the garrison and visit the city|Defense secretary|m|0.8|rel:DE=15 for=0.3 defcon=4|defcon=3 rel:RU=-10|American troops roll down the autobahn into West Berlin; the city cheers.|American and Soviet tanks face each other at Checkpoint Charlie.;;"
+                    + "Protest, but accept the wall|Secretary of State|d|1|rel:DE=-10|rel:DE=-10|A wall is better than a war, you say privately.|A wall is better than a war.",
+            "1962-10-16|1|rel_RU<-20,rel_CU<-20|Missiles in Cuba|Spy planes have photographed Soviet nuclear missiles being installed in Cuba, ninety miles from Florida. In two weeks they will be ready to fire.|stress=25 defcon=3|"
+                    + "Quarantine the island and negotiate in secret|Secretary of State|d|0.75|defcon=4 for=0.5 rally=6 rel:RU=5|defcon=2 for=-0.3|After thirteen days, Moscow agrees to remove the missiles; you quietly agree to pull ours from Turkey.|The quarantine holds, but the standoff goes to the brink.;;"
+                    + "Bomb the missile sites|Defense secretary|m|0.35|for=0.3 rel:CU=-30 defcon=3|defcon=1 kia=200 for=-0.5 rel:RU=-30|The strikes destroy most missiles; Moscow backs down rather than fight.|Soviet forces in Cuba fire back. The world comes within hours of nuclear war.;;"
+                    + "Accept the missiles|Political director|d|1|for=-0.8 perf=-4 base=-3|for=-0.8|Moscow gains a strategic edge; your critics are merciless.|Moscow gains a strategic edge.",
+            "1963-05-03|3|year<1965|Birmingham|Police in Birmingham have turned fire hoses and dogs on children marching for civil rights. The images are on every front page in the world.||"
+                    + "Go on television and propose a civil rights bill|Political director|c|0.85|rights=0.6 g10=10 st:AL=-5 st:MS=-5 st:GA=-4|rights=0.3 opp=-3|You call civil rights a moral issue as old as the Scriptures.|Southern senators promise a filibuster.;;"
+                    + "Send mediators quietly|Attorney general|j|0.6|rights=0.2|rights=-0.2 protest=10|A local settlement desegregates the stores.|The protests spread.",
+            "1964-08-04|2|war_vietnam<2|The Gulf of Tonkin|The Navy reports North Vietnamese torpedo boats attacked two destroyers in the Gulf of Tonkin, the second attack in three days, though the second report is murky.||"
+                    + "Ask Congress for broad war powers|Defense secretary|m|0.9|warstart:vietnam=25 rally=4|warstart:vietnam=25|Congress passes the resolution 504 to 2. You can use force as you see fit.|Congress passes the resolution.;;"
+                    + "Retaliate once and wait for the facts|Secretary of State|d|1|for=0.1|for=0.1|One retaliatory strike; no blank check.|One retaliatory strike.",
+            "1965-03-07|2|year<1966|Selma|State troopers have beaten civil rights marchers on the Edmund Pettus Bridge in Selma, Alabama. The nation saw it on television.||"
+                    + "Address Congress and demand a voting rights law|Political director|c|0.9|rights=0.7 g10=10 st:AL=-6 st:MS=-6|rights=0.4|Before a joint session you tell the country: we shall overcome.|The speech moves the country; the South digs in.;;"
+                    + "Federalize the Guard to protect the march|Attorney general|j|0.9|rights=0.3 g10=5|rights=0.3|The march reaches Montgomery under federal protection.|The march goes on.",
+            "1965-07-21|3|war_vietnam>1,war_vietnam<3,troops_vietnam<200|The decision in Vietnam|Your generals say South Vietnam will fall within the year without 100,000 more American troops, and more after that. Your undersecretary of state warns it is a war we cannot win.||"
+                    + "Send the troops|Defense secretary|m|0.8|troops:vietnam=150 war:vietnam=6|troops:vietnam=150 war:vietnam=2|The buildup begins. By year's end 184,000 Americans are in Vietnam.|The buildup begins, and the enemy matches it.;;"
+                    + "Hold at current levels and push for talks|Secretary of State|d|0.4|talks:vietnam=25|war:vietnam=-12 for=-0.3|Hanoi agrees to secret contacts.|The South's army keeps losing ground.;;"
+                    + "Pull out the advisers|Political director|d|0.6|warend:vietnam=4 perf=-2 rel:VN=-40|warend:vietnam=4 for=-0.6 perf=-3|You bring the advisers home. Saigon's government will fend for itself.|Saigon falls within two years; Republicans ask who lost Vietnam.",
+            "1965-08-11|2|year<1967|Watts burns|Six days of rioting in the Watts neighborhood of Los Angeles have left 34 dead after a traffic stop turned violent. Crime and race dominate the news.||"
+                    + "Restore order and fund the cities|Housing secretary|s|0.6|crime=0.2 rights=0.2 protest=-10 def=0.1|crime=-0.2 protest=5|Federal money flows into job programs.|Critics say you reward rioters.;;"
+                    + "Law and order first|Attorney general|j|0.7|crime=0.3 g10=-4|crime=-0.2 protest=10|The Guard restores calm.|Tension stays high.",
+            "1967-06-05|2|year<1968|The Six-Day War|Israel has struck Egypt's air force on the ground; Jordan and Syria have joined the war. Moscow is threatening to intervene.||"
+                    + "Keep the Soviets out and back a ceasefire|Secretary of State|d|0.8|rel:IL=15 rel:EG=-15 for=0.2|rel:EG=-20 defcon=4|Israel wins in six days, taking the Sinai, Gaza, the West Bank and the Golan Heights.|The superpowers trade warnings on the hotline.;;"
+                    + "Stay neutral|National security adviser|d|1|rel:IL=-10|rel:IL=-10|Israel wins anyway.|Israel wins anyway.",
+            "1967-07-23|2|year<1969|Detroit|Riots in Detroit have left 43 dead; the governor asks for federal troops. Cities across the country are on edge.||"
+                    + "Send troops and appoint a commission on the causes|Attorney general|j|0.7|protest=-12 crime=0.2|protest=5 crime=-0.2|Paratroopers restore order. Your commission warns of two societies, separate and unequal.|Order is restored slowly.;;"
+                    + "Leave it to the state|Political director|s|0.4|perf=0.3|protest=10 crime=-0.3 perf=-1|Michigan restores order.|The violence spreads.",
+            "1968-01-30|2|war_vietnam>1,war_vietnam<3,troops_vietnam>200|The Tet Offensive|The Viet Cong have attacked more than a hundred cities across South Vietnam, even the American embassy in Saigon. Militarily they are being beaten back; politically, the war has changed.|war:vietnam=-6 support:vietnam=-15 kia=1000|"
+                    + "Send 200,000 more troops|Defense secretary|m|0.5|troops:vietnam=200 war:vietnam=8|troops:vietnam=200 support:vietnam=-10 perf=-2|The offensive is crushed; the troops pour in.|The country turns against the war.;;"
+                    + "Cap the troops and open peace talks|Secretary of State|d|0.7|talks:vietnam=30 perf=1|talks:vietnam=10|Hanoi agrees to talks in Paris.|Hanoi stalls.",
+            "1968-08-20|2|rel_RU<-20|Soviet tanks in Prague|Warsaw Pact armies have invaded Czechoslovakia to crush the Prague Spring.||"
+                    + "Condemn it and freeze arms talks|Secretary of State|d|1|rel:RU=-10 for=0.1|rel:RU=-10|The world condemns the invasion; little else changes.|The world condemns the invasion.;;"
+                    + "Protest, and keep arms talks alive|National security adviser|d|1|rel:RU=-3|rel:RU=-3|Detente survives, barely.|Detente survives, barely.",
+            "1969-07-20|1||Men on the Moon|Apollo 11 is in lunar orbit. Tomorrow two astronauts will try to land. You have a statement ready for success, and another for disaster.|tech=0.5|"
+                    + "Call the astronauts on the Moon|Communications director|c|0.95|perf=2 rally=3 tech=0.3|perf=0.5|The whole world watches you speak to two men on the Moon.|The call goes through, crackling.",
+            "1970-04-30|2|war_vietnam>1,war_vietnam<3|Cambodia|Your generals want to strike North Vietnamese sanctuaries just over the border in Cambodia.||"
+                    + "Order the incursion|Defense secretary|m|0.6|war:vietnam=6 protest=20 support:vietnam=-6|war:vietnam=2 protest=30 support:vietnam=-10 perf=-1|Bases are destroyed. Campuses erupt; four students are killed at Kent State.|The sanctuaries are emptied before the troops arrive. Campuses erupt.;;"
+                    + "Keep the war inside Vietnam|Secretary of State|d|1|war:vietnam=-2|war:vietnam=-2|The sanctuaries stay.|The sanctuaries stay.",
+            "1971-06-13|2|year<1973|The Pentagon Papers|The New York Times has begun publishing a secret history of the Vietnam War, leaked by a former Pentagon analyst. It shows decades of official deception.||"
+                    + "Let it run|Communications director|c|1|ethics=0.1 support:vietnam=-5|ethics=0.1|The papers run; the public learns how the war began.|The papers run.;;"
+                    + "Go to court to stop publication|Attorney general|j|0.1|support:vietnam=-2|perf=-2 scandal=3 ethics=-0.3|A judge blocks the stories.|The Supreme Court rules 6 to 3 for the press.",
+            "1971-08-13|2|infl>3.5|The dollar under attack|Foreign governments are cashing in dollars for gold; the gold window may have to close. Inflation is near 4%.||"
+                    + "Close the gold window, freeze wages and prices|Treasury secretary|s|0.8|infl=-1.2 demand=1 perf=1.5|infl=-0.5 supply=-0.3|The markets soar and the public cheers the freeze.|The freeze leaks like a sieve.;;"
+                    + "Defend the dollar with higher rates|Federal Reserve|s|0.6|infl=-0.5 demand=-1|demand=-1.5 fin=-1|The run on the dollar stops, at a cost.|The run continues anyway.",
+            "1972-02-21|3|rel_CN<-20,year<1980|Opening to China|Secret talks have produced an invitation to Beijing, the first visit by an American president to Communist China. Taiwan and the right are uneasy.||"
+                    + "Go to Beijing|Secretary of State|d|0.85|rel:CN=40 align:CN=0 rel:TW=-10 for=0.6 rel:RU=10 perf=1|rel:CN=20 for=0.2|A week that changes the world: the handshake with Mao is seen everywhere.|The visit is cordial but cool.;;"
+                    + "Not yet|Political director|d|1|perf=0|perf=0|The opening waits.|The opening waits.",
+            "1973-01-27|1|war_vietnam>1,war_vietnam<3|The Paris Peace Accords|After four years of talks the agreement is ready: a ceasefire, the last American troops out within sixty days, the prisoners of war home.||"
+                    + "Sign the accords|Secretary of State|d|0.9|warend:vietnam=5 perf=2|talks:vietnam=10|The last American combat troops leave. The prisoners come home.|Saigon objects; the signing slips.;;"
+                    + "Bomb Hanoi for better terms first|Defense secretary|m|0.5|war:vietnam=4 talks:vietnam=10|kia=60 support:vietnam=-10 perf=-2|Hanoi returns to the table chastened.|B-52s are lost and the world is appalled.",
+            "1973-10-06|2||Egypt and Syria attack Israel|On Yom Kippur, Egyptian and Syrian armies have attacked Israel. It is losing tanks and planes fast and asks for an airlift. Arab oil producers threaten an embargo.||"
+                    + "Airlift arms to Israel|Defense secretary|m|0.85|rel:IL=20 rel:SA=-25 rel:EG=-10 oil=12 defcon=3|rel:IL=20 oil=20 defcon=3 supply=-1|The airlift turns the war. The Arab states cut off oil to America; gas lines stretch for blocks.|The airlift works, but the oil embargo is brutal.;;"
+                    + "Broker a ceasefire without arms|Secretary of State|d|0.4|rel:SA=10 oil=3|rel:IL=-30 oil=8|A ceasefire holds; the embargo is short.|Israel suffers; the embargo comes anyway.",
+            "1975-04-10|3|year<1976|Saigon is falling|North Vietnamese divisions are closing on Saigon. The South's president asks for $722 million in emergency aid. Thousands of Vietnamese who worked with Americans are desperate to get out.|leader:VN=North_Vietnamese_forces;Commander|"
+                    + "Evacuate Americans and as many Vietnamese allies as possible|Defense secretary|m|0.8|rights=0.2 perf=0.5 rel:VN=-30|perf=-1|Helicopters lift 7,000 people from Saigon; 130,000 Vietnamese reach America by year's end.|The evacuation is chaotic.;;"
+                    + "Ask Congress for the aid|National security adviser|d|0.1|rel:VN=10|perf=-1.5|Congress approves; the South holds a while longer.|Congress refuses. Saigon falls on April 30.",
+            "1975-10-17|3|year<1976|New York City is nearly broke|New York City will default within days unless Washington helps. The mayor asks for loan guarantees; your advisers say bailouts reward bad management.||"
+                    + "Guarantee loans with strict conditions|Treasury secretary|s|0.75|fin=1 st:NY=4 perf=0.5|st:NY=2|The city survives under tough oversight.|The deal is messy.;;"
+                    + "Refuse a bailout|Budget director|s|0.4|base=1|st:NY=-8 fin=-1 perf=-1|The banks blink and the city finds a way.|The tabloid headline: you tell the city to drop dead.",
+            "1979-01-16|3|rel_IR>40|The Shah falls|Iran's Shah has fled the country; Ayatollah Khomeini is returning from exile. Oil production is collapsing.|leader:IR=Ruhollah_Khomeini;Supreme_Leader align:IR=3 rel:IR=-60 oil=12|"
+                    + "Reach out to the new government|Secretary of State|d|0.3|rel:IR=20|rel:IR=-10|Tehran keeps a channel open.|The revolution turns on America.;;"
+                    + "Stand by the Shah|National security adviser|d|1|rel:IR=-20|rel:IR=-20|The new regime brands America the Great Satan.|The new regime brands America the Great Satan.",
+            "1979-03-28|2|year<1981|Three Mile Island|A reactor at Three Mile Island near Harrisburg, Pennsylvania has partially melted down. Tens of thousands are fleeing; nobody is sure how bad it is.||"
+                    + "Go to the plant yourself|Chief of staff|c|0.8|energy=0.3 perf=1 st:PA=3|perf=-0.5 energy=-0.2|You tour the control room; the panic subsides.|The visit is overshadowed by conflicting reports.;;"
+                    + "Leave it to the regulators|Energy secretary|s|0.5|energy=0|energy=-0.4 st:PA=-3|The reactor is stabilized.|Confusion reigns for days.",
+            "1979-11-04|1|rel_IR<-40|Hostages in Tehran|Militants have stormed the American embassy in Tehran and taken 66 Americans hostage. They demand the Shah be returned for trial.|stress=15|"
+                    + "Freeze Iranian assets and negotiate|Secretary of State|d|0.35|perf=2 rally=4|perf=-2 for=-0.3|After months, Iran releases the hostages in a deal.|The crisis drags on, night after night on the news.;;"
+                    + "Plan a rescue mission|Defense secretary|m|0.35|perf=4 rally=6 for=0.5|perf=-4 kia=8 for=-0.6|Delta Force brings the hostages home.|The mission ends in a desert crash; eight servicemen die.",
+            "1979-12-27|2|rel_RU<-20,year<1981|The Soviets invade Afghanistan|Soviet troops have poured into Afghanistan. Your national security adviser calls it the greatest threat to peace since the Second World War.||"
+                    + "Embargo grain, boycott the Olympics, arm the rebels|National security adviser|i|0.7|rel:RU=-25 for=0.3 st:IA=-3 st:KS=-2|rel:RU=-25 farm=-6|The Afghan resistance begins to receive weapons.|Farmers are furious about the embargo.;;"
+                    + "Protest at the UN|Secretary of State|d|1|for=-0.2|for=-0.2|The UN condemns the invasion.|The UN condemns the invasion.",
+            "1981-08-03|2|year<1983|Air traffic controllers walk out|Thirteen thousand federal air traffic controllers have gone on strike, illegally. Flights are being cancelled across the country.||"
+                    + "Fire those who don't return in 48 hours|Transportation secretary|s|0.75|perf=1.5 base=2 g20=-5|supply=-0.3 perf=-0.5|11,000 are fired; the skies stay safe with supervisors and the military. Unions take note.|Delays drag on for months.;;"
+                    + "Negotiate|Labor secretary|s|0.6|g20=3|perf=-1|A contract is reached.|The union senses weakness.",
+            "1983-10-23|1|year<1985|A bombing in Beirut|A truck bomb has destroyed the Marine barracks at Beirut airport; 241 servicemen are dead. The Marines were there as peacekeepers.|kia=241 stress=10|"
+                    + "Withdraw the Marines|Chief of staff|d|1|perf=-0.5|perf=-0.5|The Marines leave Lebanon within months.|The Marines leave.;;"
+                    + "Retaliate against those responsible|Defense secretary|m|0.4|sec=0.3 rally=2|kia=10 sec=-0.2|Strikes hit the camps of the group behind the attack.|The strikes miss, and two planes are lost.",
+            "1983-10-25|2|year<1985|Grenada|A coup by hard-line Marxists on the island of Grenada has endangered 600 American medical students. Caribbean neighbors ask you to intervene.||"
+                    + "Invade|Defense secretary|m|0.9|rally=3 for=0.2 kia=19|kia=40|The island is secured in days; the students kiss the tarmac.|The operation is messier than planned.;;"
+                    + "Evacuate the students only|Secretary of State|d|0.6|perf=0.2|perf=-1|The students get out.|The evacuation is blocked.",
+            "1986-01-28|1|year<1988|Challenger|The space shuttle Challenger has exploded 73 seconds after launch, killing all seven crew, including a schoolteacher. Millions of children watched live.|stress=8|"
+                    + "Postpone the State of the Union and speak to the nation|Communications director|c|0.95|perf=2 rally=2|perf=1|Your address from the Oval Office comforts a grieving country.|The address is heard.",
+            "1987-10-19|1|year<1989|Black Monday|The stock market has fallen 22% in a single day, the worst crash in history. Brokers fear a 1929-style panic.|fin=-2|"
+                    + "Have the Fed flood the markets with cash|Federal Reserve|s|0.85|fin=2 econ=0.2|fin=-1|The Fed promises liquidity. The market recovers within two years.|Markets stay shaky.;;"
+                    + "Say the economy is sound and wait|Treasury secretary|c|0.5|fin=0.5|fin=-2 perf=-1.5|The panic passes.|Markets keep falling.",
+            "1989-06-04|1|year<1991|Tiananmen Square|Chinese troops have opened fire on pro-democracy protesters in Beijing's Tiananmen Square; hundreds or more are dead.||"
+                    + "Impose sanctions, but keep a back channel|Secretary of State|d|0.8|rel:CN=-25 rights=0.2|rel:CN=-30|Arms sales are suspended; secret envoys keep talking.|Beijing freezes contacts.;;"
+                    + "Sweeping sanctions|Political director|d|0.9|rel:CN=-45 rights=0.4|rel:CN=-45 farm=-3|China is isolated for a time.|China is isolated.",
+            "1989-11-09|1|year<1991|The Berlin Wall falls|East Germany has opened its border; Berliners are tearing down the Wall with hammers. Communist governments across Eastern Europe are tottering.|for=0.3 rel:PL=30 rel:HU=30 align:PL=1 align:HU=1 nato=10|"
+                    + "Celebrate quietly and reassure Moscow|Secretary of State|d|0.85|rel:RU=20 for=0.3|rel:RU=10|You decline to gloat. Gorbachev lets Eastern Europe go peacefully.|Moscow hard-liners grumble.;;"
+                    + "Go to Berlin and declare victory|Communications director|c|0.6|perf=2 rel:RU=-10|rel:RU=-20 defcon=4|The crowds roar.|Moscow's hard-liners are alarmed.",
+            "1989-12-17|2|rel_PA<-40|Panama|Panama's military ruler, indicted in America for drug trafficking, has declared a state of war with the United States; an American officer has been killed.||"
+                    + "Invade and arrest him|Defense secretary|m|0.85|leader:PA=Guillermo_Endara;President rel:PA=60 align:PA=1 rally=2 kia=23|kia=60 perf=-1|In two weeks he surrenders and is flown to Miami for trial.|The fighting lasts longer than planned.;;"
+                    + "Tighten sanctions|Secretary of State|d|0.3|rel:PA=-5|perf=-1 for=-0.2|He is forced out.|He stays in power.",
+            "1990-08-02|1|year<1991|Iraq invades Kuwait|Saddam Hussein's army has overrun Kuwait and is massing on the Saudi border, within reach of a fifth of the world's oil.|oil=12 align:IQ=3 rel:IQ=-60|"
+                    + "Draw a line in the sand: send forces to Saudi Arabia|Defense secretary|m|0.85|warstart:gulf=200 rel:SA=20 rally=4|warstart:gulf=200 oil=6|Operation Desert Shield begins; a 35-nation coalition takes shape.|The buildup is slow and Saddam digs in.;;"
+                    + "Sanctions only|Secretary of State|d|0.3|oil=-4|oil=10 for=-0.6 rel:SA=-20|Iraq withdraws under economic pressure.|Saddam keeps Kuwait.",
+            "1991-01-15|2|war_gulf>1,war_gulf<3|The deadline for Iraq|The UN deadline for Iraq to leave Kuwait has passed. Your commanders are ready; Congress has voted to authorize force.||"
+                    + "Launch the air war, then the ground war|Defense secretary|m|0.85|troops:gulf=300 war:gulf=30 rally=8|war:gulf=10 kia=300|Desert Storm: after five weeks of bombing and 100 hours of ground war, Kuwait is free.|The fighting is harder than expected.;;"
+                    + "Give sanctions more time|Secretary of State|d|0.3|talks:gulf=40|support:gulf=-15 oil=4|Iraq begins to pull out.|The coalition frays.",
+            "1991-08-19|1|year<1992|A coup in Moscow|Hard-liners have put Gorbachev under arrest and sent tanks into Moscow. Boris Yeltsin is standing on a tank outside the Russian parliament.||"
+                    + "Back Yeltsin publicly|Secretary of State|d|0.85|rel:RU=25 for=0.3|rel:RU=-30 defcon=3|The coup collapses in three days; the Soviet Union has months to live.|The coup succeeds; the Cold War returns.;;"
+                    + "Wait and see|National security adviser|d|0.7|rel:RU=5|rel:RU=-20|The coup collapses on its own.|The plotters win.",
+            "1991-12-25|1|year<1993|The Soviet Union dissolves|Gorbachev has resigned; the red flag has come down over the Kremlin. Fifteen countries now exist where one superpower stood, four of them with nuclear weapons.|name:RU=Russia leader:RU=Boris_Yeltsin;President align:RU=1 rel:RU=30 power:RU=7 gone:UA=0 leader:UA=Leonid_Kravchuk;President rel:UA=30 align:UA=0 defcon=5|"
+                    + "Secure the nuclear weapons and send aid|Secretary of State|d|0.8|rel:RU=15 rel:UA=15 for=0.3|rel:RU=5|The loose nukes are gathered under Russian control; aid flows east.|Aid is slow and corruption is rampant.;;"
+                    + "Declare victory and cut defense|Budget director|s|0.9|def=-0.6 perf=1|def=-0.6|A peace dividend begins.|A peace dividend begins.",
+            "1992-04-29|1|year<1994|Los Angeles riots|After a jury acquitted four police officers caught on video beating a Black motorist, Los Angeles is burning. 63 people will die.||"
+                    + "Send federal troops and open a civil rights case|Attorney general|j|0.8|protest=-15 rights=0.2 crime=0.1|protest=10|Order is restored; federal charges follow.|The violence lasts days.;;"
+                    + "Let the state handle it|Political director|s|0.4|perf=0|protest=20 crime=-0.3 perf=-1|Order returns.|The riots spread.",
+            "1993-10-03|1|year<1995|Black Hawk Down|Eighteen Americans have been killed in a battle in Mogadishu, Somalia; a soldier's body was dragged through the streets on television.|kia=18|"
+                    + "Set a date to withdraw|Chief of staff|d|1|perf=-0.5|perf=-0.5|The troops leave by March.|The troops leave.;;"
+                    + "Reinforce and finish the job|Defense secretary|m|0.4|sec=0.2|kia=30 perf=-2|The warlord's militia is broken.|More Americans die.",
+            "1994-04-15|3|year<1995|Genocide in Rwanda|Hutu extremists are slaughtering Rwanda's Tutsi minority, perhaps ten thousand a day. Your advisers fear another Somalia.||"
+                    + "Lead an intervention|Defense secretary|m|0.5|rights=0.4 for=0.3 kia=5|kia=30 for=-0.2|A UN force with American logistics stops the killing within weeks.|The intervention is too slow and too small.;;"
+                    + "Stay out|Political director|d|1|rights=-0.2|rights=-0.2|800,000 people are murdered in a hundred days. You will later call it your greatest regret.|800,000 are murdered.",
+            "1995-01-12|2|year<1996|The peso collapses|Mexico's currency has collapsed; it may default within weeks. Congress won't pass a bailout.||"
+                    + "Lend $20 billion from the Treasury's fund|Treasury secretary|s|0.8|rel:MX=20 fin=1|rel:MX=10 perf=-1|Mexico repays early, with interest.|Critics call it a bailout for Wall Street.;;"
+                    + "Let the markets work|Budget director|s|0.3|base=1|rel:MX=-25 migr=15 fin=-2|Mexico muddles through.|Mexico defaults; migrants flood north.",
+            "1995-04-19|1|year<1997|Oklahoma City|A truck bomb has destroyed the federal building in Oklahoma City; 168 people are dead, including 19 children. It was an American extremist.|stress=10 terror=10|"
+                    + "Go to Oklahoma City and lead the mourning|Communications director|c|0.9|perf=3 rally=4 sec=0.2|perf=1|Your words at the memorial service help the country grieve.|You speak at the memorial.",
+            "1995-07-11|3|year<1996|Srebrenica|Bosnian Serb forces have overrun the UN safe area at Srebrenica; thousands of men and boys are missing, feared murdered.||"
+                    + "NATO air strikes, then peace talks in Dayton|Secretary of State|d|0.75|for=0.4 rights=0.2 nato=8|kia=2 for=0.1|The bombing brings the Serbs to Dayton, Ohio, where a peace is signed.|The talks are bitter, but the war ends.;;"
+                    + "Leave it to the Europeans|Political director|d|1|for=-0.3 nato=-8|for=-0.3|The war goes on.|The war goes on.",
+            "1998-08-07|2|year<2001|Embassy bombings|Al-Qaeda has bombed the American embassies in Kenya and Tanzania, killing 224 people. Intelligence locates its leader's camps in Afghanistan.|terror=10|"
+                    + "Cruise missile strikes|Defense secretary|m|0.4|terror=-10 sec=0.3|terror=5 sec=-0.1|The camps are hit, and the leader is killed.|The missiles miss him by hours.;;"
+                    + "Pursue him through the courts and covert action|CIA director|i|0.3|terror=-6|terror=6|A covert team gets close.|He slips away.",
+            "1999-03-24|2|year<2000|Kosovo|Serbian forces are driving Albanians out of Kosovo. NATO is ready to bomb if you are.||"
+                    + "Bomb until Serbia withdraws|Defense secretary|m|0.75|for=0.4 nato=8 rights=0.2|for=-0.2 nato=-4|After 78 days Serbia pulls out of Kosovo.|The bombing drags on; a missile hits the Chinese embassy.;;"
+                    + "Keep negotiating|Secretary of State|d|0.3|for=0.1|rights=-0.3 for=-0.3|Serbia relents.|The killing continues.",
+            "2000-03-10|4|year<2002|The dot-com bubble bursts|The Nasdaq has peaked and is falling fast; internet companies that never made a profit are collapsing.|fin=-2.5 demand=-1|"
+                    + "Let the Fed cut rates|Federal Reserve|s|0.7|fin=1|fin=-1|The landing is soft.|A mild recession follows.",
+            "2001-09-11|1||September 11|Hijacked airliners have struck the World Trade Center and the Pentagon; another crashed in Pennsylvania. Nearly 3,000 people are dead. Al-Qaeda, sheltered by the Taliban in Afghanistan, is behind it.|rally=20 stress=30 terror=25 sec=-0.5 fin=-2|"
+                    + "Demand the Taliban hand him over, then go to war|Defense secretary|m|0.85|warstart:afghan=10 sec=0.5 terror=-8|warstart:afghan=10 sec=0.2|Within weeks, special forces and air power topple the Taliban.|The war starts, but al-Qaeda's leader escapes.;;"
+                    + "Strike from the air and use the CIA|CIA director|i|0.5|terror=-10 sec=0.3|terror=5 sec=-0.3|Covert teams and Afghan allies rout al-Qaeda.|The camps empty out before the strikes.",
+            "2002-10-01|8|year<2004,rel_IQ<-50|Iraq|Your intelligence agencies say Saddam Hussein is hiding chemical and biological weapons and seeking nuclear ones; some analysts dissent. Your vice president and defense secretary want to remove him.||"
+                    + "Invade Iraq|Defense secretary|m|0.8|warstart:iraq=150 leader:IQ=a_provisional_authority;Administrator align:IQ=1 rel:IQ=60 rel:FR=-20 rel:DE=-20 oil=4|warstart:iraq=150 war:iraq=-10 rel:FR=-25 rel:DE=-25|Baghdad falls in three weeks. Then the insurgency begins, and no weapons of mass destruction are found.|Baghdad falls, but the country descends into chaos.;;"
+                    + "Return the inspectors and keep up pressure|Secretary of State|d|0.6|for=0.3 rel:FR=10 rel:DE=10|for=-0.2|UN inspectors find no weapons programs.|Saddam stalls the inspectors.",
+            "2005-08-29|1||Hurricane Katrina|Katrina has made landfall; the levees in New Orleans have failed. Tens of thousands are stranded on rooftops and in the Superdome.|stress=10|"
+                    + "Take federal control of the response|Homeland Security secretary|h|0.55|perf=1 st:LA=5 st:MS=3 def=0.3|perf=-4 st:LA=-8 g10=-8 def=0.3|The military takes charge; the rescue speeds up.|The response is a national disgrace; 1,800 die.;;"
+                    + "Support the state's lead|Chief of staff|s|0.3|perf=0|perf=-5 st:LA=-10 g10=-10|The state copes.|For days no help arrives; the images shock the world.",
+            "2007-01-10|3|war_iraq>1,war_iraq<3|The surge|Iraq is sliding into civil war. Your generals propose a surge of 30,000 more troops and a new counterinsurgency strategy; Congress wants a timetable to withdraw.||"
+                    + "Order the surge|Defense secretary|m|0.65|troops:iraq=30 war:iraq=15|troops:iraq=30 war:iraq=3 support:iraq=-8|Violence falls sharply within a year.|The surge stalls.;;"
+                    + "Begin a phased withdrawal|Secretary of State|d|0.6|troops:iraq=-40 talks:iraq=20|war:iraq=-12|Iraqi forces take more of the fight.|The civil war deepens.",
+            "2008-09-15|1|year<2010|Lehman Brothers|Lehman Brothers has filed for bankruptcy, AIG is days from collapse and money-market funds are breaking the buck. The Treasury secretary wants $700 billion.|fin=-4 demand=-2|"
+                    + "Rescue the financial system|Treasury secretary|s|0.7|fin=3 perf=-1 base=-2|fin=1 perf=-2|The banks are stabilized; the public is furious about bailouts.|The rescue is late and the recession deepens.;;"
+                    + "Let failures happen|Budget director|s|0.2|fin=1 base=2|fin=-5 demand=-3|The system finds its footing.|The panic becomes a depression scare.",
+            "2009-12-01|4|war_afghan>1,war_afghan<3,year<2011|The Afghan surge|Your generals want 40,000 more troops for Afghanistan; your vice president argues for a smaller counterterrorism mission.||"
+                    + "Send 30,000 with a deadline to start leaving|Defense secretary|m|0.6|troops:afghan=30 war:afghan=8|troops:afghan=30 war:afghan=2|The surge pushes the Taliban back from key districts.|The Taliban wait you out.;;"
+                    + "A narrower counterterrorism mission|Secretary of State|d|0.6|troops:afghan=-10|war:afghan=-8|Drone strikes keep al-Qaeda on the run.|The Taliban gain ground.",
+            "2010-04-20|2|year<2012|Oil in the Gulf|The Deepwater Horizon rig has exploded; oil is gushing from the sea floor a mile down, 60,000 barrels a day.|energy=-0.3|"
+                    + "Take charge and make BP pay|Energy secretary|s|0.6|energy=0.3 st:LA=3 perf=0.5|perf=-2 st:LA=-4|The well is capped after 87 days; BP sets aside $20 billion.|The leak goes on for months.;;"
+                    + "Leave it to BP|Chief of staff|s|0.3|perf=0|perf=-3 st:LA=-6 st:FL=-3|BP caps the well.|The slick reaches the beaches.",
+            "2011-01-25|4|year<2012|Revolution in Egypt|Hundreds of thousands are in Tahrir Square demanding that Mubarak go. He has been a key ally for thirty years.||"
+                    + "Tell him to step down|Secretary of State|d|0.7|rights=0.3 rel:EG=-10 for=0.2|rel:EG=-25 rel:SA=-10|He resigns; the region shudders.|Chaos follows his fall.;;"
+                    + "Stand by your ally|National security adviser|d|0.4|rel:EG=10|rights=-0.3 rel:EG=-20|He hangs on.|He falls anyway, and the protesters remember.",
+            "2013-08-21|3|year<2015,rel_SY<-50|Chemical weapons in Syria|Syria's regime has gassed rebel-held suburbs of Damascus, killing more than 1,400. You had called chemical weapons a red line.||"
+                    + "Strike the regime|Defense secretary|m|0.6|for=0.3 rel:SY=-15|rel:RU=-15 for=-0.2|The strikes degrade the regime's air force.|The strikes change little.;;"
+                    + "Take Russia's offer to remove the weapons|Secretary of State|d|0.55|for=0.1 rel:RU=5|for=-0.4|Most of the stockpile is shipped out and destroyed.|The regime hides some of its stockpile.",
+            "2014-02-27|2|year<2016|Russia seizes Crimea|Unmarked Russian troops have seized Crimea; a war is spreading in eastern Ukraine.|ua=1 rel:RU=-25 rel:UA=15|"
+                    + "Sanctions and aid to Ukraine|Secretary of State|d|0.8|rel:UA=15 rel:RU=-15 nato=6|rel:RU=-20 fin=-0.3|Sanctions bite; the front freezes.|Russia digs in.;;"
+                    + "Talks only|Political director|d|1|rel:UA=-10|rel:UA=-10|Crimea stays Russian.|Crimea stays Russian.",
+            "2014-06-10|3|year<2016|ISIS takes Mosul|The Islamic State has seized Mosul, Iraq's second city, and is declaring a caliphate across Iraq and Syria.|terror=12|"
+                    + "Air strikes and special forces|Defense secretary|m|0.8|warstart:isis=3 sec=0.3|warstart:isis=3 war:isis=-8|A coalition air campaign begins.|ISIS keeps advancing for months.;;"
+                    + "Arm the Kurds and Iraqis only|Secretary of State|d|0.4|terror=-4|terror=10 rel:IQ=-15|Kurdish forces hold the line.|ISIS reaches the outskirts of Baghdad.",
+            "2020-03-11|2|year<2022|The pandemic arrives|A new coronavirus has spread from China to every continent; the WHO calls it a pandemic. Cases are doubling every few days in America.|pandnow=1 fin=-3 demand=-4|"
+                    + "Shut down travel and gatherings, and go big on aid|Health secretary|x|0.6|pandslow=1 perf=1|perf=-2|The curve bends; Congress passes trillions in relief.|The response is slow and confused.;;"
+                    + "Keep the economy open|Chief of staff|s|0.4|demand=1|pandsev=1 perf=-3|The economy holds up better than feared.|Hospitals are overwhelmed.",
+            "2020-05-26|2|year<2022|Protests after a killing by police|Video of a Minneapolis police officer kneeling on a Black man's neck until he died has set off protests in hundreds of cities.|protest=25|"
+                    + "Call for police reform and national healing|Communications director|c|0.7|rights=0.4 g10=6 protest=-10|protest=5 crime=-0.2|Congress takes up a police reform bill.|The protests continue.;;"
+                    + "Send in federal forces to restore order|Attorney general|j|0.5|crime=0.3 g10=-8|protest=15 rights=-0.4|The streets go quiet.|Clashes with federal agents inflame the cities.",
+            "2021-04-14|6|war_afghan>1,war_afghan<3|Leaving Afghanistan|A deal with the Taliban calls for all American troops to leave by May. The Afghan army is shaky. Your generals want to keep 2,500 troops.||"
+                    + "Withdraw by September 11|Defense secretary|m|0.4|warend:afghan=5|warend:afghan=4 kia=13 perf=-3 for=-0.5|The last troops leave in an orderly handover.|Kabul falls in days; a suicide bomber kills 13 Americans at the airport during a chaotic evacuation.;;"
+                    + "Stay, at current levels|National security adviser|m|0.5|war:afghan=2|kia=5 war:afghan=-5|The stalemate continues at low cost.|The Taliban resume attacks on American troops.",
+            "2022-02-24|1|year<2024|Russia invades Ukraine|Russian armies have invaded Ukraine from the north, east and south; missiles are hitting Kyiv. Ukraine's president refuses to leave.|ua=2 ukr=55 rel:RU=-30 rel:UA=20 oil=20 nato=15|"
+                    + "Arm Ukraine and sanction Russia|Secretary of State|d|0.8|aid:UA=2 rel:UA=20 rel:RU=-20 nato=10|rel:RU=-25 oil=8|Western weapons pour in; Kyiv holds.|The sanctions bite slowly.;;"
+                    + "Sanctions only|Political director|d|0.5|rel:UA=-10|ukr=-15 nato=-10|Ukraine holds anyway.|Russia makes big gains.",
+            "2023-10-07|1|year<2025|Hamas attacks Israel|Hamas fighters have killed about 1,200 people in southern Israel and taken some 250 hostages. Israel is preparing a massive response in Gaza.|gaza=45 rel:IL=10|"
+                    + "Stand with Israel and press for humanitarian aid|Secretary of State|d|0.7|rel:IL=10 gaza=-5|gaza=10 protest=10|Aid convoys enter Gaza; hostage talks begin.|The war in Gaza grows bloodier; protests spread at home.;;"
+                    + "Urge restraint from the start|National security adviser|d|0.5|rel:IL=-10 gaza=-10|rel:IL=-15|Israel scales back its plans.|Israel ignores you."};
+
+    static final class History {
+        static void setup(Game g) {
+            World w = g.world;
+            w.wars = new ArrayList<War>();
+            for (int i = 0; i < WAR_ID.length; i++) w.wars.add(newWar(i));
+            w.hfired = new boolean[FLASH.length];
+            int y = g.era.year;
+            for (String s : WAR_START) {
+                if (!s.startsWith(y + "|")) continue;
+                for (String tok : s.substring(5).split(" ")) {
+                    String[] t = tok.split(":");
+                    War war = war(w, t[0]);
+                    war.stage = 2; war.front = Double.parseDouble(t[1]); war.troops = Double.parseDouble(t[2]); war.support = Double.parseDouble(t[3]); war.talks = Double.parseDouble(t[4]);
+                    war.started = -52;
+                    if (war.stakes >= 3) war.strategy = 2;
+                }
+            }
+            if (g.set.scenario == 2 && y < 2021 && activeWars(w) == 0) {
+                War war = war(w, y < 1960 ? "korea" : y < 1990 ? "vietnam" : y < 2008 ? "afghan" : "isis");
+                war.stage = 2; war.troops = war.need * 0.6; war.front = 50; war.started = 0;
+            }
+            g.econ.war = warSpend(w); g.econ.war0 = g.econ.war;
+            // the flashpoints of years already past are spent
+            for (int i = 0; i < FLASH.length; i++) if (flashDay(i) < 0) w.hfired[i] = true;
+            Home h = g.home;
+            if (h != null && y < 2025) {
+                int[] yy = {1933, 1941, 1953, 1961, 1965, 1969, 1973, 1977, 1981, 1985, 1989, 1993, 1997, 2001, 2005, 2009, 2013, 2017, 2021};
+                double[] cr = {85, 60, 55, 45, 54, 89, 112, 128, 160, 150, 179, 200, 165, 136, 126, 116, 99, 103, 107};
+                double[] od = {15, 15, 15, 15, 18, 22, 25, 25, 25, 28, 30, 30, 30, 32, 38, 45, 52, 78, 100};
+                for (int i = 0; i < yy.length; i++) if (y >= yy[i]) { h.crime = cr[i]; h.od = od[i]; }
+                h.grid = y < 1990 ? 30 : 40;
+                if (y >= 1965 && y < 1973) h.protest = 55;
+                if (y == 2021) { h.pand = 2; h.pandWeek = -45; h.deaths = 400000; }
+                if (y < 2009) h.followers = 0;
+            }
+        }
+
+        static War newWar(int i) {
+            War war = new War();
+            war.id = WAR_ID[i]; war.name = WAR_NAME[i];
+            String[] t = WAR_SPEC[i].split("\\|");
+            war.enemy = t[0].equals("-") ? -1 : ctIdx(t[0]); war.ally = t[1].equals("-") ? -1 : ctIdx(t[1]);
+            war.need = Double.parseDouble(t[2]); war.drift = Double.parseDouble(t[3]); war.lethal = Double.parseDouble(t[4]); war.cost = Double.parseDouble(t[5]);
+            war.support = Double.parseDouble(t[6]); war.stakes = Double.parseDouble(t[7]);
+            return war;
+        }
+
+        static War war(World w, String id) { if (w.wars == null) return null; for (War x : w.wars) if (x.id.equals(id)) return x; return null; }
+
+        static int activeWars(World w) { int n = 0; if (w.wars != null) for (War x : w.wars) if (x.stage == 2) n++; return n; }
+
+        static double warSpend(World w) { double s = 0; if (w.wars != null) for (War x : w.wars) if (x.stage == 2) s += x.troops * x.cost; return s; }
+
+        /** The game day of a flashpoint's date. */
+        static int dayOf(String f) {
+            String d = f.substring(0, 10);
+            return dayOfDate(Integer.parseInt(d.substring(0, 4)), Integer.parseInt(d.substring(5, 7)) - 1, Integer.parseInt(d.substring(8, 10)));
+        }
+
+        static int[] flashDays;
+        static int flashKey = -1;
+
+        /** Flashpoint days for the current calendar, cached. */
+        static int flashDay(int i) {
+            int key = CAL_Y * 10000 + CAL_M * 100 + CAL_D;
+            if (flashDays == null || flashKey != key) {
+                flashDays = new int[FLASH.length];
+                for (int k = 0; k < FLASH.length; k++) flashDays[k] = dayOf(FLASH[k]);
+                flashKey = key;
+            }
+            return flashDays[i];
+        }
+
+        /** The world of an inauguration year: names, leaders, alignments, relations, power, the bomb, trade. */
+        static void world(Game g, int year, boolean fresh) {
+            World w = g.world;
+            if (w.name == null) {
+                w.name = new String[NC]; w.align = new int[NC]; w.base = new double[NC]; w.power = new double[NC]; w.nuke = new boolean[NC]; w.gone = new boolean[NC];
+                for (int c = 0; c < NC; c++) { w.name[c] = CT_NAME[c]; w.align[c] = CT_ALIGN[c]; w.base[c] = CT_REL[c]; w.power[c] = CT_POWER[c]; w.nuke[c] = CT_NUKE[c]; }
+            }
+            w.modern = year >= 2009;
+            w.tradeK = year >= 2021 ? 1 : g.era.nominalGdp / 29.7 * (year < 1946 ? 0.5 : year < 1971 ? 0.65 : year < 1991 ? 0.85 : 1);
+            String spec = null;
+            for (String s : WORLD_ERA) if (s.startsWith(year + "|")) spec = s;
+            if (spec == null) return;
+            for (int c = 0; c < NC; c++) {
+                if (fresh) { w.name[c] = CT_NAME[c]; w.leader[c] = LEADER25[c].split("\\|")[1] + " of " + CT_NAME[c]; w.ltitle[c] = LEADER25[c].split("\\|")[1]; }
+                w.gone[c] = false;
+            }
+            for (String b : BORN.split(" ")) { String[] p = b.split(":"); int c = ctIdx(p[0]); if (c >= 0 && year < Integer.parseInt(p[1])) w.gone[c] = true; }
+            for (String b : NUKES.split(" ")) { String[] p = b.split(":"); int c = ctIdx(p[0]); if (c >= 0) w.nuke[c] = year >= Integer.parseInt(p[1]); }
+            if (year < 1947) for (int c = 0; c < NC; c++) if (w.align[c] == AL_TREATY) w.align[c] = AL_PARTNER;
+            for (String tok : spec.substring(5).split("\\^")) {
+                int eq = tok.indexOf('=');
+                int c = ctIdx(tok.substring(0, eq));
+                if (c < 0) continue;
+                String v = tok.substring(eq + 1);
+                if (v.equals("-")) { w.gone[c] = true; continue; }
+                w.gone[c] = false;
+                String[] p = v.split(";", -1);
+                if (!p[0].isEmpty()) w.name[c] = p[0]; else if (fresh) w.name[c] = CT_NAME[c];
+                if (!p[1].isEmpty()) { w.leader[c] = p[1]; w.ltitle[c] = p[2]; }
+                if (!p[3].isEmpty()) { double nb = Double.parseDouble(p[3]); if (fresh) w.rel[c] = nb; else w.rel[c] = clamp(w.rel[c] + (nb - w.base[c]) * 0.5, -100, 100); w.base[c] = nb; }
+                if (!p[4].isEmpty()) w.align[c] = Integer.parseInt(p[4]);
+                if (p.length > 5 && !p[5].isEmpty()) w.power[c] = Double.parseDouble(p[5]);
+            }
+            if (!w.modern) {
+                w.twStage = 0; w.twt = 10; w.uaStage = 0; w.ukr = 50; w.talks = 0; w.gaza = 10; w.iran = 5; w.redsea = 5; w.proxy = 10; w.nk = year >= 1953 ? 40 : 0;
+                w.terror = year >= 1993 ? 35 : 10; w.cyber = year >= 1995 ? 25 : 0; w.migr = year >= 1975 ? 40 : 20; w.cartel = year >= 1980 ? 40 : 10;
+                for (int c = 0; c < NC; c++) { w.sanction[c] = 0; w.aid[c] = 0; }
+                if (year >= 1960 && year < 2015) w.sanction[CC_CU] = 3;
+                if (year >= 1950) w.sanction[CC_KP] = 3;
+                if (year >= 1950 && year < 1972) w.sanction[CC_CN] = 3;
+                if (year >= 1979) w.sanction[CC_IR] = 2;
+                if (year >= 1990 && year < 2003) w.sanction[CC_IQ] = 3;
+                if (year >= 1948 && year < 1991) w.sanction[CC_RU] = 1;
+                if (year >= 1945) w.aid[CC_IL] = year >= 1973 ? 2 : 0;
+                if (year >= 1979) w.aid[CC_EG] = 1;
+                if (year >= 1955 && year < 1975) w.aid[CC_VN] = 2;
+                w.nato = year >= 1949 ? 60 : 30; w.pacific = year >= 1952 ? 60 : 30; w.allySpend = year < 1991 ? 3.5 : 1.8;
+            } else if (year < 2025) {
+                w.twStage = year >= 2021 ? 1 : 0; w.twt = year >= 2021 ? 40 : 30;
+                w.uaStage = year >= 2017 ? 1 : 0; w.ukr = 50; w.talks = year >= 2017 ? 30 : 0;
+                w.gaza = 25; w.iran = year >= 2017 ? 45 : 60; w.redsea = 20; w.proxy = year >= 2013 ? 45 : 35; w.nk = year >= 2017 ? 70 : 55; w.terror = 45;
+                w.aid[CC_UA] = year >= 2017 ? 1 : 0;
+            }
+            for (int c = 0; c < NC; c++) if (w.gone[c]) { w.tariff[c] = 0; w.sanction[c] = 0; w.aid[c] = 0; }
+        }
+
+        static void week(Game g) {
+            World w = g.world;
+            if (w.wars == null) return;
+            // a new era's leaders arrive on inauguration day, four years on
+            int y = yearNow(g);
+            int[] d = dateOf(g.day());
+            if (d[1] == 0 && d[2] >= 14 && d[2] <= 27 && y % 4 == 1 && y != g.era.year && y < 2025 && w.worldYear != y) { w.worldYear = y; world(g, y, false); }
+            if (d[1] == 0 && d[2] <= 7 && w.pressYear != y) {
+                boolean[] was = new boolean[NPOST];
+                for (int k = 0; k < NPOST; k++) was[k] = POST_OFF[k];
+                w.pressYear = y; applyYear(y); GEN_YEAR = y;
+                for (int k = 0; k < NPOST; k++) if (was[k] && !POST_OFF[k]) Cabinet.created(g, k);
+                // committees renamed by Congress keep their chairs
+                for (Member m : g.cong.members) if (m.role == RO_CHAIR) {
+                    String[] names = m.chamber == HOUSE ? CHAIR_H : CHAIR_S;
+                    for (int k = 0; k < names.length; k++) if (sameCommittee(m.chamber, k, m.committee)) { m.committee = names[k]; m.title = "Chair, " + (m.chamber == HOUSE ? "House " : "Senate ") + names[k]; break; }
+                }
+            }
+            wars(g);
+            flash(g);
+        }
+
+        static void wars(Game g) {
+            World w = g.world;
+            Random r = g.rng;
+            double dq = Cabinet.pq(g, P_DEF);
+            for (War x : w.wars) {
+                if (x.stage != 2) continue;
+                x.weeks++;
+                double eff = x.troops <= 0 ? -1.2 : clamp(Math.log(x.troops / x.need) * 0.9, -1.5, 1.2);
+                double strat = x.strategy == 0 ? -0.15 : x.strategy == 2 ? 0.45 : x.strategy == 3 ? -0.2 : 0;
+                double allyK = x.ally >= 0 ? (w.rel[x.ally] - 40) * 0.003 : 0;
+                double sk = Math.sqrt(Math.max(0.5, x.stakes));
+                x.front = clamp(x.front + (x.drift + eff * 0.35 + strat + allyK + (dq - 0.6) * 0.4 + r.nextGaussian() * 0.9) / sk, 0, 100);
+                double kiaRate = x.lethal * (x.strategy == 0 ? 0.6 : x.strategy == 2 ? 1.6 : x.strategy == 3 ? 0.7 : 1) * (1.2 - dq * 0.4);
+                double dead = x.troops * kiaRate * (0.6 + 0.8 * r.nextDouble());
+                x.kia += dead;
+                w.kia += (int) Math.round(dead);
+                if (dead > 0) g.perf -= Math.min(0.4, dead / (x.stakes * x.stakes) / 3000.0);
+                double supT = 35 + 18 * Math.min(3, x.stakes);
+                x.support = clamp(x.support + (supT - x.support) * 0.01 - dead / x.stakes / 2000.0 - (x.weeks > 104 ? 0.03 : 0) + (x.front - 50) * 0.003, 5, 98);
+                x.talks = clamp(x.talks + (x.strategy == 3 ? 1.5 : 0.1) + (x.front > 65 ? 0.4 : 0) - (x.front < 35 ? 0.3 : 0) + r.nextGaussian() * 0.6, 0, 100);
+                g.issueAdj[PI_SECURITY] = clamp(g.issueAdj[PI_SECURITY] + (x.support - 50) * 0.0004 + (x.front - 50) * 0.0002, -1.5, 1.5);
+                g.issueSal[PI_SECURITY] = clamp(g.issueSal[PI_SECURITY] + 0.004 * x.stakes, 0.2, 2.2);
+                if (dead > 50 && r.nextDouble() < 0.06) g.log(NK_WORLD, x.name + ": " + thousands(Math.round(x.kia)) + " Americans killed so far", null, 1.2);
+                if (x.front >= 100) end(g, x, 3);
+                else if (x.front <= 0) end(g, x, 4);
+                else if (x.talks >= 100 && x.front >= 25) end(g, x, 5);
+                else if (x.troops <= 0.5 && x.weeks > 4) end(g, x, x.front >= 60 ? 5 : 4);
+            }
+            g.econ.war = warSpend(w);
+        }
+
+        static void end(Game g, War x, int how) {
+            if (x.stage != 2) return;
+            x.stage = how; x.ended = g.week;
+            String title = how == 3 ? x.name.toUpperCase() + " ENDS IN VICTORY" : how == 4 ? x.name.toUpperCase() + " ENDS IN DEFEAT" : x.name.toUpperCase() + " ENDS IN AN AGREEMENT";
+            String body = thousands(Math.round(x.kia)) + " Americans died over " + Math.round(x.weeks / 52.0 * 10) / 10.0 + " years.";
+            g.log(NK_BIG, title, body, 5);
+            String nm = x.name.startsWith("The ") ? "the " + x.name.substring(4) : x.name;
+            String when = dateStr(g.day()) + ": ";
+            g.world.record.add(when + nm + (how == 3 ? " won" : how == 4 ? " lost" : " ended by agreement"));
+            if (how == 3) { g.perf += 3 + x.stakes; g.rally += 6 + x.stakes * 2; g.issueAdj[PI_SECURITY] = clamp(g.issueAdj[PI_SECURITY] + 0.5, -1.5, 1.5); g.milestones.add(when + "won " + nm); }
+            else if (how == 4) { g.perf -= 3; g.issueAdj[PI_FOREIGN] = clamp(g.issueAdj[PI_FOREIGN] - 0.5, -1.5, 1.5); g.milestones.add(when + "lost " + nm); }
+            else { g.perf += 1.5; g.milestones.add(when + "ended " + nm + " by agreement"); }
+            if (x.id.equals("ww2e") && how == 3 && x.enemy >= 0) { g.world.rel[x.enemy] = 0; g.world.align[x.enemy] = 0; g.world.leader[x.enemy] = "the Allied occupation"; g.world.ltitle[x.enemy] = "Military government"; }
+            if (x.id.equals("ww2p") && how == 3 && x.enemy >= 0) { g.world.rel[x.enemy] = 10; g.world.align[x.enemy] = 0; g.world.leader[x.enemy] = "the American occupation"; g.world.ltitle[x.enemy] = "Military government"; }
+            if (how == 3 && x.stakes >= 3) g.econ.demandShock += 0.45 * x.troops * x.cost * 0.8;
+            x.troops = 0;
+            Decisions.info(g, how == 3 ? "Victory" : how == 4 ? "Defeat" : "The War Is Over", x.name + (how == 3 ? " ends in victory. " : how == 4 ? " ends in defeat. " : " ends in an agreement. ") + body);
+        }
+
+        static void flash(Game g) {
+            World w = g.world;
+            int today = g.day();
+            for (int i = 0; i < FLASH.length; i++) {
+                if (w.hfired[i]) continue;
+                String[] t = FLASH[i].split("\\|", 7);
+                int day = flashDay(i), win = Integer.parseInt(t[1]);
+                if (today + 7 <= day) continue;
+                if (today > day + win * 7) { w.hfired[i] = true; continue; }
+                if (!cond(g, t[2])) continue;
+                w.hfired[i] = true;
+                if (!t[5].isEmpty()) Diplo.fx(g, t[5]);
+                g.log(NK_BIG, t[3].toUpperCase(), null, 3.5);
+                if (t[6].isEmpty()) { Decisions.info(g, t[3], t[4]); return; }
+                String[] opts = t[6].split(";;");
+                String[] lab = new String[opts.length], adv = new String[opts.length];
+                for (int k = 0; k < opts.length; k++) {
+                    String[] o = opts[k].split("\\|");
+                    lab[k] = o[0];
+                    adv[k] = o[1] + ": \"" + Diplo.odds(g, o[2], Double.parseDouble(o[3])) + "\"";
+                }
+                Decision dd = Decisions.add(g, D_HIST, t[3], t[4] + " Your advisers each have a view; the odds are their best guess.", lab, adv);
+                dd.a = i;
+                g.stress = Math.min(100, g.stress + 4);
+                return;
+            }
+        }
+
+        static void decide(Game g, int i, int k) {
+            String[] t = FLASH[i].split("\\|", 7);
+            String[] o = t[6].split(";;")[k].split("\\|");
+            boolean ok = g.rng.nextDouble() < Diplo.p(g, o[2], Double.parseDouble(o[3]));
+            Diplo.fx(g, ok ? o[4] : o[5]);
+            if (ok) { g.okCount++; g.histOk.add(t[3] + ": " + o[0]); } else g.failCount++;
+            String story = ok ? o[6] : o[7];
+            g.log(ok ? NK_GOOD : NK_BAD, story, null, 2.2);
+            g.milestones.add(dateStr(g.day()) + ": " + t[3] + " - " + o[0].toLowerCase());
+            Decisions.info(g, ok ? "It worked" : "It didn't go as hoped", story);
+        }
+
+        static int auto(Game g, int i) {
+            String[] o = FLASH[i].split("\\|", 7)[6].split(";;");
+            int best = 0;
+            double bv = -9;
+            for (int k = 0; k < o.length; k++) {
+                String[] t = o[k].split("\\|");
+                double q = Diplo.p(g, t[2], Double.parseDouble(t[3]));
+                double v = q + (t[4].contains("perf=-") ? -0.15 : 0) + (t[4].contains("rights=-") ? -0.3 : 0) - (q >= 1 ? 0.25 : 0);
+                if (v > bv) { bv = v; best = k; }
+            }
+            return best;
+        }
+
+        static double var(Game g, String k) {
+            World w = g.world;
+            if (k.equals("year")) return yearNow(g);
+            if (k.startsWith("war_")) { War x = war(w, k.substring(4)); return x == null ? 0 : x.stage; }
+            if (k.startsWith("front_")) { War x = war(w, k.substring(6)); return x == null ? 0 : x.front; }
+            if (k.startsWith("troops_")) { War x = war(w, k.substring(7)); return x == null ? 0 : x.troops; }
+            if (k.startsWith("rel_")) { int c = ctIdx(k.substring(4)); return c < 0 ? 0 : w.rel[c]; }
+            return HomeFront.var(g, k);
+        }
+
+        static boolean cond(Game g, String c) {
+            if (c.isEmpty()) return true;
+            for (String t : c.split(",")) {
+                if (t.startsWith("p=")) { if (g.rng.nextDouble() >= Double.parseDouble(t.substring(2))) return false; continue; }
+                int i = t.indexOf('>'), j = t.indexOf('<');
+                if (i > 0) { if (!(var(g, t.substring(0, i)) > Double.parseDouble(t.substring(i + 1)))) return false; }
+                else if (j > 0) { if (!(var(g, t.substring(0, j)) < Double.parseDouble(t.substring(j + 1)))) return false; }
+            }
+            return true;
+        }
+
+        /** The effects history adds to the interpreter: wars, leaders, alignments. Returns true if it handled the key. */
+        static boolean fxKey(Game g, String k, String v) {
+            World w = g.world;
+            int c2 = k.indexOf(':');
+            if (c2 < 0) {
+                if (k.equals("pandnow")) { if (g.home != null && g.home.pand == 0) { g.home.pand = 2; g.home.pandWeek = g.week; } return true; }
+                if (k.equals("slump")) { g.econ.slump += Double.parseDouble(v); return true; }
+                return false;
+            }
+            String key = k.substring(0, c2), arg = k.substring(c2 + 1);
+            War x = war(w, arg);
+            if (key.equals("warstart")) { if (x != null && x.stage != 2) { x.stage = 2; g.warsStarted++; x.troops = Double.parseDouble(v); x.front = 50; x.started = g.week; x.weeks = 0; g.rally += 4 + x.stakes; g.log(NK_BIG, ("America goes to war: " + x.name).toUpperCase(), null, 5); g.econ.war = warSpend(w); } return true; }
+            if (key.equals("war")) { if (x != null && x.stage == 2) x.front = clamp(x.front + Double.parseDouble(v), 0, 100); return true; }
+            if (key.equals("troops")) { if (x != null && x.stage == 2) x.troops = Math.max(0, x.troops + Double.parseDouble(v)); g.econ.war = warSpend(w); return true; }
+            if (key.equals("strat")) { if (x != null && x.stage == 2) x.strategy = (int) Double.parseDouble(v); return true; }
+            if (key.equals("talks")) { if (x != null && x.stage == 2) x.talks = clamp(x.talks + Double.parseDouble(v), 0, 100); return true; }
+            if (key.equals("support")) { if (x != null && x.stage == 2) x.support = clamp(x.support + Double.parseDouble(v), 0, 100); return true; }
+            if (key.equals("warend")) { if (x != null && x.stage == 2) end(g, x, (int) Double.parseDouble(v)); return true; }
+            int c = ctIdx(arg);
+            if (key.equals("leader")) { if (c == CC_CN) Flag.roc = false; if (c >= 0) { String[] p = v.split(";"); w.leader[c] = p[0].replace('_', ' '); w.ltitle[c] = p.length > 1 ? p[1].replace('_', ' ') : w.ltitle[c]; } return true; }
+            if (key.equals("align")) { if (c >= 0 && w.align != null) w.align[c] = (int) Double.parseDouble(v); return true; }
+            if (key.equals("name")) { if (c >= 0 && w.name != null) w.name[c] = v.replace('_', ' '); return true; }
+            if (key.equals("nuke")) { if (c >= 0 && w.nuke != null) w.nuke[c] = Double.parseDouble(v) > 0; return true; }
+            if (key.equals("gone")) { if (c >= 0 && w.gone != null) w.gone[c] = Double.parseDouble(v) > 0; return true; }
+            if (key.equals("power")) { if (c >= 0 && w.power != null) w.power[c] = Double.parseDouble(v); return true; }
+            if (key.equals("aid")) { if (c >= 0) w.aid[c] = (int) Double.parseDouble(v); return true; }
+            return false;
+        }
+
+        // ---- the president's levers in a war ----
+        static void setTroops(Game g, War x, double t) {
+            if (x.stage != 2) return;
+            double old = x.troops;
+            x.troops = clamp(t, 0, x.need * 1.6);
+            g.econ.war = warSpend(g.world);
+            if (x.troops > old) { x.support = clamp(x.support - 2 / x.stakes, 0, 100); g.log(NK_WORLD, "The president orders " + thousands(Math.round((x.troops - old) * 1000)) + " more troops to " + x.name.toLowerCase().replace("the ", ""), null, 1.6); }
+            else if (x.troops < old) g.log(NK_WORLD, thousands(Math.round((old - x.troops) * 1000)) + " troops are coming home from " + x.name.toLowerCase().replace("the ", ""), null, 1.6);
+        }
+
+        static void setStrategy(Game g, War x, int s) {
+            if (x.stage != 2 || x.strategy == s) return;
+            x.strategy = s;
+            g.log(NK_WORLD, x.name + ": the president orders a new strategy, " + STRATEGY[s].toLowerCase(), null, 1.0);
+        }
+
+        static void withdraw(Game g, War x) {
+            if (x.stage != 2) return;
+            end(g, x, x.front >= 60 ? 5 : 4);
+        }
+
+        /** What a hands-off president does with a war: send what the generals ask while the public backs it, look for a way out when it doesn't. */
+        static void autoWar(Game g) {
+            if (g.world == null || g.world.wars == null || g.week % 4 != 0) return;
+            for (War x : g.world.wars) {
+                if (x.stage != 2) continue;
+                double target = x.support < 30 ? x.troops * 0.85 : x.front < 85 ? x.need * 1.25 : x.need;
+                if (x.stakes >= 3) target = x.need * 1.4;
+                setTroops(g, x, x.troops + (target - x.troops) * 0.25);
+                int s = x.support < 35 && x.stakes < 2 ? 3 : x.front < 40 && x.support > 50 ? 2 : 1;
+                if (x.stakes >= 3 && x.front < 90) s = 2;
+                setStrategy(g, x, s);
+            }
+        }
+
+        static String countryName(Game g, int c) { return g.world != null && g.world.name != null ? g.world.name[c] : CT_NAME[c]; }
+    }
+
+    static String cname(Game g, int c) { return History.countryName(g, c); }
+
+    /** The country's name as it reads in a sentence: "the United Kingdom", "the Soviet Union". */
+    static String cnameIn(Game g, int c) {
+        String n = cname(g, c);
+        return n.startsWith("United ") || n.startsWith("Soviet ") || n.equals("Philippines") || n.startsWith("Allied ") ? "the " + n : n;
+    }
+
+    static int align(Game g, int c) { return g.world != null && g.world.align != null ? g.world.align[c] : CT_ALIGN[c]; }
+
+    static boolean gone(Game g, int c) { return g.world != null && g.world.gone != null && g.world.gone[c]; }
+
+    static double power(Game g, int c) { return g.world != null && g.world.power != null ? g.world.power[c] : CT_POWER[c]; }
+
+    static boolean nuke(Game g, int c) { return g.world != null && g.world.nuke != null ? g.world.nuke[c] : CT_NUKE[c]; }
+
+    /** Two-way trade with a country in the era's dollars ($ billions a year). */
+    static double tradeOf(Game g, int c) {
+        if (gone(g, c) || atWar(g, c)) return 0;
+        World w = g.world;
+        double k = w != null ? w.tradeK : 1;
+        if (w != null && w.align != null && w.align[c] == AL_ADVERSARY && yearNow(g) < 1990) k *= 0.05;
+        return CT_TRADE[c] * k;
+    }
+
+    /** Is the country fighting American troops right now? */
+    static boolean atWar(Game g, int c) {
+        if (g.world == null || g.world.wars == null) return false;
+        for (War x : g.world.wars) if (x.stage == 2 && x.enemy == c) return true;
+        return false;
+    }
+
+    static double tradeBal(Game g, int c) { double t = CT_TRADE[c]; return t <= 0 ? 0 : CT_BAL[c] * tradeOf(g, c) / t; }
+
+    static int warIndex(String id) { for (int i = 0; i < WAR_ID.length; i++) if (WAR_ID[i].equals(id)) return i; return 0; }
+    // =====================================================================
+    //  41.  A TOUR OF THE OFFICE, AND WATCH MODE
+    // =====================================================================
+    static final class Tutorial {
+        static final String[] TITLE = {"Welcome to the Oval Office", "The numbers that matter", "The Resolute Desk", "The windows", "The briefing book", "Through the doors",
+                "Decisions", "Ending the week", "Let it play"};
+        static final String[] BODY = {
+                "This is where you'll spend your presidency. Everything you can do is a click away. A quick tour takes a minute; skip it whenever you like.",
+                "Your approval, stamina and stress, and the state of the economy, are always up here. Approval is your currency: it moves Congress, the press and, in the end, the voters.",
+                "Click the desk to plan your week: seven days of morning, afternoon and evening. Policy time builds your command of an issue; trips and speeches move opinion; rest keeps you going.",
+                "The windows show the country: your approval by issue, by group of voters and state by state.",
+                "The briefing book on the side table is the economy: jobs, prices, markets, the budget and the Fed.",
+                "The doors lead to the rest of the White House: the West Wing for your staff and cabinet, the Roosevelt Room for Congress, the Press Briefing Room, and the globe for the Situation Room. Keys 1 to 8 jump between rooms.",
+                "When something only the president can decide comes up (a bill to sign, a crisis abroad, a turning point in history), it appears in front of you with your advisers' views and the odds.",
+                "When you're ready, end the week here or press Space. The week plays out, and the morning paper tells you what happened.",
+                "If you'd rather watch for a while, the Watch button lets the game play itself. Click again to take back the controls. Good luck, Mr. or Madam President."};
+
+        /** The spot to light up for each step: x, y, w, h (or none). */
+        static double[] spot(int i) {
+            switch (i) {
+                case 1: return new double[]{350, 4, 980, 50};
+                case 2: return Oval.SPOT[0];
+                case 3: return Oval.SPOT[1];
+                case 4: return Oval.SPOT[2];
+                case 5: return new double[]{40, 140, 1520, 440};
+                case 7: return new double[]{DW - 194, 6, 178, 44};
+                case 8: return new double[]{DW - 382, 6, 66, 44};
+                default: return null;
+            }
+        }
+
+        static void draw(ResoluteDesk u, Graphics2D g, Game game) {
+            int i = game.tut;
+            if (i < 0 || i >= TITLE.length || u.modal != null) return;
+            double[] s = spot(i);
+            if (s != null) {
+                g.setColor(new Color(242, 193, 78, 200));
+                g.setStroke(new BasicStroke(3f));
+                g.draw(new RoundRectangle2D.Double(s[0] - 4, s[1] - 4, s[2] + 8, s[3] + 8, 12, 12));
+                g.setStroke(new BasicStroke(1f));
+            }
+            double w = 520, h = 196, x = DW / 2 - w / 2, y = i == 2 || i == 4 ? 140 : 600;
+            if (i == 3) y = 420;
+            g.setColor(new Color(8, 13, 26, 245));
+            g.fill(new RoundRectangle2D.Double(x, y, w, h, 14, 14));
+            g.setColor(C_GOLD);
+            g.draw(new RoundRectangle2D.Double(x, y, w, h, 14, 14));
+            label(g, "THE TOUR, " + (i + 1) + " OF " + TITLE.length, x + 20, y + 26, C_GOLD);
+            text(g, TITLE[i], x + 20, y + 52, F_H2, Color.white);
+            wrap(g, BODY[i], x + 20, y + 76, w - 40, F_S, C_TEXT);
+            u.button(g, x + w - 140, y + h - 46, 120, 32, i == TITLE.length - 1 ? "Done" : "Next", B_GOLD, () -> { game.tut = game.tut + 1 >= TITLE.length ? -1 : game.tut + 1; });
+            u.button(g, x + 20, y + h - 46, 140, 32, "Skip the tour", B_GHOST, () -> game.tut = -1);
+        }
+    }
+
+    /** What a hands-off president does each week: used by the test harness and by watch mode. */
+    static final class Auto {
+        static void week(Game g) {
+            int w = g.week;
+            if (w % 4 == 0) Week.routine(g);
+            if (w % 8 == 3) Rooms.roadWeek(g);
+            if (g.stamina < 35) Rooms.restWeek(g);
+            if (Reelection.season(g)) campaign(g);
+            if (w % 6 == 1) Decisions.autoAgenda(g);
+            Decisions.autoWhip(g);
+            Decisions.autoExec(g);
+        }
+
+        /** In the fall of an election year: two stops a week in the closest big states. */
+        static void campaign(Game g) {
+            Reelect re = g.re;
+            Integer[] ord = new Integer[NS];
+            for (int i = 0; i < NS; i++) ord[i] = i;
+            Arrays.sort(ord, (a, b) -> Double.compare(Math.abs(re.st[a]) - STATES[a].ev * 0.15, Math.abs(re.st[b]) - STATES[b].ev * 0.15));
+            int k = 0;
+            int[] slots = {4, 7};
+            for (int n = 0; n < NS && k < slots.length; n++) {
+                int s = ord[n];
+                if (!votes(s, re.year) || STATES[s].ab.equals("DC")) continue;
+                g.act[slots[k]] = AC_CAMPAIGN; g.arg[slots[k]] = s;
+                k++;
+            }
+        }
+    }
+
+    static final class Watch {
+        static final double[] SECONDS = {1.6, 0.8, 0.3};
+        static final String[] SPEED = {"Slow", "Normal", "Fast"};
+        static double timer;
+
+        static void update(ResoluteDesk u, Game g, double dt) {
+            if (!g.watch || g.over) return;
+            if (u.screen == SC_PAPER) u.go(SC_OVAL);
+            if (u.modal != null) return;
+            if (!g.inbox.isEmpty()) {
+                Decision d = g.inbox.get(0);
+                int k = Decisions.auto(g, d);
+                g.inbox.remove(0);
+                // the big calls get a toast; the small print (speech lines, press questions, summit rounds) doesn't
+                boolean big = d.kind == D_SIGN || d.kind == D_WORLD || d.kind == D_HIST || d.kind == D_CAMPAIGN || d.kind == D_IMPEACH || d.kind == D_SHUTDOWN || d.kind == D_DEBT || d.kind == D_DISASTER || d.kind == D_COURT;
+                if (big && d.opts != null && d.opts.length > 0) u.toast(d.title + ": " + d.opts[Math.max(0, Math.min(k, d.opts.length - 1))], C_GOLD);
+                Decisions.apply(g, d, k);
+                return;
+            }
+            timer += dt;
+            if (timer < SECONDS[clampi(g.watchSpeed, 0, 2)]) return;
+            timer = 0;
+            Auto.week(g);
+            Oval.endWeek(u);
+        }
+    }
+    // =====================================================================
+    //  42.  FROM BATTLEGROUND 2028
+    //  Brings in the winner of a Battleground 2028 game: their face, record and running mate, the mandate,
+    //  the new Congress and the economy they inherit. The desktop version reads Battleground's save files
+    //  (in a folder named .battleground2028 in your home folder); the browser version reads its saves in this browser.
+    // =====================================================================
+    static final class BgPres {
+        Cand pres, vp;
+        int house = -1, senate = -1;        // the president's party's seats
+        double unemp = Double.NaN, infl = Double.NaN, gdp = Double.NaN;
+        String desc, slot;
+        boolean won, mine, independent;
+    }
+
+    /** A minimal reader for Java's serialization format: objects become class names and field maps, so no Battleground classes are needed. */
+    static final class JObj {
+        String cls;
+        Map<String, Object> f = new HashMap<String, Object>();
+        List<Object> extra = new ArrayList<Object>();
+    }
+
+    static final class JDesc {
+        String name;
+        int flags;
+        char[] types = new char[0];
+        String[] fields = new String[0];
+        JDesc sup;
+    }
+
+    static final class JSer {
+        static final Object BLOCK = new Object();
+        final DataInputStream in;
+        final List<Object> handles = new ArrayList<Object>();
+
+        JSer(InputStream s) { in = new DataInputStream(s); }
+
+        Object top() throws IOException {
+            if (in.readUnsignedShort() != 0xACED || in.readUnsignedShort() != 5) throw new IOException("not a Java object stream");
+            return read();
+        }
+
+        Object read() throws IOException { return content(in.readUnsignedByte()); }
+
+        Object content(int tc) throws IOException {
+            switch (tc) {
+                case 0x70: return null;
+                case 0x71: return handles.get(in.readInt() - 0x7E0000);
+                case 0x74: { String s = in.readUTF(); handles.add(s); return s; }
+                case 0x7C: { long n = in.readLong(); byte[] b = new byte[(int) n]; in.readFully(b); String s = new String(b, "UTF-8"); handles.add(s); return s; }
+                case 0x72: case 0x7D: return classDesc(tc);
+                case 0x73: return object();
+                case 0x75: return array();
+                case 0x7E: { JDesc d = desc(); int h = handles.size(); handles.add(null); Object nm = read(); handles.set(h, nm); return nm; }
+                case 0x76: { JDesc d = desc(); handles.add(d); return d; }
+                case 0x77: { in.skipBytes(in.readUnsignedByte()); return BLOCK; }
+                case 0x7A: { in.skipBytes(in.readInt()); return BLOCK; }
+                case 0x79: handles.clear(); return read();
+                default: throw new IOException("unexpected type code " + tc);
+            }
+        }
+
+        JDesc desc() throws IOException {
+            int tc = in.readUnsignedByte();
+            if (tc == 0x70) return null;
+            if (tc == 0x71) return (JDesc) handles.get(in.readInt() - 0x7E0000);
+            return classDesc(tc);
+        }
+
+        JDesc classDesc(int tc) throws IOException {
+            JDesc d = new JDesc();
+            if (tc == 0x7D) {
+                handles.add(d);
+                int n = in.readInt();
+                for (int i = 0; i < n; i++) in.readUTF();
+                annotations();
+                d.sup = desc();
+                return d;
+            }
+            d.name = in.readUTF();
+            in.readLong();
+            handles.add(d);
+            d.flags = in.readUnsignedByte();
+            int n = in.readShort();
+            d.types = new char[n];
+            d.fields = new String[n];
+            for (int i = 0; i < n; i++) {
+                d.types[i] = (char) in.readUnsignedByte();
+                d.fields[i] = in.readUTF();
+                if (d.types[i] == 'L' || d.types[i] == '[') read();
+            }
+            annotations();
+            d.sup = desc();
+            return d;
+        }
+
+        void annotations() throws IOException { while (true) { int tc = in.readUnsignedByte(); if (tc == 0x78) return; content(tc); } }
+
+        Object object() throws IOException {
+            JDesc d = desc();
+            JObj o = new JObj();
+            o.cls = d.name;
+            handles.add(o);
+            List<JDesc> chain = new ArrayList<JDesc>();
+            for (JDesc c = d; c != null; c = c.sup) chain.add(0, c);
+            for (JDesc c : chain) {
+                if ((c.flags & 0x04) != 0) { annotations(); continue; }
+                if ((c.flags & 0x02) == 0) continue;
+                for (int i = 0; i < c.fields.length; i++) o.f.put(c.fields[i], value(c.types[i]));
+                if ((c.flags & 0x01) != 0) while (true) { int tc = in.readUnsignedByte(); if (tc == 0x78) break; Object x = content(tc); if (x != BLOCK) o.extra.add(x); }
+            }
+            return o;
+        }
+
+        Object value(char t) throws IOException {
+            switch (t) {
+                case 'B': return (int) in.readByte();
+                case 'C': return (int) in.readChar();
+                case 'D': return in.readDouble();
+                case 'F': return (double) in.readFloat();
+                case 'I': return in.readInt();
+                case 'J': return (double) in.readLong();
+                case 'S': return (int) in.readShort();
+                case 'Z': return in.readBoolean();
+                default: return read();
+            }
+        }
+
+        Object array() throws IOException {
+            JDesc d = desc();
+            int n = in.readInt();
+            char comp = d.name.charAt(1);
+            switch (comp) {
+                case 'D': { double[] a = new double[n]; handles.add(a); for (int i = 0; i < n; i++) a[i] = in.readDouble(); return a; }
+                case 'I': { int[] a = new int[n]; handles.add(a); for (int i = 0; i < n; i++) a[i] = in.readInt(); return a; }
+                case 'Z': { boolean[] a = new boolean[n]; handles.add(a); for (int i = 0; i < n; i++) a[i] = in.readBoolean(); return a; }
+                case 'J': { double[] a = new double[n]; handles.add(a); for (int i = 0; i < n; i++) a[i] = in.readLong(); return a; }
+                case 'F': { double[] a = new double[n]; handles.add(a); for (int i = 0; i < n; i++) a[i] = in.readFloat(); return a; }
+                case 'B': { byte[] a = new byte[n]; handles.add(a); in.readFully(a); return a; }
+                case 'S': { int[] a = new int[n]; handles.add(a); for (int i = 0; i < n; i++) a[i] = in.readShort(); return a; }
+                case 'C': { int[] a = new int[n]; handles.add(a); for (int i = 0; i < n; i++) a[i] = in.readChar(); return a; }
+                default: { Object[] a = new Object[n]; handles.add(a); for (int i = 0; i < n; i++) a[i] = read(); return a; }
+            }
+        }
+    }
+
+    static final class BgImport {
+        static List<BgPres> found = new ArrayList<BgPres>();
+        static boolean scanned, busy;
+        static int sel;
+        static String note;
+
+        /** Looks for Battleground 2028 saves; calls done when finished (at once on the desktop). */
+        static void scan(Runnable done) {
+            found.clear();
+            note = null;
+            String[] slots = {"autosave", "save1"};
+            File dir = new File(System.getProperty("user.home"), ".battleground2028");
+            for (String s : slots) {
+                File f = new File(dir, s + ".sav");
+                if (!f.exists()) continue;
+                try {
+                    InputStream in = new java.util.zip.GZIPInputStream(new BufferedInputStream(new FileInputStream(f)));
+                    Object root = new JSer(in).top();
+                    in.close();
+                    BgPres p = fromGame(root, s);
+                    if (p != null) found.add(p);
+                } catch (Throwable t) { note = "A Battleground 2028 save couldn't be read (" + t.getClass().getSimpleName() + ")."; }
+            }
+            scanned = true;
+            if (done != null) done.run();
+        }
+
+        static Object get(Object o, String k) { return o instanceof JObj ? ((JObj) o).f.get(k) : null; }
+
+        static int gi(Object o, String k, int def) { Object v = get(o, k); return v instanceof Integer ? (Integer) v : v instanceof Double ? (int) Math.round((Double) v) : def; }
+
+        static double gd(Object o, String k, double def) { Object v = get(o, k); return v instanceof Double ? (Double) v : v instanceof Integer ? (Integer) v : def; }
+
+        static boolean gb(Object o, String k) { Object v = get(o, k); return v instanceof Boolean && (Boolean) v; }
+
+        static String gs(Object o, String k) { Object v = get(o, k); return v instanceof String ? (String) v : null; }
+
+        static List<Object> items(Object v) {
+            List<Object> l = new ArrayList<Object>();
+            if (v instanceof JObj) l.addAll(((JObj) v).extra);
+            else if (v instanceof Object[]) for (Object x : (Object[]) v) l.add(x);
+            return l;
+        }
+
+        /** Turns a Battleground game into a president-elect. */
+        static BgPres fromGame(Object g, String slot) {
+            List<Object> camps = items(get(g, "camps"));
+            if (camps.isEmpty()) return null;
+            int player = gi(g, "player", -1);
+            Object result = get(g, "result");
+            int evD = gi(g, "evD", 0), evR = gi(g, "evR", 0), evI = gi(g, "evI", 0);
+            int winParty = -1;
+            if (result != null) winParty = evD >= 270 ? DEM : evR >= 270 ? REP : evI >= 270 ? IND : gi(g, "contingent", -1);
+            Object camp = null;
+            boolean mine;
+            if (winParty == DEM || winParty == REP) {
+                int idx = gi(g, winParty == DEM ? "dNom" : "rNom", -1);
+                for (Object c : camps) if (gi(c, "idx", -2) == idx) camp = c;
+                if (camp == null) for (Object c : camps) if (gi(c, "party", -1) == winParty && gb(c, "nominee")) camp = c;
+            } else if (winParty < 0 && player >= 0 && player < camps.size()) camp = camps.get(player);
+            BgPres p = new BgPres();
+            p.slot = slot;
+            if (winParty == IND || winParty >= 2) { p.independent = true; return p; }
+            if (camp == null) return null;
+            mine = gi(camp, "idx", -1) == player;
+            Cand c = cand(get(camp, "c"));
+            if (c == null) return null;
+            int party = gi(camp, "party", c.party);
+            if (party != DEM && party != REP) { p.independent = true; return p; }
+            c.party = party;
+            p.pres = c;
+            p.won = result != null;
+            p.mine = mine;
+            Cand vp = cand(get(g, party == DEM ? "vpD" : "vpR"));
+            if (vp != null) { Cand known = candById(vp.id); p.vp = known != null && known != c ? known : vp; }
+            int hs = gi(g, "houseSeatsD", -1);
+            if (hs > 0) p.house = party == DEM ? hs : 435 - hs;
+            Object set = get(g, "set");
+            int mid = gi(set, "midSenateD", -1);
+            if (mid > 0) {
+                int up = 0, won = 0;
+                for (Object s : items(get(g, "senate"))) { if (gi(s, "party", -1) == DEM) up++; if (gd(s, "margin", 0) > 0) won++; }
+                int sd = mid - up + won;
+                if (result != null) p.senate = party == DEM ? sd : 100 - sd;
+            }
+            if (result == null) { p.house = -1; p.senate = -1; }
+            p.unemp = gd(g, "unemp", Double.NaN); p.infl = gd(g, "inflation", Double.NaN); p.gdp = gd(g, "gdp", Double.NaN);
+            int ev = party == DEM ? evD : evR, oev = party == DEM ? evR : evD;
+            p.desc = c.name() + " (" + PARTY_SHORT[party] + ")" + (p.won ? ", won " + ev + "-" + oev + " in 2028" : ", race not finished: takes office as if elected") + (mine ? "  (your campaign)" : "");
+            return p;
+        }
+
+        static Cand cand(Object o) {
+            if (!(o instanceof JObj)) return null;
+            Cand c = new Cand();
+            c.id = gs(o, "id") != null ? gs(o, "id") : "bg";
+            c.first = gs(o, "first") != null ? gs(o, "first") : "";
+            c.last = gs(o, "last") != null ? gs(o, "last") : "";
+            c.party = gi(o, "party", DEM);
+            c.role = gs(o, "role") != null ? gs(o, "role") : "President-elect";
+            c.homeAb = gs(o, "homeAb");
+            c.home = c.homeAb != null ? stateIdx(c.homeAb) : -1;
+            c.born = gi(o, "born", 1965);
+            c.bio = gs(o, "bio"); c.pros = gs(o, "pros"); c.cons = gs(o, "cons");
+            c.faction = clampi(gi(o, "faction", c.party == DEM ? F_LIB : F_GOV), 0, NF - 1);
+            c.econ = gd(o, "econ", FACTIONS[c.faction].econ); c.cult = gd(o, "cult", FACTIONS[c.faction].cult);
+            c.plat = FACTIONS[c.faction].pos.clone();
+            Object a = get(o, "a");
+            if (a instanceof int[]) { int[] v = (int[]) a; for (int i = 0; i < NA && i < v.length; i++) c.a[i] = v[i]; }
+            else if (a instanceof Object[]) { Object[] v = (Object[]) a; for (int i = 0; i < NA && i < v.length; i++) c.a[i] = v[i] instanceof Integer ? (Integer) v[i] : 50; }
+            Object lk = get(o, "look");
+            Look l = new Look();
+            if (lk instanceof JObj) {
+                l.female = gb(lk, "female"); l.skin = gi(lk, "skin", 1); l.hair = gi(lk, "hair", 1); l.style = gi(lk, "style", 1); l.gray = gd(lk, "gray", 0.2);
+                l.facial = gi(lk, "facial", 0); l.glasses = gi(lk, "glasses", 0); l.faceW = gd(lk, "faceW", 1); l.jaw = gd(lk, "jaw", 0.5); l.suit = gi(lk, "suit", 0); l.tie = gi(lk, "tie", 1);
+                l.age = gd(lk, "age", 0.5); l.smile = gd(lk, "smile", 0.5); l.earrings = gb(lk, "earrings"); l.lipstick = gb(lk, "lipstick");
+            } else l = Creator.randomLook(new Random(c.last.hashCode()));
+            c.look = l;
+            c.custom = true;
+            c.fictional = gb(o, "fictional");
+            return c;
+        }
+
+        /** Sets up a 2029 presidency for the imported winner. */
+        static void take(ResoluteDesk u, BgPres p) {
+            Settings s = new Settings();
+            s.year = 2029;
+            s.custom = p.pres;
+            s.presId = null;
+            s.vpId = p.vp != null && candById(p.vp.id) == p.vp ? p.vp.id : defaultVp(era(2029), p.pres);
+            if (p.house > 0) s.cHouse = p.house;
+            if (p.senate > 0) s.cSenate = p.senate;
+            if (!Double.isNaN(p.unemp) && p.unemp > 0) s.cUnemp = Math.round(p.unemp * 10) / 10.0;
+            if (!Double.isNaN(p.infl)) s.cInfl = Math.round(p.infl * 10) / 10.0;
+            if (!Double.isNaN(p.gdp)) s.cGdp = Math.round(p.gdp * 10) / 10.0;
+            s.bgLine = p.desc;
+            u.setup = s;
+            Screens.vpSel = -1;
+            u.go(SC_VP);
+        }
+
+        static void draw(ResoluteDesk u, Graphics2D g) {
+            Screens.header(u, g, "From Battleground 2028", "Bring in the winner of a Battleground 2028 game and govern from January 20, 2029.");
+            if (!scanned && !busy) { busy = true; scan(() -> busy = false); }
+            u.panel(g, 48, 124, 760, 690, "Saved races found");
+            double y = 168;
+            if (busy) text(g, "Looking for Battleground 2028 saves...", 66, y + 10, F_S, C_DIM);
+            else if (found.isEmpty()) wrap(g, "No Battleground 2028 games were found. " + (note != null ? note + " " : "")
+                    + "Play Battleground 2028 to election night (or anywhere in the race) and save; this screen reads its saves from the same computer or, in the browser, the same browser and site.", 66, y, 720, F_S, C_TEXT);
+            for (int i = 0; i < found.size(); i++) {
+                BgPres p = found.get(i);
+                final int k = i;
+                u.card(g, 62, y, 732, 110, sel == i, () -> sel = k, null);
+                if (p.independent) { text(g, "An independent won this race; Resolute Desk's presidents are Democrats or Republicans.", 80, y + 50, F_S, C_AMBER); y += 120; continue; }
+                Portrait.draw(g, p.pres, 76, y + 10, 76, 90, u.tsec, 0, true, true);
+                text(g, p.pres.name(), 170, y + 34, F_H3, partyColor(p.pres.party));
+                text(g, p.desc, 170, y + 56, F_XS, C_TEXT);
+                text(g, "From the " + (p.slot.equals("autosave") ? "autosave" : "saved game"), 170, y + 76, F_XS, C_DIM);
+                if (p.vp != null) text(g, "Running mate: " + p.vp.name(), 170, y + 94, F_XS, C_DIM);
+                y += 120;
+            }
+            double px = 824, pw = DW - 48 - px;
+            u.panel(g, px, 124, pw, 690, "What comes with them");
+            BgPres p = sel >= 0 && sel < found.size() ? found.get(sel) : null;
+            if (p != null && !p.independent) {
+                Screens.candidatePanel(u, g, p.pres, px, pw);
+            } else wrap(g, "The president-elect's face, ratings and record come across, with their running mate, the House and Senate the election produced and the economy they inherit. You can still change the running mate on the next screen.", px + 20, 170, pw - 40, F_S, C_DIM);
+            u.button(g, 48, 832, 180, 44, "Back", B_GHOST, () -> { scanned = false; u.go(SC_HOME); });
+            boolean ok = p != null && !p.independent;
+            u.button(g, DW - 48 - 300, 832, 300, 44, "Take office", ok ? B_GOLD : B_OFF, ok ? () -> take(u, p) : null);
+        }
+    }
+    // =====================================================================
     //  99.  START-UP AND THE TEST HARNESS
     // =====================================================================
     public static void main(String[] args) {
@@ -11932,6 +15670,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             USMap.load();
             System.out.println("init " + (System.currentTimeMillis() - t0) + " ms");
             String what = a.length > 1 ? a[1] : "sim";
+            HallStore.off = true;
             for (String x : a) if (x.equals("trace")) TRACE = true;
             if (what.equals("sim")) {
                 int runs = a.length > 2 ? Integer.parseInt(a[2]) : 1;
@@ -11960,13 +15699,8 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             Game g = newGame(seed, year, pres, scen);
             StringBuilder b = new StringBuilder("=== seed " + seed + " " + year + " " + g.pres.name() + " (" + PARTY_SHORT[g.party] + ") " + SCEN[scen]
                     + "  House D " + g.houseD + "  Senate D " + g.senateD + "  approval " + fmt1(g.approval) + "\n");
-            for (int w = 0; w < weeks && !g.over; w++) {
-                if (w % 4 == 0) Week.routine(g);
-                if (w % 8 == 3) Rooms.roadWeek(g);
-                if (g.stamina < 35) Rooms.restWeek(g);
-                if (w % 6 == 1) Decisions.autoAgenda(g);
-                Decisions.autoWhip(g);
-                Decisions.autoExec(g);
+            for (int w = 0; w < weeks && !g.over && !g.removed; w++) {
+                Auto.week(g);
                 Week.resolve(g);
                 Decisions.autoAll(g);
                 if (g.week % 26 == 0) {
@@ -11990,7 +15724,8 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             for (Scandal s : x.scandals) if (s.severity >= 3 || s.kind != SK_LEAK) scs++;
             double mor = 0; for (Person p : Cabinet.everyone(g)) mor += p.morale; mor /= Math.max(1, Cabinet.everyone(g).size());
             double rd = 0; for (double v : x.ready) rd += v; rd /= NPOST;
-            b.append("  exec: posts filled ").append(conf).append("/").append(NPOST).append(" departures ").append(x.departures).append(" leaks ").append(x.leaks).append(" morale ").append(fmt0(mor))
+            int on = 0; for (int k = 0; k < NPOST; k++) if (postOn(k)) on++;
+            b.append("  exec: posts filled ").append(conf).append("/").append(on).append(" departures ").append(x.departures).append(" leaks ").append(x.leaks).append(" morale ").append(fmt0(mor))
                     .append(" readiness ").append(fmt0(rd)).append(" failures ").append(x.failures).append(" actions ").append(x.actions.size()).append(" live ").append(live).append(" blocked ").append(blocked).append(" struck ").append(struck)
                     .append(" cases ").append(x.cases.size()).append(" judges ").append(x.judges).append(" justices ").append(x.justices).append(" court R ").append(Courts.count(g, REP)).append("-D ").append(Courts.count(g, DEM))
                     .append(" scandals ").append(scs).append(" pardons ").append(x.pardons).append(" probes ").append(x.probes.size()).append(" impeach ").append(x.impeachments).append(" removed ").append(g.removed).append("\n");
@@ -12002,6 +15737,13 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                     .append(") gaza ").append(fmt0(wd.gaza)).append(" iran ").append(fmt0(wd.iran)).append(" redsea ").append(fmt0(wd.redsea)).append(" nk ").append(fmt0(wd.nk)).append(" terror ").append(fmt0(wd.terror))
                     .append(" crises ").append(wd.crises).append(" deals ").append(wd.deals).append(" kia ").append(wd.kia).append(" nato ").append(fmt0(wd.nato)).append(" pacific ").append(fmt0(wd.pacific))
                     .append(" relCN ").append(fmt0(wd.rel[CC_CN])).append(" relRU ").append(fmt0(wd.rel[CC_RU])).append(" oil ").append(fmt0(g.econ.oil)).append(" ").append(wd.leader[CC_GB]).append("\n");
+            for (War wr : wd.wars) if (wr.stage != 0) b.append("  war: ").append(wr.name).append(" ").append(WAR_STAGE[wr.stage]).append(" front ").append(fmt0(wr.front)).append(" troops ").append(fmt0(wr.troops)).append("k kia ").append(Math.round(wr.kia)).append(" support ").append(fmt0(wr.support)).append(" talks ").append(fmt0(wr.talks)).append(" weeks ").append(fmt0(wr.weeks)).append("\n");
+            for (String m : g.milestones) b.append("  * ").append(m).append("\n");
+            b.append("  ending: ").append(g.over ? END_NAME[g.ending] : g.removed ? "removed" : "still in office").append(" after ").append(g.term).append(g.term == 1 ? " term" : " terms").append(", week ").append(g.week).append(" ").append(dateStr(g.day())).append("\n");
+            if (g.re != null && g.re.done) b.append("  election ").append(g.re.year).append(": ").append((g.re.nominee != null ? g.re.nominee : g.pres).name()).append(" vs ").append(g.re.opp.name()).append(" ").append(g.re.evMe).append("-").append(g.re.evOpp).append(" pop ").append(fmt1(g.re.popMe)).append("\n");
+            int[] lsc = Legacy.scores(g);
+            Legacy.rank(g, Legacy.total(lsc));
+            b.append("  verdict: ").append(Legacy.total(lsc)).append(" ").append(Arrays.toString(lsc)).append(" ").append(Legacy.rankShort).append(" ach ").append(String.join(",", Legacy.earned(g, Legacy.rankPos))).append("\n");
             b.append("  news ").append(g.news.size()).append(", last: ").append(g.news.isEmpty() ? "" : g.news.get(g.news.size() - 1).head);
             System.out.println(b);
         }
@@ -12023,6 +15765,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             System.out.println(b);
         }
 
+        static final String[] FX_HIST = {"warstart", "strat", "war", "troops", "talks", "support", "warend", "leader", "align", "name", "nuke", "gone", "power", "aid", "pandnow", "slump", "farm", "ethics"};
         static final String[] FX_KEYS = {"twt", "deter", "twstage", "ua", "defcon", "ukr", "talks", "gaza", "iran", "redsea", "proxy", "nk", "terror", "cyber", "migr", "cartel", "nato", "pacific",
                 "perf", "rally", "for", "sec", "imm", "crime", "oil", "fin", "def", "stress", "tcn", "kia", "econ", "prices", "jobs", "health", "rights", "tech", "energy", "edu",
                 "base", "opp", "scandal", "infl", "demand", "supply", "grid", "protest", "od", "crimeidx", "pandslow", "pandfast", "pandsev", "pandend"};
@@ -12032,6 +15775,17 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 if (tok.isEmpty()) continue;
                 String[] kv = tok.split("=");
                 if (kv.length != 2) { System.out.println("BAD FX " + tok); continue; }
+                int c2 = kv[0].indexOf(':');
+                String hk = c2 > 0 ? kv[0].substring(0, c2) : kv[0];
+                boolean hist = false;
+                for (String k : FX_HIST) if (k.equals(hk) && (c2 > 0 || hk.equals("pandnow") || hk.equals("slump") || hk.equals("farm") || hk.equals("ethics"))) hist = true;
+                if (hist) {
+                    String arg = c2 > 0 ? kv[0].substring(c2 + 1) : "";
+                    if (hk.startsWith("war") || hk.equals("strat") || hk.equals("troops") || hk.equals("talks") || hk.equals("support")) { boolean found = false; for (String w : WAR_ID) if (w.equals(arg)) found = true; if (!found) System.out.println("BAD WAR " + tok); }
+                    else if (c2 > 0 && ctIdx(arg) < 0) System.out.println("BAD COUNTRY " + tok);
+                    if (!hk.equals("leader") && !hk.equals("name")) Double.parseDouble(kv[1]);
+                    continue;
+                }
                 Double.parseDouble(kv[1]);
                 boolean ok = kv[0].startsWith("rel:") && ctIdx(kv[0].substring(4)) >= 0 || kv[0].startsWith("st:") && stateIdx(kv[0].substring(3)) >= 0
                         || kv[0].length() > 1 && kv[0].charAt(0) == 'g' && Character.isDigit(kv[0].charAt(1));
@@ -12071,6 +15825,39 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             for (int i = 0; i < Math.min(ne, EV_OPTS.length); i++) for (String o : EV_OPTS[i].split(";;")) { String[] t = o.split("\\|"); if (t.length != 8) System.out.println("EVENT " + EV_ID[i] + " option has " + t.length + " parts"); else { checkFx(t[4]); checkFx(t[5]); Double.parseDouble(t[3]); } }
             if (OUT_LEAN.length != OUT_NAME.length || OUT_AUD.length != OUT_NAME.length || OUT_SIT.length != OUT_NAME.length) System.out.println("OUTLET TABLES DON'T MATCH");
             for (String t : DIS_STATES) for (String s : t.split(" ")) if (stateIdx(s) < 0) System.out.println("BAD DISASTER STATE " + s);
+            if (EV_MIN.length != ne) System.out.println("EV_MIN has " + EV_MIN.length);
+            if (AD_MIN.length != n) System.out.println("AD_MIN has " + AD_MIN.length);
+            // history
+            for (int k = 0; k < EV_FROM.length; k++) {
+                int[] ev = evFor(EV_FROM[k]);
+                int want = EV_FROM[k] < 1960 ? 531 : EV_FROM[k] == 1960 ? 537 : 538;
+                if (evTotal(ev) != want) System.out.println("EV " + EV_FROM[k] + " totals " + evTotal(ev) + ", expected " + want);
+            }
+            for (String t : LEAN_TABLE) { int c = 0; for (String tok : t.split(" ")) { if (stateIdx(tok.split(":")[0]) < 0) System.out.println("BAD LEAN STATE " + tok); c++; } if (c != 51) System.out.println("LEAN TABLE has " + c); }
+            for (String r : ERA_ROSTER) { String[] t = r.split("\\|", -1); for (int p = 1; p <= 2; p++) for (String x : t[p].split(" ")) for (String id : x.split(">")) if (!id.isEmpty() && candById(id) == null) System.out.println("BAD ROSTER ID " + id + " in " + t[0]);
+                if (era(Integer.parseInt(t[0])).year != Integer.parseInt(t[0])) System.out.println("NO ERA FOR ROSTER " + t[0]);
+                Cand w = candById(era(Integer.parseInt(t[0])).winnerId); if (w == null) System.out.println("BAD WINNER " + t[0]); }
+            for (String s : NOMINEES) for (String x : s.substring(5).split(",")) for (String id : x.split(">")) if (!id.isEmpty() && candById(id) == null) System.out.println("BAD NOMINEE " + id);
+            for (String s : WORLD_ERA) for (String tok : s.substring(5).split("\\^")) { int eq = tok.indexOf('='); if (ctIdx(tok.substring(0, eq)) < 0) System.out.println("BAD WORLD COUNTRY " + tok); String v = tok.substring(eq + 1); if (!v.equals("-")) { String[] p = v.split(";", -1); if (p.length != 6) System.out.println("BAD WORLD ENTRY " + s.substring(0, 4) + " " + tok); else { if (!p[3].isEmpty()) Double.parseDouble(p[3]); if (!p[4].isEmpty()) Integer.parseInt(p[4]); if (!p[5].isEmpty()) Double.parseDouble(p[5]); } } }
+            for (String f : FLASH) {
+                String[] t = f.split("\\|", 7);
+                if (t.length < 7) { System.out.println("BAD FLASH " + f.substring(0, 40)); continue; }
+                History.dayOf(f);
+                Integer.parseInt(t[1]);
+                checkFx(t[5]);
+                if (t[6].isEmpty()) continue;
+                for (String o : t[6].split(";;")) { String[] q = o.split("\\|"); if (q.length != 8) System.out.println("FLASH " + t[3] + " option has " + q.length + " parts: " + o.substring(0, Math.min(50, o.length()))); else { checkFx(q[4]); checkFx(q[5]); Double.parseDouble(q[3]); } }
+            }
+            for (String s : HBILL_SPEC) if (s.split("\\|").length != 17) System.out.println("BAD BILL " + s.substring(0, 30));
+            for (String j : JUSTICES) if (j.split("\\|").length != 6) System.out.println("BAD JUSTICE " + j);
+            for (Era e : ERAS) { int nj = courtIn(e).size(); if (nj < 8 || nj > 9) System.out.println("COURT " + e.year + " has " + nj); }
+            for (String tok : ENACTED.split(" ")) {
+                String id = tok.substring(0, tok.indexOf(':'));
+                boolean found = false;
+                for (BillDef d : BILLS) if (d.id.equals(id)) { found = true; if (enacted(id) < d.from || enacted(id) > d.to) System.out.println("BILL " + id + " ENACTED OUTSIDE ITS YEARS"); }
+                if (!found) System.out.println("ENACTED: NO BILL " + id);
+            }
+            System.out.println("history: " + ERAS.size() + " eras, " + HIST.size() + " historical figures, " + FLASH.length + " turning points, " + HBILL_SPEC.length + " historical bills");
             System.out.println("check done: " + n + " actions, " + nc + " crises, " + ne + " events");
         }
 
@@ -12100,7 +15887,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             ResoluteDesk u = new ResoluteDesk();
             u.go(SC_HOME); shot(u, dir, "home");
             u.setup = new Settings();
-            u.go(SC_SETUP); shot(u, dir, "setup");
+            Screens.showEra(u); u.go(SC_SETUP); shot(u, dir, "setup");
             u.setup.year = 2025;
             u.go(SC_PICK); Screens.pickParty = REP; Screens.sel = 0; shot(u, dir, "pick");
             Creator.begin(u, DEM); shot(u, dir, "create");
@@ -12167,6 +15954,47 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             Arrays.fill(g.home.cool, 999); for (int i = 0; i < 400 && g.inbox.isEmpty(); i++) { g.home.cool[0] = 0; HomeFront.events(g); }
             Decisions.show(u, g); shot(u, dir, "decision_event");
             u.modal = null; g.inbox.clear();
+            history(u, dir);
+        }
+
+        /** The final update: history, the campaign, the verdict. */
+        static void history(ResoluteDesk u, String dir) {
+            u.setup = new Settings(); u.setup.year = 1961;
+            Screens.showEra(u); u.go(SC_SETUP); shot(u, dir, "h_setup_1961");
+            u.go(SC_PICK); Screens.pickParty = DEM; Screens.sel = 0; shot(u, dir, "h_pick_1961");
+            u.game = newGame(7, 1941, null, 0);
+            Game g = u.game;
+            g.tut = 2; u.go(SC_OVAL); shot(u, dir, "h_tutorial"); g.tut = -1;
+            for (int w = 0; w < 60; w++) { Auto.week(g); Week.resolve(g); Decisions.autoAll(g); }
+            Rooms.open(u, R_SITROOM);
+            SitRoom.tab = 0; SitRoom.sel = CC_DE; shot(u, dir, "h_sit_world_1942");
+            SitRoom.tab = 2; shot(u, dir, "h_sit_hot_1942");
+            SitRoom.tab = 6; SitRoom.selWar = 0; shot(u, dir, "h_sit_wars_1942");
+            SitRoom.tab = 1; HomeFront.brief(g); shot(u, dir, "h_sit_brief_1942");
+            Rooms.open(u, R_CONGRESS); HillUI.tab = 0; shot(u, dir, "h_hill_1942");
+            Rooms.open(u, R_PRESS); PressRoom.tab = 0; shot(u, dir, "h_press_1942");
+            Rooms.open(u, R_WESTWING); WestWing.tab = 1; WestWing.selPost = P_DEF; shot(u, dir, "h_ww_cabinet_1942");
+            // a turning point
+            g = newGame(8, 1961, null, 0);
+            u.game = g;
+            g.inbox.clear();
+            for (int w = 0; w < 95 && g.inbox.isEmpty(); w++) { Auto.week(g); Week.resolve(g); if (!g.inbox.isEmpty() && g.inbox.get(0).kind != D_HIST) g.inbox.clear(); }
+            u.go(SC_OVAL); Decisions.show(u, g); shot(u, dir, "h_decision_flash");
+            u.modal = null; Decisions.autoAll(g);
+            // the campaign and election night
+            for (int w = 0; w < 400 && !(g.re != null && g.re.opp != null && Reelection.weeksTo(g) <= 6); w++) { Auto.week(g); Week.resolve(g); Decisions.autoAll(g); }
+            u.go(SC_OVAL); shot(u, dir, "h_oval_campaign");
+            Rooms.open(u, R_PRESS); PressRoom.tab = 5; shot(u, dir, "h_campaign");
+            for (int w = 0; w < 20 && !g.night; w++) { Auto.week(g); Week.resolve(g); Decisions.autoAll(g); }
+            Night.begin(u); Night.all = true; shot(u, dir, "h_night");
+            // the verdict
+            for (int w = 0; w < 500 && !g.over; w++) { Auto.week(g); Week.resolve(g); Decisions.autoAll(g); }
+            Legacy.lastScores = null; Legacy.epi = null;
+            Legacy.record(g); Legacy.epilogue(g);
+            u.go(SC_LEGACY);
+            for (int t = 0; t < 5; t++) { Legacy.tab = t; shot(u, dir, "h_legacy_" + t); }
+            u.go(SC_HALL); shot(u, dir, "h_hall");
+            u.go(SC_IMPORT); shot(u, dir, "h_import");
         }
     }
 }

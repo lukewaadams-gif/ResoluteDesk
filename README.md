@@ -14,19 +14,20 @@ Resolute Desk is a separate game from [Battleground 2028](https://github.com/luk
 
 The game autosaves every week. Use **Continue** on the title screen to pick up where you left off.
 
-## What's in it so far
+## What's in it
 
-This is the fifth of six planned updates. The first covered the core of the job: your time, your health, the economy and public opinion. The second added Congress and the budget, the third the executive branch, the fourth the world, and the fifth the home front and the press.
+The game is complete: this is the last of six planned updates. The first covered the core of the job: your time, your health, the economy and public opinion. The second added Congress and the budget, the third the executive branch, the fourth the world, the fifth the home front and the press, and the sixth history, re-election and the verdict.
 
-- **When you take office:**
+- **When you take office:** any of 25 inaugurations.
+  - **Every inauguration from 1933 to 2021**, from Franklin Roosevelt's first to Joe Biden's (more under update 6).
   - **2025**, the real present. Donald Trump, or anyone else as a what-if.
-  - **2029**, in the world of Battleground 2028.
+  - **2029**, in the world of Battleground 2028, or as the winner of your own Battleground 2028 game.
   - Each era has its own Congress, economy, Fed chair, congressional leaders and the issues people care about.
 - **Scenarios and custom conditions:**
   - Five twists on the real starting point: a recession, a war abroad, divided government, a landslide mandate, or an inflation shock.
   - Set approval, unemployment, inflation, growth and your party's seats yourself.
   - Easy, Normal and Hard.
-- **Your president and running mate:** pick from about 35 real politicians, or create your own. You choose the name, party, home state, age and background, and spend points on strengths.
+- **Your president and running mate:** play the real winner, the runner-up or another contender of the day (about 35 politicians of today and 55 of the past), or create your own. You choose the name, party, home state, age and background, and spend points on strengths.
 - **The Oval Office is the home screen.** Click what you want:
   - the Resolute Desk for your schedule
   - the windows for the country
@@ -200,14 +201,40 @@ Open the Press Briefing Room from the Oval Office, or press 8. The daily brief i
   - Their mood moves your relationships in Congress and your base's turnout in the midterms.
 - **The opposition** picks a strategy each quarter (cooperate, pick its fights, or obstruct everything) based on your approval and the calendar.
 
-## Coming next
+### History, re-election and the verdict (update 6)
 
-1. **History and the verdict:**
-   - Every inauguration from 1933 on.
-   - A playable re-election campaign and a second term.
-   - The epilogue, historians' ranking and your presidential library.
-   - Achievements, a tutorial and a watch mode.
-   - Importing a president from Battleground 2028.
+The eras are on the **New presidency** screen. The campaign is in the Press Briefing Room; the wars are in the Situation Room.
+
+- **Every inauguration from 1933 to 2021**, 23 in all. Each era is set up as it was on the day:
+  - The economy, from a quarter of the workforce out of work in 1933 to the pandemic, in the dollars of the day. The Fed holds rates down until 1951, as it did.
+  - The real Congress and its leaders, with the blocs of the day: New Dealers, Southern Democrats and Old Guard Republicans; Boll Weevils and Gypsy Moths; Blue Dogs. Before 1975, cloture took two-thirds of the Senate, and the filibuster was used mostly against civil rights.
+  - The Supreme Court as it sat, and only the cabinet departments that existed. Congress creates the rest as the years go by: Defense in 1947, HUD in 1966, Energy in 1978, Homeland Security in 2003. Committees carry their old names.
+  - The press of the day: newspapers, wire services and radio networks in the 1930s, then the three networks, cable, talk radio and the web.
+  - The world as it was, with the real leaders of the day: the Soviet Union, Nationalist China, a divided Germany. Leaders come and go over the years as they really did.
+  - Electoral votes from each census, and states that lean the way they did then. After a Democratic president signs a civil rights law, the Deep South breaks away, as it did in 1964.
+- **108 turning points** arrive on their real dates, each with options from your advisers. They run from the bank holiday, Pearl Harbor and the atomic bomb, through Berlin, Korea, Little Rock, Sputnik and the Cuban missile crisis, to 9/11, Lehman Brothers and the pandemic. What follows depends on what you choose.
+- **94 historical bills**, from the New Deal, the GI Bill and the interstate highways to Medicare, the Civil Rights Act, the Clean Air Act, the Reagan tax cuts, NAFTA and the Affordable Care Act.
+  - Each is on the table only in the years it really was.
+  - Laws already passed before your era began aren't offered again.
+- **Wars:** World War II on two fronts, Korea, Vietnam, the Gulf War, Afghanistan, Iraq and the campaign against ISIS.
+  - You set troop levels and a strategy, watch the front and support at home, and seek a settlement or bring the troops home.
+  - The war shapes the economy, the casualty count and your approval.
+- **The re-election campaign:**
+  - From 1952 on, the 22nd Amendment's two-term limit applies, as written.
+  - You decide whether to run.
+  - A primary challenger appears if you're weak.
+  - There are the conventions and your acceptance speech, a message for the campaign, and money split between the ground game and television.
+  - Debates are held only in the years they really were: 1960, and from 1976.
+  - In the fall you schedule campaign stops, and the polls are broken down state by state.
+  - On election night the states are called one by one. Win, and you start a second term. If you're not running, your party's nominee runs to succeed you.
+- **The verdict:** when you leave office, historians score you on the ten measures of the C-SPAN Presidential Historians Survey and place you among the 44 presidents of its 2021 rankings. You also get:
+  - The record: approval week by week, the economy, your laws and the milestones of your presidency.
+  - An epilogue: what came after.
+  - Your presidential library, with its galleries and its collection.
+- **Achievements:** 32 of them, and a Hall of Fame of every presidency you finish.
+- **A tour of the Oval Office** the first time you play.
+- **Watch mode:** the game governs on its own at three speeds, and you take back the controls whenever you like. **Watch history** on the title screen hands a random era to the real president.
+- **From Battleground 2028:** take office as the winner of a Battleground 2028 game. Their face, ratings and running mate come across, with the Congress the election produced and the economy they inherit. The desktop versions read the other game's saves on the same computer; the browser versions read them in the same browser and site.
 
 ## Screenshots
 
@@ -229,13 +256,22 @@ Open the Press Briefing Room from the Oval Office, or press 8. The daily brief i
 | ![The daily brief](screenshots/daily-brief.png) | ![The press](screenshots/the-press.png) |
 | ![A press conference](screenshots/press-conference.png) | ![Building a speech](screenshots/building-a-speech.png) |
 | ![Your party](screenshots/your-party.png) | ![A domestic event](screenshots/a-domestic-event.png) |
+| ![Every inauguration](screenshots/eras.png) | ![The tour](screenshots/the-tour.png) |
+| ![The world in 1942](screenshots/the-world-1942.png) | ![A war](screenshots/a-war.png) |
+| ![The Hill in 1942](screenshots/the-hill-1942.png) | ![The cabinet in 1942](screenshots/the-cabinet-1942.png) |
+| ![A turning point](screenshots/a-turning-point.png) | ![The campaign](screenshots/the-campaign.png) |
+| ![Election night](screenshots/election-night.png) | ![The verdict](screenshots/the-verdict.png) |
+| ![The record](screenshots/the-record.png) | ![The library](screenshots/the-library.png) |
+| ![The epilogue](screenshots/the-epilogue.png) | ![Achievements](screenshots/achievements.png) |
 
 ## Notes
 
-- Real people appear as stylised characters. Their ratings are the game's estimates from public records, not facts, and the game never quotes them.
+- Real people appear as stylised characters. Their ratings are the game's estimates from public records, not facts, and the game never quotes them. In the historical eras the presidents, contenders, congressional leaders, justices and foreign leaders are real; cabinet members, committee chairs, reporters and other officials are fictional.
 - Only fictional officials are ever caught up in personal misconduct. Real justices only ever retire.
 - Reporters are fictional, even when the outlet is real. Outlets' coverage is a number the game simulates, never a quote.
 - Everything that happens in a game is fiction.
 - The 2029 era is a projection from the world of Battleground 2028, not a forecast. Its foreign leaders are today's, carried forward; the three marked as fictional successors (in France, Cuba and the Philippines) are invented.
-- Country outlines are from Natural Earth via the world-atlas package. Flags are stylised.
+- Historians' rankings of the real presidents are from the 2021 C-SPAN Presidential Historians Survey. Where your president lands among them is the game's estimate, not the historians'.
+- What happens after an era begins is alternate history: the turning points arrive on their real dates, but the outcomes are yours.
+- Country outlines are from Natural Earth via the world-atlas package. Flags are stylised; those of the past are simplified and carry no emblems.
 - The browser version is generated from the Java source, so the two play the same game.
