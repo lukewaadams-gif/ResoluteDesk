@@ -1790,6 +1790,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         Congress cong;
         Exec ex;
         World world;
+        Home home;
         boolean removed;                    // convicted by the Senate
         double capital = 30;                // political capital: spent on deals, earned by approval and wins
         List<Decision> inbox = new ArrayList<Decision>();
@@ -2684,6 +2685,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 Courts.week(g);
                 Trouble.week(g);
                 if (g.world != null) Diplo.week(g);
+                if (g.home != null) HomeFront.week(g);
                 g.issueAdj[PI_ECON] = clamp(g.issueAdj[PI_ECON] + 0.003 * (Cabinet.sq(g, S_NEC) - 0.6), -1.5, 1.5);
             }
             record(g);
@@ -2854,6 +2856,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             Cabinet.setup(g);
             Diplo.setup(g);
             Approval.init(g);
+            HomeFront.setup(g);
             Week.routine(g);
             Week.record(g);
             String vp = g.vp != null ? " " + g.vp.name() + " is sworn in as vice president." : "";
@@ -3512,6 +3515,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             b.strength = b.size * (0.7 + 0.6 * b.scope) * (b.recon && b.scope > 0.6 ? 0.85 : 1);
             if (Implement.roll(g, b.name, d.area, 1)) b.strength *= 0.75;
             g.cong.laws++;
+            if (signed) HomeFront.act(g, b.econ(), b.cult(), 1.0 * Math.min(1.5, b.strength));
             Econ e = g.econ;
             double pctGdp = b.netCost() / (e.nominalGdp * 10);
             e.fiscal += pctGdp;
@@ -3932,7 +3936,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             Econ e = g.econ;
             double camp = 0;
             for (double v : g.cong.campaign) camp += v;
-            double mP = 0.5 * (g.approval - 50) - 2.5 + 0.4 * (e.gdp - 2) - 0.3 * (e.unemp - 4.5) + Math.min(1.5, g.funds / 40) + Math.min(1.0, camp * 0.05) + (Cabinet.sq(g, S_POL) - 0.55) * 1.5 + noise;
+            double mP = 0.5 * (g.approval - 50) - 2.5 + 0.4 * (e.gdp - 2) - 0.3 * (e.unemp - 4.5) + Math.min(1.5, g.funds / 40) + Math.min(1.0, camp * 0.05) + (Cabinet.sq(g, S_POL) - 0.55) * 1.5 + (g.home != null ? ((g.home.fac[0] + g.home.fac[1]) / 2 - 55) * 0.04 : 0) + noise;
             return mP;
         }
 
@@ -4031,7 +4035,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     // =====================================================================
     static final int D_SIGN = 1, D_CR = 2, D_SHUTDOWN = 3, D_DEBT = 4, D_BUDGET = 5, D_INFO = 6, D_MUSTPASS = 7,
             D_CRA = 8, D_EMERG_END = 9, D_COURT = 10, D_SCANDAL = 11, D_LEAK = 12, D_PARDON = 13, D_SUBPOENA = 14, D_IMPEACH = 15,
-            D_WORLD = 16, D_SUMMIT = 17, D_GSUMMIT = 18;
+            D_WORLD = 16, D_SUMMIT = 17, D_GSUMMIT = 18, D_HOME = 19, D_DISASTER = 20, D_SPEECH = 21, D_QA = 22;
 
 
     static final class Decision implements Serializable {
@@ -4131,7 +4135,14 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                     for (int i = 0; i < o.length; i++) { String[] t = o[i].split("\\|"); double q = Diplo.p(g, t[2], Double.parseDouble(t[3])); double v = q - (t[2].equals("m") ? 0.12 : 0) - (q >= 1 ? 0.45 : 0); if (v > bv) { bv = v; best = i; } }
                     return best;
                 }
-                case D_SUMMIT: case D_GSUMMIT: return 0;
+                case D_HOME: {
+                    String[] o = EV_OPTS[d.a].split(";;");
+                    int best = 0; double bv = -9;
+                    for (int i = 0; i < o.length; i++) { String[] t = o[i].split("\\|"); double q = Diplo.p(g, t[2], Double.parseDouble(t[3])); double v = q - (q >= 1 ? 0.45 : 0); if (v > bv) { bv = v; best = i; } }
+                    return best;
+                }
+                case D_SPEECH: return d.codes != null ? (g.week % d.codes.length) : d.a == 0 ? 0 : 0;
+                case D_SUMMIT: case D_GSUMMIT: case D_DISASTER: case D_QA: return 0;
                 default: return 0;
             }
         }
@@ -4211,6 +4222,10 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             switch (d.kind) {
                 case D_COURT: Courts.courtDecision(g, d.caseRef, k); break;
                 case D_WORLD: Diplo.crisisDecision(g, d.a, k); break;
+                case D_HOME: HomeFront.eventDecision(g, d.a, k); break;
+                case D_DISASTER: HomeFront.disasterDecision(g, d, k); break;
+                case D_SPEECH: Speech.step(g, d.codes != null ? d.codes[k] : k); break;
+                case D_QA: QA.answer(g, d, k); break;
                 case D_SUMMIT: Summit.round(g, d.codes != null ? d.codes[k] : k); break;
                 case D_GSUMMIT: Summit.multiDecision(g, d, k); break;
                 case D_PARDON: Trouble.pardonDecision(g, d, k); break;
@@ -4420,6 +4435,9 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         return b.toString();
     }
 
+    /** Moves a voter group's approval by about this many points (the cell model works in log-odds). */
+    static void groupBump(Game g, int gi, double points) { if (gi >= 0 && gi < NG) g.groupAdj[gi] += points * 0.04; }
+
     static int actionIdx(String id) { for (int i = 0; i < AD_ID.length; i++) if (AD_ID[i].equals(id)) return i; return -1; }
 
     static final int A_LIVE = 0, A_PENDING = 1, A_BLOCKED = 2, A_STRUCK = 3, A_REVOKED = 4, A_COMMENT = 5, A_UNDONE = 6;
@@ -4547,9 +4565,11 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     /** Who speaks for each adviser label in decisions: staff roles, or 100 + a cabinet post. */
     static final String[] ADV_LABEL = {"Chief of staff", "National security adviser", "Press secretary", "Counsel", "Economic adviser", "Domestic policy adviser", "Legislative director",
             "Political director", "Communications director", "Budget director", "Treasury secretary", "Attorney general", "Defense secretary", "Secretary of State",
-            "Homeland Security secretary", "Director of national intelligence", "Commerce secretary", "Energy secretary"};
+            "Homeland Security secretary", "Director of national intelligence", "Commerce secretary", "Energy secretary", "Labor secretary", "Transportation secretary",
+            "EPA administrator", "Education secretary", "Health secretary", "Trade representative"};
     static final int[] ADV_WHO = {S_COS, S_NSA, S_PRESS, S_COUNSEL, S_NEC, S_DPC, S_LEG, S_POL, S_COMMS, 100 + P_OMB, 100 + P_TREAS, 100 + P_DOJ, 100 + P_DEF, 100 + P_STATE,
-            100 + P_DHS, 100 + P_DNI, 100 + P_COM, 100 + P_DOE};
+            100 + P_DHS, 100 + P_DNI, 100 + P_COM, 100 + P_DOE, 100 + P_LAB, 100 + P_DOT,
+            100 + P_EPA, 100 + P_ED, 100 + P_HHS, 100 + P_USTR};
     // =====================================================================
     //  18.  THE CABINET AND THE STAFF
     //  Nominees go to the Senate for a vote; staff serve at your pleasure. Everyone has skill, loyalty and morale.
@@ -4943,6 +4963,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
 
         /** How the country and the Hill react. */
         static void react(Game g, Action a, double k) {
+            if (k >= 1) HomeFront.act(g, a.lean == DEM ? -0.5 : a.lean == REP ? 0.5 : 0, a.lean == DEM ? -0.45 : a.lean == REP ? 0.5 : 0, 0.5);
             boolean mine = a.lean == g.party || a.lean < 0;
             double sup = a.support - 50;
             g.perf += k * sup * 0.012 * (mine ? 1 : 0.6) * Math.min(1.3, a.scope);
@@ -4981,12 +5002,12 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                     else if (k.equals("wf")) { for (int i = 0; i < NPOST; i++) g.ex.wf[i] *= 1 + v * a.scope / 100; }
                     else if (k.equals("ready")) { for (int i = 0; i < NPOST; i++) g.ex.ready[i] = clamp(g.ex.ready[i] + v * a.scope, 5, 100); }
                     else if (k.startsWith("st:")) { int st = stateIdx(k.substring(3)); if (st >= 0) g.stateBump[st] += v * a.scope; }
-                    else if (k.startsWith("g") && k.length() > 1 && Character.isDigit(k.charAt(1))) { int gi = Integer.parseInt(k.substring(1)); if (gi >= 0 && gi < NG) g.groupAdj[gi] += v * a.scope; }
+                    else if (k.startsWith("g") && k.length() > 1 && Character.isDigit(k.charAt(1))) { groupBump(g, Integer.parseInt(k.substring(1)), v * a.scope); }
                 }
             }
             e.polGdp += a.aGdp * s; e.polUnemp += a.aUnemp * s; e.polInfl += a.aInfl * s;
             e.tariff += a.aTariff * s; e.oilBase += a.aOil * s; e.fiscal += a.aDef * s;
-            if (!on && a.def >= 0) { String fx = AD_FX[a.def]; for (String t : fx.split(" ")) if (t.startsWith("g") && !t.startsWith("gdp")) { String[] kv = t.split("="); int gi = Integer.parseInt(kv[0].substring(1)); if (gi >= 0 && gi < NG) g.groupAdj[gi] -= Double.parseDouble(kv[1]) * a.scope * 0.7; } }
+            if (!on && a.def >= 0) { String fx = AD_FX[a.def]; for (String t : fx.split(" ")) if (t.startsWith("g") && !t.startsWith("gdp")) { String[] kv = t.split("="); groupBump(g, Integer.parseInt(kv[0].substring(1)), -Double.parseDouble(kv[1]) * a.scope * 0.7); } }
         }
 
         static void revoke(Game g, Action a) {
@@ -5426,13 +5447,13 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             String who = PARDONS[d.b].split("\\|")[0].toLowerCase();
             g.log(kind == 1 || kind == 2 ? NK_BIG : NK_INFO, (k == 2 ? "President " + g.pres.last + " commutes the sentence of " : "President " + g.pres.last + " pardons ") + who, null, kind == 1 || kind == 2 ? 2.4 : 1.0);
             switch (kind) {
-                case 0: g.groupAdj[10] += 1.2 * m; g.perf += 0.1; break;
+                case 0: groupBump(g, 10, 1.2 * m); g.perf += 0.1; break;
                 case 1: for (Bloc b : g.cong.blocs) if (b.party == g.party) b.rel = Math.min(100, b.rel + 2); add(g, SK_PARDON, "The pardon of " + who, "Critics call it a reward for loyalty and a warning to investigators.", 4.5 * m, null, true); break;
                 case 2: add(g, SK_PARDON, "The pardon of " + who, "Records show the donor's family gave to the president's allies after the request was filed.", 5.5 * m, null, true); g.issueAdj[PI_ETHICS] -= 0.3 * m; break;
-                case 3: g.groupAdj[25] += 1 * m; g.perf -= 0.2 * m; g.issueAdj[PI_SECURITY] += g.party == REP ? 0.05 : -0.1; break;
-                case 4: g.groupAdj[0] += 1 * m; g.issueAdj[PI_SECURITY] -= 0.2 * m; if (x.post[P_CIA] != null) x.post[P_CIA].morale -= 10; if (x.post[P_DNI] != null) x.post[P_DNI].morale -= 8; break;
+                case 3: groupBump(g, 25, 1 * m); g.perf -= 0.2 * m; g.issueAdj[PI_SECURITY] += g.party == REP ? 0.05 : -0.1; break;
+                case 4: groupBump(g, 0, 1 * m); g.issueAdj[PI_SECURITY] -= 0.2 * m; if (x.post[P_CIA] != null) x.post[P_CIA].morale -= 10; if (x.post[P_DNI] != null) x.post[P_DNI].morale -= 8; break;
                 case 5: for (Bloc b : g.cong.blocs) if (b.party == g.party) b.rel = Math.min(100, b.rel + 1.5); add(g, SK_PARDON, "Pardons for the rioters", "Police unions and the other party condemn them.", 3 * m, null, false); g.issueAdj[PI_CRIME] -= 0.3 * m; break;
-                default: g.groupAdj[10] += 0.4 * m; g.perf += 0.05; break;
+                default: groupBump(g, 10, 0.4 * m); g.perf += 0.05; break;
             }
         }
 
@@ -7897,7 +7918,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     static final String[] ROOM_NAME = {"The Resolute Desk", "The Country", "The Economy", "The Residence", "The West Wing", "The Roosevelt Room", "The Situation Room", "The Press Briefing Room"};
     static final String[] ROOM_SUB = {"Your week, slot by slot", "Approval, by issue, group and state", "Jobs, prices, markets and the budget", "Your health, your sleep and your family",
             "Your staff and your cabinet", "Congress: the leaders, the votes, the budget", "The world: allies, rivals and crises", "The press corps and the media"};
-    static final boolean[] ROOM_OPEN = {true, true, true, true, true, true, true, false};
+    static final boolean[] ROOM_OPEN = {true, true, true, true, true, true, true, true};
     static final String[] ROOM_LATER = {"", "", "", "",
             "Your chief of staff, national security adviser, press secretary and counsel, each with skills, traits and loyalty; all 15 departments and their secretaries; cabinet meetings; leaks and resignations; and your vice president's missions.",
             "Named leaders, committee chairs and swing votes; bills you negotiate provision by provision; the filibuster, reconciliation and the Byrd rule; your budget, the 12 spending bills, shutdowns, the debt ceiling and vetoes.",
@@ -8373,6 +8394,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 case R_CONGRESS: HillUI.draw(u, g, game); break;
                 case R_WESTWING: WestWing.draw(u, g, game); break;
                 case R_SITROOM: SitRoom.draw(u, g, game); break;
+                case R_PRESS: PressRoom.draw(u, g, game); break;
                 default: later(u, g, game); break;
             }
         }
@@ -9763,6 +9785,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 g.ex.nextPardon = g.week + 8; g.ex.nextProbe = g.week + 14;
             }
             if (g.world == null) Diplo.setup(g);
+            if (g.home == null) HomeFront.setup(g);
         }
 
         static void resume(ResoluteDesk u, Game g) {
@@ -10467,10 +10490,15 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         /** How likely an option is to work, given who's doing it. */
         static double p(Game g, String kind, double base) {
             if (base >= 1) return 1;
-            double fpc = g.pres != null ? (g.pres.a[A_FPC] - 60) / 250.0 : 0;
+            double fpc = g.pres != null && (kind.equals("m") || kind.equals("d") || kind.equals("i")) ? (g.pres.a[A_FPC] - 60) / 250.0 : 0;
             double m = kind.equals("m") ? (g.ex.ready[P_DEF] - 60) / 300.0 + (Cabinet.pq(g, P_DEF) - 0.6) * 0.2
                     : kind.equals("d") ? (Cabinet.pq(g, P_STATE) - 0.6) * 0.3 + (Cabinet.sq(g, S_NSA) - 0.6) * 0.15
-                    : kind.equals("i") ? ((Cabinet.pq(g, P_CIA) + Cabinet.pq(g, P_DNI)) / 2 - 0.6) * 0.35 : (Cabinet.sq(g, S_COS) - 0.6) * 0.15;
+                    : kind.equals("i") ? ((Cabinet.pq(g, P_CIA) + Cabinet.pq(g, P_DNI)) / 2 - 0.6) * 0.35
+                    : kind.equals("h") ? (g.ex.ready[P_DHS] - 60) / 250.0 + (Cabinet.pq(g, P_DHS) - 0.6) * 0.25
+                    : kind.equals("j") ? (Cabinet.pq(g, P_DOJ) - 0.6) * 0.3 + (g.ex.ready[P_DOJ] - 60) / 400.0
+                    : kind.equals("x") ? (g.ex.ready[P_HHS] - 60) / 250.0 + (Cabinet.pq(g, P_HHS) - 0.6) * 0.25
+                    : kind.equals("c") ? (Cabinet.sq(g, S_COMMS) + Cabinet.sq(g, S_PRESS) - 1.2) * 0.15 + (g.pres.a[A_SPE] - 60) / 250.0
+                    : (Cabinet.sq(g, S_COS) - 0.6) * 0.15;
             return clamp(base + fpc + m, 0.05, 0.97);
         }
 
@@ -10514,6 +10542,29 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 else if (k.equals("crime")) g.issueAdj[PI_CRIME] = clamp(g.issueAdj[PI_CRIME] + v, -1.5, 1.5);
                 else if (k.equals("oil")) oil(g, v); else if (k.equals("fin")) e.finShock += v; else if (k.equals("def")) e.fiscal += v;
                 else if (k.equals("stress")) g.stress = clamp(g.stress + v, 0, 100);
+                else if (k.equals("econ")) g.issueAdj[PI_ECON] = clamp(g.issueAdj[PI_ECON] + v, -1.5, 1.5);
+                else if (k.equals("prices")) g.issueAdj[PI_PRICES] = clamp(g.issueAdj[PI_PRICES] + v, -1.5, 1.5);
+                else if (k.equals("jobs")) g.issueAdj[PI_JOBS] = clamp(g.issueAdj[PI_JOBS] + v, -1.5, 1.5);
+                else if (k.equals("health")) g.issueAdj[PI_HEALTH] = clamp(g.issueAdj[PI_HEALTH] + v, -1.5, 1.5);
+                else if (k.equals("rights")) g.issueAdj[PI_RIGHTS] = clamp(g.issueAdj[PI_RIGHTS] + v, -1.5, 1.5);
+                else if (k.equals("tech")) g.issueAdj[PI_TECH] = clamp(g.issueAdj[PI_TECH] + v, -1.5, 1.5);
+                else if (k.equals("energy")) g.issueAdj[PI_ENERGY] = clamp(g.issueAdj[PI_ENERGY] + v, -1.5, 1.5);
+                else if (k.equals("edu")) g.issueAdj[PI_EDU] = clamp(g.issueAdj[PI_EDU] + v, -1.5, 1.5);
+                else if (k.startsWith("st:")) { int s = stateIdx(k.substring(3)); if (s >= 0) g.stateBump[s] += v; }
+                else if (k.length() > 1 && k.charAt(0) == 'g' && Character.isDigit(k.charAt(1))) { groupBump(g, Integer.parseInt(k.substring(1)), v); }
+                else if (k.equals("base")) { if (g.home != null) { g.home.fac[0] = clamp(g.home.fac[0] + v, 0, 100); g.home.fac[1] = clamp(g.home.fac[1] + v * 0.6, 0, 100); } for (Bloc b : g.cong.blocs) if (b.party == g.party) b.rel = clamp(b.rel + v * 0.5, 0, 100); }
+                else if (k.equals("opp")) { for (Bloc b : g.cong.blocs) if (b.party != g.party) b.rel = clamp(b.rel + v, 0, 100); }
+                else if (k.equals("scandal")) g.scandal += v;
+                else if (k.equals("infl")) e.infl += v;
+                else if (k.equals("demand")) e.demandShock += v; else if (k.equals("supply")) e.supplyShock -= v;
+                else if (g.home != null && k.equals("grid")) g.home.grid = clamp(g.home.grid + v, 0, 100);
+                else if (g.home != null && k.equals("protest")) g.home.protest = clamp(g.home.protest + v, 0, 100);
+                else if (g.home != null && k.equals("od")) g.home.od = clamp(g.home.od + v, 10, 200);
+                else if (g.home != null && k.equals("crimeidx")) g.home.crime = clamp(g.home.crime + v, 50, 200);
+                else if (g.home != null && k.equals("pandslow")) g.home.pandSlow = 1;
+                else if (g.home != null && k.equals("pandfast")) g.home.pandFast = 1;
+                else if (g.home != null && k.equals("pandsev")) g.home.pandSev *= 1.4;
+                else if (g.home != null && k.equals("pandend")) g.home.pandWeek = Math.min(g.home.pandWeek, g.week - 30);
                 else if (k.equals("tcn")) { if (w.tariff[CC_CN] > 0) setTariff(g, CC_CN, Math.max(0, w.tariff[CC_CN] - 1)); }
                 else if (k.equals("kia") && v > 0) {
                     int n = (int) v;
@@ -10842,29 +10893,32 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     static final class SitRoom {
         static int tab, sel = CC_CN, selOp = 0;
         static String msg;
-        static final String[] TABS = {"The world", "Hot spots", "Operations", "Trade and sanctions", "Alliances"};
+        static final String[] TABS = {"The world", "Daily brief", "Hot spots", "Operations", "Trade and sanctions", "Alliances"};
 
         static void draw(ResoluteDesk u, Graphics2D g, Game game) {
             if (game.world == null) Diplo.setup(game);
-            u.segmented(g, 48, 116, 700, 30, TABS, tab, i -> { tab = i; msg = null; }, null);
+            u.segmented(g, 48, 116, 820, 30, TABS, tab, i -> { tab = i; msg = null; }, null);
             World w = game.world;
-            text(g, "DEFCON " + w.defcon, 780, 137, F_BB, w.defcon <= 3 ? C_BAD : w.defcon == 4 ? C_AMBER : C_GOOD);
-            if (msg != null) textFit(g, msg, 880, 137, DW - 930, F_XS, C_GOLD);
+            text(g, "DEFCON " + w.defcon, 890, 137, F_BB, w.defcon <= 3 ? C_BAD : w.defcon == 4 ? C_AMBER : C_GOOD);
+            if (msg != null) textFit(g, msg, 990, 137, DW - 1040, F_XS, C_GOLD);
             switch (tab) {
-                case 1: hot(u, g, game); break;
-                case 2: ops(u, g, game); break;
-                case 3: trade(u, g, game); break;
-                case 4: alliances(u, g, game); break;
+                case 1: brief(u, g, game); break;
+                case 2: hot(u, g, game); break;
+                case 3: ops(u, g, game); break;
+                case 4: trade(u, g, game); break;
+                case 5: alliances(u, g, game); break;
                 default: world(u, g, game); break;
             }
         }
 
         static Color tone(double v, boolean highBad) { double t = highBad ? v : 100 - v; return t >= 70 ? C_BAD : t >= 45 ? C_AMBER : C_GOOD; }
 
-        static void gauge(Graphics2D g, String name, double v, boolean highBad, double x, double y, double w) {
+        static void gauge(Graphics2D g, String name, double v, boolean highBad, double x, double y, double w) { gauge(g, name, v, highBad, x, y, w, String.valueOf(Math.round(v))); }
+
+        static void gauge(Graphics2D g, String name, double v, boolean highBad, double x, double y, double w, String shown) {
             text(g, name, x, y, F_XS, C_TEXT);
-            bar(g, x, y + 6, w - 40, 8, v / 100, tone(v, highBad));
-            textR(g, String.valueOf(Math.round(v)), x + w, y + 14, F_XSB, Color.white);
+            bar(g, x, y + 6, w - 50, 8, clamp(v, 0, 100) / 100, tone(v, highBad));
+            textR(g, shown, x + w, y + 14, F_XSB, Color.white);
         }
 
         // ---- the world ----
@@ -10928,6 +10982,31 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             }
             u.clipHits(h0, top, top + hh);
             u.endScroll(g, "ctlist", row * 24);
+        }
+
+        // ---- the President's Daily Brief ----
+        static void brief(ResoluteDesk u, Graphics2D g, Game game) {
+            Home h = game.home;
+            double x = 360, w = DW - 720;
+            g.setColor(rgb(0xf3ecd8));
+            g.fill(new RoundRectangle2D.Double(x, 164, w, 640, 6, 6));
+            g.setColor(rgb(0x7a2a24));
+            g.fill(new Rectangle2D.Double(x, 164, w, 10));
+            textC(g, "TOP SECRET", x + w / 2, 196, F_TB, rgb(0x7a2a24));
+            textC(g, "THE PRESIDENT'S DAILY BRIEF", x + w / 2, 226, F_SERIF, rgb(0x1a1a1a));
+            textC(g, dateLong(game.day()), x + w / 2, 248, F_SERIF_S, rgb(0x3a3a3a));
+            double y = 288;
+            if (h == null || h.brief == null || h.brief.isEmpty()) { text(g, "Your briefer will have the first brief ready next week.", x + 40, y, F_S, rgb(0x333333)); return; }
+            for (String item : h.brief) {
+                int pr = Integer.parseInt(item.substring(0, 1));
+                String t = item.substring(2);
+                g.setColor(pr >= 3 ? rgb(0xb3261e) : pr == 2 ? rgb(0xc77d0a) : rgb(0x5a6a7a));
+                g.fill(new Rectangle2D.Double(x + 40, y - 12, 6, 16));
+                y += wrap(g, t, x + 58, y, w - 100, F_B, rgb(0x1a1a1a)) + 14;
+                if (y > 760) break;
+            }
+            Person dni = game.ex.post[P_DNI];
+            text(g, "Prepared by the Office of the Director of National Intelligence" + (dni != null && !dni.real ? " (" + dni.name + ")" : ""), x + 40, 790, F_T, rgb(0x555555));
         }
 
         // ---- the hot spots ----
@@ -11071,6 +11150,773 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         }
     }
     // =====================================================================
+    //  34.  THE HOME FRONT
+    //  Crime and overdoses, disasters, a rare pandemic, AI, protests, infrastructure, fights with the states and
+    //  the hot-button issues. Your party's two wings, and an opposition that picks a strategy.
+    //  Events use the same option format as the world's crises: "label|adviser|kind|odds|success fx|failure fx|success story|failure story".
+    // =====================================================================
+    static final String[] EV_ID = {"ai_jobs", "deepfake", "ai_lab", "heat_grid", "winter_grid", "bridge", "derail", "faa", "police", "protests", "campus", "shooting",
+            "scotus", "pills", "schools", "state_imm", "state_suit", "violence", "fed_bldg", "overdose", "crime", "strike", "groceries", "pand_abroad", "pand_home", "vaccine", "data_centers", "chip_plant"};
+    static final String[] EV_COND = {"ai>0,p=0.006", "p=0.004", "ai>0,p=0.003", "month>5,month<9,grid>50,p=0.06", "month<3,grid>45,p=0.04", "p=0.0015", "p=0.0025", "p=0.0025", "p=0.006",
+            "protest>62", "gaza>55,month>2,month<6,p=0.03", "p=0.005", "month>4,month<8,p=0.012", "p=0.0025", "p=0.0025", "p=0.004", "p=0.004", "p=0.0012", "p=0.0008", "od>88", "crimeidx>106",
+            "p=0.0025", "infl>3.2,p=0.02", "pand>0,pand<2,pandw<1", "pand>1,pandw<1", "pand>1,pandw>18,p=0.2", "ai>0,grid>40,p=0.006", "ai>0,p=0.004"};
+    static final int[] EV_COOL = {40, 30, 60, 26, 26, 80, 60, 60, 30, 20, 52, 30, 52, 70, 60, 40, 30, 80, 80, 40, 40, 80, 40, 400, 400, 400, 52, 60};
+    static final String[] EV_TITLE = {"AI is wiping out entry-level office jobs", "A deepfake of you goes viral", "An AI lab warns of a dangerous new model", "A heat wave knocks out power in Texas",
+            "A winter storm leaves millions without power", "A major bridge collapses", "A train carrying toxic chemicals derails", "An air-traffic outage grounds flights nationwide",
+            "A police shooting caught on video sparks protests", "Protests spread to dozens of cities", "Protests over Gaza sweep college campuses", "A mass shooting at a school",
+            "The Supreme Court strikes down a major federal law", "A court ruling on abortion pills sets off a national fight", "A fight over what schools teach goes national",
+            "A state defies federal immigration policy", "Twenty states sue over your policies", "An armed man is arrested outside a congressman's home", "Shots are fired at a federal courthouse",
+            "Overdose deaths are climbing again", "Violent crime is rising in big cities", "A national rail strike looms", "Grocery prices jump", "A new virus is spreading abroad",
+            "The virus is spreading in American cities", "A vaccine is ready", "Data centers strain the power grid", "A giant chip plant opens"};
+    static final String[] EV_BODY = {
+            "Banks, insurers and consulting firms have announced tens of thousands of layoffs, saying AI agents can do the work. Young college graduates are hit hardest.",
+            "A fake video of you saying things you never said has been viewed tens of millions of times. Many people believe it.",
+            "One of the big AI labs has told the government its newest model can give real help to someone trying to make a biological weapon.",
+            "Record heat has pushed the Texas grid past its limit. Rolling blackouts have left millions without air conditioning.",
+            "Ice and record cold have knocked out power plants and lines across several states. Millions are in the dark.",
+            "An interstate bridge has collapsed during the evening rush. Rescue crews are at the scene.",
+            "A freight train carrying vinyl chloride derailed in a small Midwestern town. Residents have been evacuated.",
+            "A failure in the air-traffic control system has grounded every flight in the country.",
+            "Video of a police officer shooting an unarmed man during a traffic stop has spread across the country. Protests are growing.",
+            "Large demonstrations have spread to dozens of cities. Most are peaceful; a few have turned violent at night.",
+            "Encampments and protests over the war in Gaza have spread to campuses across the country. Some universities have called in police.",
+            "A gunman opened fire at a school. The nation is in mourning, and the debate over guns has started again.",
+            "In a 6-3 decision, the Court struck down a federal law your party considers essential.",
+            "A federal judge has suspended approval of the most common abortion pill nationwide pending appeal.",
+            "A clash between parents, teachers and a school board over books and curricula has become a national story.",
+            "A governor has ordered state agencies to defy your administration's immigration policy.",
+            "A coalition of twenty states has sued to block several of your policies at once.",
+            "Police have arrested an armed man outside the home of a member of Congress. No one was hurt. He had posted threats online.",
+            "Someone fired several shots at a federal courthouse overnight. No one was hurt. The FBI is investigating.",
+            "After falling for two years, overdose deaths are rising again as stronger synthetic opioids spread.",
+            "Murders and assaults are up in several big cities after years of decline.",
+            "Rail unions and the freight railroads are deadlocked. A strike would shut down much of the country's shipping.",
+            "Bird flu, bad harvests and tariffs have pushed food prices up sharply.",
+            "A new respiratory virus is spreading quickly abroad. Health officials don't yet know how dangerous it is.",
+            "The new virus has been found in several American cities, and hospitals are filling up.",
+            "Researchers have a vaccine that works. The question is how to get it out.",
+            "Electricity demand from AI data centers is growing faster than power plants can be built. Utilities warn of shortages and higher bills.",
+            "One of the world's largest chipmakers has opened a giant new plant in Arizona."};
+    static final String[] EV_OPTS = {
+            "A national retraining program|Labor secretary|s|0.7|def=0.03 jobs=0.25 tech=0.1|def=0.03 jobs=0.05|Hundreds of thousands sign up for retraining.|The program is slow to get off the ground.;;"
+                    + "Tax companies that replace workers with AI|Economic adviser|s|0.6|jobs=0.2 base=3 fin=-0.4 tech=-0.1|fin=-0.8 tech=-0.2|Workers cheer; tech stocks wobble.|Investors flee tech stocks.;;"
+                    + "Let the market adjust|Treasury secretary|s|1|jobs=-0.25 tech=0.1|jobs=-0.25|Critics say you're ignoring the jobs crisis.|Critics say you're ignoring the jobs crisis.",
+            "Rebut it on camera|Communications director|c|0.7|perf=0.3|perf=-0.6|Your rebuttal gets more views than the fake.|The fake keeps spreading.;;"
+                    + "Demand that platforms label AI fakes|Domestic policy adviser|s|0.75|tech=0.2|tech=0.05|The big platforms agree to label AI-generated video.|The platforms stall.;;"
+                    + "Ignore it|Chief of staff|s|1|perf=-0.4|perf=-0.4|The fake keeps spreading.|The fake keeps spreading.",
+            "Order a pause until it's tested|National security adviser|s|0.7|tech=0.25 fin=-0.3|tech=0.05 fin=-0.5|The lab pauses; experts praise the decision.|The lab complies, but rivals race ahead.;;"
+                    + "Negotiate safeguards with the labs|Commerce secretary|d|0.65|tech=0.15|tech=-0.05|The labs agree to new safeguards.|Talks with the labs drag on.;;"
+                    + "Trust the companies to handle it|Economic adviser|s|1|tech=-0.2|tech=-0.2|Safety experts are alarmed.|Safety experts are alarmed.",
+            "Emergency federal power orders|Energy secretary|h|0.7|grid=-10 energy=0.15 st:TX=1|grid=5 st:TX=-2 perf=-0.5|Power comes back within a day.|The blackouts drag on for days.;;"
+                    + "Blame the grid operator|Political director|s|1|st:TX=-1|st:TX=-1|Texans want the lights on, not blame.|Texans want the lights on, not blame.;;"
+                    + "Announce a grid modernization plan|Domestic policy adviser|s|0.6|grid=-6 def=0.02 energy=0.2|grid=-2 def=0.02|The plan wins praise from utilities.|The plan is seen as too little, too late.",
+            "Emergency federal power orders|Energy secretary|h|0.7|grid=-8 energy=0.15|grid=4 perf=-0.6|Power comes back within days.|The outages drag on.;;"
+                    + "Send FEMA and the National Guard|Homeland Security secretary|h|0.75|perf=0.4|perf=-0.4|Warming centers and generators save lives.|The response is slow.;;"
+                    + "Blame the utilities|Political director|s|1|perf=-0.2|perf=-0.2|Voters want the lights on.|Voters want the lights on.",
+            "Fast-track federal rebuilding money|Transportation secretary|s|0.8|def=0.01 jobs=0.15 perf=0.3|def=0.01 perf=-0.2|The new bridge is promised within two years.|Red tape slows the rebuilding.;;"
+                    + "Visit the site and promise action|Chief of staff|c|0.8|perf=0.5 stress=3|perf=-0.2|Your visit is well received.|Critics call the visit a photo op.;;"
+                    + "Let the state lead|Transportation secretary|s|1|perf=-0.3|perf=-0.3|Locals feel ignored.|Locals feel ignored.",
+            "Send the EPA and FEMA in force|EPA administrator|h|0.7|perf=0.4 energy=0.1|perf=-0.6 scandal=1|Cleanup moves fast; residents return home.|Residents complain of headaches and silence from Washington.;;"
+                    + "Visit the town|Chief of staff|c|0.8|perf=0.5|perf=-0.2|Residents appreciate the visit.|Residents are angry it took so long.;;"
+                    + "Push new rail safety rules|Transportation secretary|s|0.6|energy=0.05 perf=0.2|perf=0|The industry accepts tougher rules.|The railroads fight the rules.",
+            "Order an emergency overhaul|Transportation secretary|h|0.65|perf=0.3|perf=-0.5|Flights resume within hours; a fix is under way.|More outages follow.;;"
+                    + "Blame years of underfunding|Political director|s|1|perf=-0.1|perf=-0.1|Travelers aren't interested in blame.|Travelers aren't interested in blame.;;"
+                    + "Ask Congress for emergency money|Legislative director|s|0.6|def=0.01 perf=0.2|perf=-0.1|Congress moves the money quickly.|The money stalls.",
+            "Call for calm and a federal investigation|Attorney general|j|0.7|protest=-15 g10=1.5 crime=0.05|protest=5|The investigation calms the streets.|Protests continue.;;"
+                    + "Back the police|Political director|s|1|base=3 g10=-2 protest=10 crime=0.1|base=3|Police unions praise you; protesters are angrier.|Police unions praise you; protesters are angrier.;;"
+                    + "Meet the family and community leaders|Domestic policy adviser|c|0.7|protest=-12 g10=2|protest=-4|The meeting is widely praised.|Activists call the meeting empty symbolism.",
+            "Send federal law enforcement|Attorney general|j|0.55|protest=-25 crime=0.2 base=2 g10=-1|protest=10 perf=-1 scandal=1|Order returns to the streets.|Clashes with federal agents make things worse.;;"
+                    + "Meet protest leaders|Domestic policy adviser|c|0.6|protest=-20 g0=1|protest=-5|The meeting lowers the temperature.|The meeting changes little.;;"
+                    + "Address the nation|Communications director|c|0.65|protest=-15 perf=0.4|protest=-3|Your address calms the country.|The address falls flat.",
+            "Defend free speech and the right to protest|Domestic policy adviser|c|0.6|g0=1 g28=1.5 rights=0.1|g0=0.5 base=-2|The speech is praised on campus and off.|Both sides are unhappy.;;"
+                    + "Crack down on antisemitism on campus|Attorney general|j|0.7|g17=1.5 base=1 rights=0.05|g28=-1.5|Universities tighten their rules.|Students accuse you of censorship.;;"
+                    + "Leave it to the universities|Chief of staff|s|1|perf=-0.1|perf=-0.1|The protests fade with the semester.|The protests fade with the semester.",
+            "Push for new gun safety laws|Domestic policy adviser|s|1|g4=1 g26=-2 base=2 crime=0.05|g4=1|Gun-safety groups rally behind you.|Gun-safety groups rally behind you.;;"
+                    + "Focus on school security and mental health|Education secretary|s|0.8|g29=1.5 crime=0.1|g29=0.5|Parents welcome the plan.|Critics call it a dodge.;;"
+                    + "Visit the community and console the families|Chief of staff|c|0.85|perf=0.6 stress=4|perf=0.2 stress=4|Your visit brings comfort.|Your visit brings comfort.",
+            "Criticize the ruling|Communications director|c|0.7|base=3 rights=0.05|base=2|Your base rallies to you.|Your base rallies to you.;;"
+                    + "Accept it and work with Congress on a fix|Legislative director|s|0.6|perf=0.3|perf=0|Lawmakers start work on a fix.|Congress ignores the issue.;;"
+                    + "Propose reforms to the Court|Counsel|s|0.5|base=4 opp=-5|base=2 opp=-6 perf=-0.4|The proposal energizes your party.|The proposal goes nowhere.",
+            "Protect access through the FDA|Health secretary|x|0.6|g3=2 g4=1 health=0.1|g4=0.5|The FDA keeps the pill available.|Courts block the FDA's move.;;"
+                    + "Leave it to the courts and the states|Counsel|s|1|g6=1 g4=-1|g6=1|Both sides wait for the appeal.|Both sides wait for the appeal.;;"
+                    + "Push Congress for a national standard|Legislative director|s|0.5|base=3 rights=0.1|base=2|The push energizes your base.|The bill stalls.",
+            "Side with the parents|Education secretary|s|1|g29=1 g6=1 base=2|g29=1|Parents' groups cheer.|Parents' groups cheer.;;"
+                    + "Side with the teachers|Education secretary|s|1|g24=1 base=1|g24=1|Teachers' unions praise you.|Teachers' unions praise you.;;"
+                    + "Say it's a local matter|Chief of staff|s|1|perf=0|perf=0|The story fades.|The story fades.",
+            "Sue the state|Attorney general|j|0.6|imm=0.15 base=2|imm=-0.1|A federal judge sides with you.|A judge sides with the state.;;"
+                    + "Cut the state's federal grants|Budget director|s|0.5|imm=0.1 base=3 scandal=1|scandal=2 perf=-0.4|The governor backs down.|The courts block the cuts.;;"
+                    + "Negotiate with the governor|Chief of staff|d|0.55|imm=0.1 perf=0.2|imm=-0.1|A deal ends the standoff.|The standoff continues.",
+            "Fight it in court|Attorney general|j|0.6|perf=0.2|perf=-0.3|A judge throws out most of the suit.|A judge freezes several of your policies.;;"
+                    + "Call it a political stunt|Political director|s|1|base=2|base=2|Your base agrees.|Your base agrees.;;"
+                    + "Offer to compromise|Chief of staff|d|0.5|perf=0.3 base=-2|base=-2|Several states drop out of the suit.|The states press on.",
+            "Call for calm from all sides|Communications director|c|0.8|perf=0.8 opp=2|perf=0.3|Leaders of both parties echo your call.|Your call is drowned out.;;"
+                    + "More protection for public officials|Homeland Security secretary|h|0.9|def=0.005 perf=0.3|perf=0.1|The Capitol Police get more money.|The Capitol Police get more money.;;"
+                    + "Blame the other side's rhetoric|Political director|s|1|base=3 opp=-6 perf=-0.6|base=3 opp=-6|Your base agrees; the country is more divided.|Your base agrees; the country is more divided.",
+            "Speak to the nation|Communications director|c|0.75|perf=0.6|perf=0.1|Your words reassure the country.|Your words reassure the country.;;"
+                    + "Order more security for federal judges|Attorney general|j|0.9|def=0.005 perf=0.2|perf=0.1|The Marshals add protection.|The Marshals add protection.;;"
+                    + "Let the FBI do its work|Chief of staff|s|1|perf=0|perf=0|The FBI makes an arrest.|The FBI makes an arrest.",
+            "A border crackdown on fentanyl|Homeland Security secretary|h|0.65|od=-6 cartel=-5 imm=0.1 crime=0.1|od=-1|Seizures at the border hit a record.|The smugglers adapt.;;"
+                    + "Treatment and naloxone everywhere|Health secretary|x|0.75|od=-8 health=0.15 def=0.01|od=-3 def=0.01|Overdose deaths start to fall.|The money is slow to reach clinics.;;"
+                    + "Go after the money|Treasury secretary|s|0.6|od=-4 cartel=-8|od=-1|Sanctions hit the cartels' banks.|The cartels move their money.",
+            "Surge federal agents into the hardest-hit cities|Attorney general|j|0.65|crimeidx=-5 crime=0.2 base=2|crimeidx=-1 protest=5|Arrests rise and shootings fall.|The surge causes friction with local leaders.;;"
+                    + "Money for local police|Budget director|s|0.8|crimeidx=-4 crime=0.15 def=0.01|crimeidx=-1 def=0.01|Mayors welcome the money.|The money is slow to arrive.;;"
+                    + "Fund community violence programs|Domestic policy adviser|s|0.6|crimeidx=-3 g10=1|crimeidx=0|The programs show early results.|Critics call the programs soft.",
+            "Ask Congress to impose a deal|Legislative director|s|0.7|supply=0 g24=-2 base=-1|supply=-0.2|Congress imposes a contract; the trains keep running.|Congress deadlocks and the strike begins.;;"
+                    + "Side with the unions|Labor secretary|s|0.5|g24=3 supply=0|supply=-0.3 g24=2|The railroads give in.|The strike shuts down shipping for a week.;;"
+                    + "Mediate a deal yourself|Chief of staff|c|0.6|g24=1 perf=0.5|supply=-0.25|You broker a deal at the White House.|Talks fail and the strike begins.",
+            "Go after price gouging|Attorney general|j|0.6|prices=0.15|prices=0|Prosecutors win quick settlements.|The cases drag on.;;"
+                    + "Cut tariffs on food|Trade representative|s|0.8|prices=0.2 infl=-0.1|prices=0.05|Prices start to ease.|Prices barely move.;;"
+                    + "Tell people it's temporary|Economic adviser|s|1|prices=-0.15|prices=-0.15|Shoppers don't believe it.|Shoppers don't believe it.",
+            "Restrict travel from affected countries|Homeland Security secretary|h|0.6|pandslow=1 supply=-0.1|supply=-0.1|The restrictions buy time.|The virus is already here.;;"
+                    + "Fund vaccines now|Health secretary|x|0.8|pandfast=1 def=0.02|def=0.02|Drug makers start work on a vaccine.|Drug makers start work on a vaccine.;;"
+                    + "Watch and wait|Chief of staff|s|1|perf=0|perf=0|Health officials keep watching.|Health officials keep watching.",
+            "Guidance to limit large gatherings|Health secretary|x|0.7|demand=-0.4 health=0.2 pandslow=1|demand=-0.5 health=-0.1|The spread slows.|The spread continues.;;"
+                    + "Keep everything open|Economic adviser|s|1|health=-0.3 pandsev=1|health=-0.3|Hospitals strain under the load.|Hospitals strain under the load.;;"
+                    + "Surge help to hospitals|Health secretary|x|0.75|health=0.25 def=0.02|health=0.05 def=0.02|Field hospitals and staff ease the strain.|Help arrives slowly.",
+            "Free shots for everyone, fast|Health secretary|x|0.8|pandend=1 health=0.3 def=0.02|pandend=1 health=0.1 def=0.02|The vaccine rollout goes smoothly.|The rollout is slow and confusing.;;"
+                    + "Send it to the states to distribute|Homeland Security secretary|h|0.6|pandend=1 health=0.15|pandend=1 health=-0.1|The states move quickly.|A patchwork of rules confuses people.;;"
+                    + "Leave it to the private sector|Economic adviser|s|0.5|pandend=1|pandend=1 health=-0.2|Pharmacies handle it well.|Shortages and long lines.",
+            "Fast-track new power plants|Energy secretary|s|0.7|grid=-12 energy=0.15 tech=0.1|grid=-3|Permits for new plants move quickly.|Utilities say it's not enough.;;"
+                    + "Make data centers pay for their own power|Domestic policy adviser|s|0.7|grid=-8 prices=0.1 tech=-0.05|grid=-2|Utilities welcome the rule; tech firms grumble.|Tech firms lobby to kill the rule.;;"
+                    + "Let the market sort it out|Economic adviser|s|1|grid=4 prices=-0.1|grid=4|Power bills keep rising.|Power bills keep rising.",
+            "Fly out for the opening|Chief of staff|c|0.9|jobs=0.2 st:AZ=1.5 tech=0.1|jobs=0.1|You cut the ribbon to cheers.|You cut the ribbon to cheers.;;"
+                    + "Claim credit from the White House|Communications director|c|0.8|jobs=0.1 tech=0.05|perf=0|The press notes the credit-taking.|The press notes the credit-taking.;;"
+                    + "Let the company have its day|Chief of staff|s|1|perf=0|perf=0|The plant opens quietly.|The plant opens quietly."};
+
+    // ---- natural disasters ----
+    static final String[] DIS_NAME = {"hurricane", "wildfire", "tornado outbreak", "flood", "winter storm", "earthquake"};
+    static final String[] DIS_STATES = {"FL TX LA NC SC GA AL MS", "CA OR WA CO AZ NM", "OK KS MO AL TN MS AR TX", "TX MO IA KY WV LA", "TX NE MN NY MI PA", "CA OR WA AK"};
+    static final int[] DIS_M0 = {5, 5, 2, 2, 11, 0}, DIS_M1 = {10, 9, 5, 8, 1, 11};
+    static final double[] DIS_P = {0.06, 0.03, 0.035, 0.02, 0.03, 0.002};
+
+    // ---- the media ----
+    static final String[] OUT_NAME = {"The New York Times", "The Washington Post", "The Wall Street Journal", "The Associated Press", "Reuters", "CNN", "MSNBC", "Fox News", "NBC News",
+            "CBS News", "ABC News", "Politico", "Newsmax", "NPR", "The Joe Rogan Experience", "Pod Save America", "The Ben Shapiro Show", "60 Minutes"};
+    static final double[] OUT_LEAN = {-0.5, -0.5, 0.2, 0, 0, -0.4, -0.8, 0.8, -0.2, -0.1, -0.2, -0.1, 0.9, -0.4, 0.3, -0.8, 0.8, -0.1};
+    static final double[] OUT_AUD = {10, 6, 4, 20, 10, 5, 3, 6, 8, 7, 8, 3, 2, 8, 15, 2, 3, 9};
+    static final boolean[] OUT_SIT = {false, false, false, false, false, true, true, true, true, true, true, false, true, false, true, true, true, true};   // takes sit-down interviews
+    static final String[] FAC_D = {"Progressives", "Moderates"}, FAC_R = {"MAGA populists", "Traditional conservatives"};
+    static final double[] FAC_E_D = {-0.7, -0.2}, FAC_C_D = {-0.6, -0.2}, FAC_E_R = {0.3, 0.7}, FAC_C_R = {0.8, 0.4};
+    static final String[] OPP_STRAT = {"Cooperate where they can", "Pick their fights", "Obstruct everything"};
+    static final String[] POST_TONE = {"Celebrate a win", "Explain a policy", "Hit the other side", "Something personal", "A joke"};
+    static final String[] SPEECH_OPEN = {"Speak to every American", "Fire up your base", "Level with the country", "Open with a joke"};
+    static final String[] SPEECH_CLOSE = {"An optimistic vision", "A call to action", "A warning about the stakes"};
+
+    static final class Home implements Serializable {
+        private static final long serialVersionUID = 1L;
+        double crime = 100, od = 80, protest = 20, grid = 35, press = 50;
+        double recE, recC, recW;                       // the record: where your actions have landed, on average
+        double[] fac = {60, 60};
+        int opp = 1, oppWeek;
+        int pand, pandWeek = -1, pandSlow, pandFast, deaths;
+        double pandSev = 1;
+        int[] cool = new int[EV_ID.length];
+        double followers = 30;
+        int posts, postWeek = -1, postsThisWeek, pressers, interviews, speeches, polls, sotuYear = -1, lastPresser = -9, lastInterview = -9, lastAddress = -9;
+        double[] tone = new double[OUT_NAME.length];
+        List<String> disasters = new ArrayList<String>(), brief = new ArrayList<String>();
+        String lastPoll;
+        // a speech, a press conference or an interview in progress
+        int spType = -1, spStep, spOpen, spIssue = -1, spAttack;
+        double spScore;
+        int qaType = -1, qaStep, qaOutlet;
+        double qaScore;
+        String[] qaTopic = new String[3];
+        int disState = -1, disKind, disSev;
+    }
+
+    static final class HomeFront {
+        static void setup(Game g) {
+            Home h = new Home();
+            g.home = h;
+            if (g.era.year >= 2029) { h.crime = 90; h.od = 55; h.grid = 50; }
+            h.followers = g.pres != null ? 10 + g.pres.a[A_SMD] * 0.5 : 30;
+            for (int i = 0; i < h.tone.length; i++) h.tone[i] = toneTarget(g, i);
+            for (int i = 0; i < EV_ID.length; i++) h.cool[i] = 6 + i % 7;
+        }
+
+        static double toneTarget(Game g, int o) {
+            Home h = g.home;
+            double side = g.party == REP ? 1 : -1;
+            return clamp(50 + OUT_LEAN[o] * side * 32 + (g.approval - 45) * 0.4 + (h.press - 50) * 0.3, 5, 95);
+        }
+
+        static String[] factions(Game g) { return g.party == DEM ? FAC_D : FAC_R; }
+
+        /** Records where an action lands, for your party's two wings. */
+        static void act(Game g, double econ, double cult, double w) {
+            Home h = g.home;
+            if (h == null) return;
+            h.recE = (h.recE * h.recW + econ * w) / (h.recW + w);
+            h.recC = (h.recC * h.recW + cult * w) / (h.recW + w);
+            h.recW = Math.min(12, h.recW + w);
+        }
+
+        static double var(Game g, String k) {
+            Home h = g.home;
+            Econ e = g.econ;
+            if (k.equals("month")) return dateOf(g.day())[1] + 1;
+            if (k.equals("crimeidx")) return h.crime; if (k.equals("od")) return h.od; if (k.equals("protest")) return h.protest; if (k.equals("grid")) return h.grid;
+            if (k.equals("pand")) return h.pand; if (k.equals("pandw")) return h.pandWeek < 0 ? 99 : g.week - h.pandWeek;
+            if (k.equals("ai")) return g.era.ai ? 1 : 0; if (k.equals("infl")) return e.infl; if (k.equals("app")) return g.approval;
+            return g.world != null ? Diplo.var(g, k) : 0;
+        }
+
+        static boolean cond(Game g, String c) {
+            if (c.isEmpty()) return true;
+            for (String t : c.split(",")) {
+                if (t.startsWith("p=")) { if (g.rng.nextDouble() >= Double.parseDouble(t.substring(2))) return false; continue; }
+                int i = t.indexOf('>'), j = t.indexOf('<');
+                if (i > 0) { if (!(var(g, t.substring(0, i)) > Double.parseDouble(t.substring(i + 1)))) return false; }
+                else if (j > 0) { if (!(var(g, t.substring(0, j)) < Double.parseDouble(t.substring(j + 1)))) return false; }
+            }
+            return true;
+        }
+
+        static void week(Game g) {
+            Home h = g.home;
+            Random r = g.rng;
+            Econ e = g.econ;
+            double yrs = g.week / 52.0;
+            // crime and overdoses
+            double crT = (g.era.year >= 2029 ? 90 : 100) - 2.5 * Math.min(yrs, 3) + (e.unemp - 4.3) * 3 + (h.protest - 30) * 0.05;
+            h.crime = clamp(h.crime + (crT - h.crime) * 0.012 + r.nextGaussian() * 0.35, 60, 160);
+            double odT = (g.era.year >= 2029 ? 55 : 80) * Math.pow(0.93, Math.min(yrs, 4)) + (g.world != null ? (g.world.cartel - 55) * 0.25 : 0);
+            h.od = clamp(h.od + (odT - h.od) * 0.01 + r.nextGaussian() * 0.25, 20, 150);
+            g.issueAdj[PI_CRIME] = clamp(g.issueAdj[PI_CRIME] - (h.crime - 97) * 0.0002, -1.5, 1.5);
+            // protest, the grid, the press
+            h.protest = clamp(h.protest + (20 + Math.max(0, 45 - g.approval) * 0.6 - h.protest) * 0.05 + r.nextGaussian() * 1.2, 0, 100);
+            h.grid = clamp(h.grid + (30 + (e.aiInvest - 100) * 0.25 - h.grid) * 0.01 + r.nextGaussian() * 0.6, 0, 100);
+            h.press = clamp(h.press + (50 + (Cabinet.sq(g, S_PRESS) - 0.6) * 30 - h.press) * 0.03, 0, 100);
+            for (int i = 0; i < h.tone.length; i++) h.tone[i] += (toneTarget(g, i) - h.tone[i]) * 0.05;
+            // the party's wings
+            double[] fe = g.party == DEM ? FAC_E_D : FAC_E_R, fc = g.party == DEM ? FAC_C_D : FAC_C_R;
+            for (int f = 0; f < 2; f++) {
+                double dist = h.recW < 0.5 ? 0.3 : Math.sqrt(Math.pow(h.recE - fe[f], 2) + Math.pow(h.recC - fc[f], 2));
+                double t = 68 - 34 * dist + (g.approval - 45) * 0.5;
+                h.fac[f] = clamp(h.fac[f] + (t - h.fac[f]) * 0.03 + r.nextGaussian() * 0.5, 0, 100);
+            }
+            for (Bloc b : g.cong.blocs) {
+                if (b.party != g.party) continue;
+                boolean wing = b.name.contains("Progressive") || b.name.contains("Freedom") || b.name.contains("Hardliners");
+                b.rel = clamp(b.rel + (h.fac[wing ? 0 : 1] - 55) * 0.006, 0, 100);
+            }
+            // the opposition picks a strategy every quarter
+            if (g.week - h.oppWeek >= 13) {
+                h.oppWeek = g.week;
+                int s = g.approval < 43 ? 2 : g.approval > 55 ? 0 : 1;
+                if (Midterms.season(g) || g.week > 170) s = Math.min(2, s + 1);
+                if (s != h.opp) g.log(NK_INFO, "The " + PARTY[Hill.other(g.party)].toLowerCase() + " opposition's new strategy: " + OPP_STRAT[s].toLowerCase(), null, 0.9);
+                h.opp = s;
+            }
+            for (Bloc b : g.cong.blocs) if (b.party != g.party) b.rel = clamp(b.rel + (1 - h.opp) * 0.06, 0, 100);
+            if (h.opp == 2 && r.nextDouble() < 0.04) {
+                int w = worstIssue(g);
+                g.issueAdj[w] = clamp(g.issueAdj[w] - 0.05, -1.5, 1.5);
+                g.log(NK_BAD, PARTIES[Hill.other(g.party)] + " hammer you on " + PISSUE[w].toLowerCase(), null, 1.0);
+            }
+            // the pandemic
+            pandemic(g);
+            // disasters and events
+            disasters(g);
+            for (int i = 0; i < h.cool.length; i++) if (h.cool[i] > 0) h.cool[i]--;
+            events(g);
+            // the State of the Union
+            int[] d = dateOf(g.day());
+            boolean sotu = g.week < 52 ? Economy.weekHas(g, 1, 25) : Economy.weekHas(g, 1, 4);
+            if (sotu && h.sotuYear != d[0] && h.spType < 0) { h.sotuYear = d[0]; Speech.start(g, 1); }
+            brief(g);
+        }
+
+        static int worstIssue(Game g) { int w = 0; for (int i = 1; i < NPI; i++) if (g.issueApp[i] * g.issueSal[i] - 45 * g.issueSal[i] < g.issueApp[w] * g.issueSal[w] - 45 * g.issueSal[w]) w = i; return w; }
+
+        static void pandemic(Game g) {
+            Home h = g.home;
+            Random r = g.rng;
+            if (h.pand == 0 && r.nextDouble() < 0.0006) { h.pand = 1; h.pandWeek = g.week; h.pandSev = 0.6 + r.nextDouble(); g.log(NK_WORLD, "Health officials track a new virus spreading abroad", null, 1.6); return; }
+            if (h.pand == 1 && g.week - h.pandWeek > 2 && r.nextDouble() < (h.pandSlow > 0 ? 0.05 : 0.14)) { h.pand = 2; h.pandWeek = g.week; g.log(NK_BIG, "THE NEW VIRUS IS SPREADING IN THE UNITED STATES", null, 4); }
+            if (h.pand == 1 && g.week - h.pandWeek > 20) { h.pand = 0; g.log(NK_GOOD, "The overseas outbreak burns out", null, 1.2); }
+            if (h.pand == 2) {
+                double hq = Cabinet.pq(g, P_HHS) * 0.5 + g.ex.ready[P_HHS] / 200;
+                g.econ.demandShock -= 0.05 * h.pandSev * (h.pandSlow > 0 ? 1.2 : 0.8);
+                g.issueSal[PI_HEALTH] = Math.min(2, g.issueSal[PI_HEALTH] + 0.03);
+                g.issueAdj[PI_HEALTH] = clamp(g.issueAdj[PI_HEALTH] + (hq - 0.55) * 0.02, -1.5, 1.5);
+                h.deaths += (int) Math.round((800 + r.nextInt(600)) * h.pandSev * (1.4 - hq) * (h.pandSlow > 0 ? 0.7 : 1));
+                g.stress = Math.min(100, g.stress + 1.5);
+                int len = h.pandFast > 0 ? 26 : 40;
+                if (g.week - h.pandWeek > len) { h.pand = 3; g.log(NK_BIG, "THE PANDEMIC IS WANING", "About " + String.format("%,d", h.deaths) + " Americans have died.", 3.5); }
+            }
+        }
+
+        static void disasters(Game g) {
+            Home h = g.home;
+            Random r = g.rng;
+            int m = dateOf(g.day())[1];
+            for (int k = 0; k < DIS_NAME.length; k++) {
+                boolean season = DIS_M0[k] <= DIS_M1[k] ? m >= DIS_M0[k] && m <= DIS_M1[k] : m >= DIS_M0[k] || m <= DIS_M1[k];
+                double p = DIS_P[k] * (k == 0 && m >= 7 && m <= 9 ? 1.6 : 1);
+                if (!season || r.nextDouble() > p) continue;
+                String[] st = DIS_STATES[k].split(" ");
+                int s = stateIdx(st[r.nextInt(st.length)]);
+                int sev = 1 + (r.nextDouble() < 0.5 ? 0 : r.nextDouble() < 0.5 ? 1 : r.nextDouble() < 0.6 ? 2 : 3);
+                h.disState = s; h.disKind = k; h.disSev = sev;
+                String what = (k == 0 ? "A Category " + (sev + 1) + " hurricane" : sev >= 3 ? "A catastrophic " + DIS_NAME[k] : sev == 2 ? "A severe " + DIS_NAME[k] : "A " + DIS_NAME[k]) + " strikes " + STATES[s].name;
+                h.disasters.add(dateStr(g.day()) + ": " + what);
+                g.log(sev >= 3 ? NK_BIG : NK_BAD, sev >= 3 ? what.toUpperCase() : what, null, 1 + sev * 0.7);
+                if (sev >= 2) {
+                    Decision d = Decisions.add(g, D_DISASTER, what, "The governor has asked for a federal disaster declaration. FEMA is " + (g.ex.ready[P_DHS] >= 60 ? "ready to move." : "stretched thin."),
+                            new String[]{"Declare a major disaster and go there yourself", "Declare a major disaster and send the vice president", "Let FEMA handle it"},
+                            new String[]{"Chief of staff: \"People need to see you there.\"", "Homeland Security secretary: \"Your visit ties up resources for a day. The vice president can go.\"", "Budget director: \"FEMA knows what it's doing.\""});
+                    d.a = s; d.b = sev;
+                }
+                return;
+            }
+        }
+
+        static void disasterDecision(Game g, Decision d, int k) {
+            int s = d.a, sev = d.b;
+            double q = (Cabinet.pq(g, P_DHS) + g.ex.ready[P_DHS] / 100) / 2;
+            boolean good = g.rng.nextDouble() < 0.35 + q * 0.6;
+            g.econ.fiscal += 0.004 * sev * (k < 2 ? 1 : 0.6);
+            if (k == 0) { g.stamina = Math.max(0, g.stamina - 5); g.stateBump[s] += 1.5 * sev * (good ? 1 : 0.3); g.perf += good ? 0.4 : -0.2; }
+            else if (k == 1) { g.stateBump[s] += 0.8 * sev * (good ? 1 : 0.3); }
+            else { g.stateBump[s] -= good ? 0 : sev * 0.8; }
+            if (good) g.log(NK_GOOD, "FEMA's response in " + STATES[s].name + " wins praise from the governor", null, 1.0);
+            else {
+                g.log(NK_BAD, "Victims in " + STATES[s].name + " say federal help is too slow", null, 1.6);
+                g.perf -= 0.3 * sev;
+                if (sev >= 3) Trouble.add(g, SK_FAILURE, "The disaster response in " + STATES[s].name, "Survivors are still waiting for help weeks later.", 1.5 + sev * 0.5, null, false);
+            }
+        }
+
+        static void events(Game g) {
+            Home h = g.home;
+            for (int i = 0; i < EV_ID.length; i++) {
+                if (h.cool[i] > 0) continue;
+                if (!cond(g, EV_COND[i])) continue;
+                h.cool[i] = EV_COOL[i];
+                if (EV_ID[i].equals("violence") || EV_ID[i].equals("fed_bldg")) g.stress = Math.min(100, g.stress + 5);
+                if (EV_ID[i].equals("police")) h.protest = Math.min(100, h.protest + 25);
+                if (EV_ID[i].equals("strike")) g.econ.supplyShock += 0.05;
+                g.log(NK_BAD, EV_TITLE[i], null, 1.8);
+                String[] opts = EV_OPTS[i].split(";;");
+                String[] lab = new String[opts.length], adv = new String[opts.length];
+                for (int k = 0; k < opts.length; k++) {
+                    String[] t = opts[k].split("\\|");
+                    lab[k] = t[0];
+                    adv[k] = t[1] + ": \"" + Diplo.odds(g, t[2], Double.parseDouble(t[3])) + "\"";
+                }
+                Decision d = Decisions.add(g, D_HOME, EV_TITLE[i], EV_BODY[i], lab, adv);
+                d.a = i;
+                return;
+            }
+        }
+
+        static void eventDecision(Game g, int i, int k) {
+            String[] t = EV_OPTS[i].split(";;")[k].split("\\|");
+            boolean ok = g.rng.nextDouble() < Diplo.p(g, t[2], Double.parseDouble(t[3]));
+            Diplo.fx(g, ok ? t[4] : t[5]);
+            g.log(ok ? NK_GOOD : NK_BAD, ok ? t[6] : t[7], null, 1.4);
+            if (Double.parseDouble(t[3]) < 1) Decisions.info(g, ok ? "It worked" : "It didn't go as hoped", ok ? t[6] : t[7]);
+        }
+
+        /** The President's Daily Brief: what the intelligence community and your staff want you to know this week. */
+        static void brief(Game g) {
+            Home h = g.home;
+            World w = g.world;
+            List<String> b = new ArrayList<String>();
+            if (w != null) {
+                if (w.twStage >= 2) b.add("3|TAIWAN: The PLA is " + (w.twStage >= 3 ? "enforcing a " + TW_STAGE[w.twStage].toLowerCase() : "drilling around the island") + ". Our deterrence index is " + Math.round(w.deter) + ".");
+                else if (w.twt > 45) b.add("2|CHINA: Pressure on Taiwan is building: more incursions into its air-defense zone.");
+                if (w.uaStage == 2) b.add((w.ukr < 35 ? "3" : "2") + "|UKRAINE: " + (w.ukr < 35 ? "Ukrainian lines are under severe strain." : "The front is grinding but holding.") + " Talks index " + Math.round(w.talks) + ".");
+                if (w.iran > 80) b.add("3|IRAN: Enrichment is near weapons grade. Breakout could be weeks away.");
+                else if (w.iran > 60) b.add("2|IRAN: Enrichment continues at a steady pace.");
+                if (w.redsea > 55) b.add("2|RED SEA: Houthi attacks on shipping are rising; insurers are raising rates.");
+                if (w.proxy > 55) b.add("2|IRAQ AND SYRIA: Militias are planning more attacks on US bases.");
+                if (w.nk > 70) b.add("2|NORTH KOREA: Activity at the nuclear test site.");
+                if (w.terror > 50) b.add("3|TERRORISM: Increased chatter about plots against Americans.");
+                if (w.cyber > 55) b.add("2|CYBER: Ransomware groups are probing pipelines and hospitals.");
+            }
+            if (h.pand == 1) b.add("3|HEALTH: A new virus is spreading abroad. Its severity is still unclear.");
+            if (h.pand == 2) b.add("3|HEALTH: The virus is spreading here. About " + String.format("%,d", h.deaths) + " deaths so far.");
+            if (h.grid > 55) b.add("1|ENERGY: The grid has little spare capacity; a heat wave or a storm could cause blackouts.");
+            if (h.od > 85) b.add("2|FENTANYL: Overdose deaths are rising again.");
+            if (h.protest > 55) b.add("1|DOMESTIC: Protests are expected in several cities this weekend.");
+            if (b.isEmpty()) b.add("1|A quiet week. Nothing urgent overnight.");
+            h.brief = b;
+        }
+    }
+    // =====================================================================
+    //  35.  THE BULLY PULPIT: speeches built line by line, press conferences, interviews, social media and polls
+    // =====================================================================
+    static String commas(long v) {
+        String s = String.valueOf(Math.abs(v));
+        StringBuilder b = new StringBuilder();
+        for (int i = 0; i < s.length(); i++) { if (i > 0 && (s.length() - i) % 3 == 0) b.append(','); b.append(s.charAt(i)); }
+        return (v < 0 ? "-" : "") + b;
+    }
+
+    static final class Speech {
+        /** type 0: an Oval Office address on an issue; 1: the State of the Union. */
+        static void start(Game g, int type) {
+            Home h = g.home;
+            h.spType = type; h.spStep = 0; h.spScore = 0; h.spAttack = 0; h.spIssue = -1;
+            String t = type == 1 ? (g.week < 52 ? "Your address to a joint session of Congress" : "The State of the Union") : "An address from the Oval Office";
+            Decision d = Decisions.add(g, D_SPEECH, t + ": the opening", (type == 1 ? "Tonight you speak to Congress and about 30 million Americans. " : "The networks have given you fifteen minutes in prime time. ") + "Your speechwriters have drafts of every line. How do you open?",
+                    SPEECH_OPEN, new String[]{"Communications director: \"Unity plays well with independents.\"", "Political director: \"Give our people something to cheer.\"",
+                            "Chief of staff: \"Honesty about the hard parts earns trust.\"", "Press secretary: \"A good laugh up top relaxes the room.\""});
+            d.a = 0;
+        }
+
+        static void step(Game g, int k) {
+            Home h = g.home;
+            Cand p = g.pres;
+            double spe = p.a[A_SPE] / 70.0;
+            Random r = g.rng;
+            if (h.spStep == 0) {
+                h.spOpen = k;
+                h.spScore += k == 3 ? (p.a[A_CHA] - 55) / 20.0 + r.nextGaussian() * 0.6 : 0.4;
+                h.spStep = 1;
+                lines(g);
+            } else if (h.spStep >= 1 && h.spStep <= 3) {
+                int code = k;
+                int issue = code / 4, kind = code % 4;     // kind 0 record, 1 plan, 2 attack, 3 push a bill
+                if (kind == 3) {
+                    for (Bill b : g.cong.bills) if (b.ours && b.stage >= ST_COMMITTEE && b.stage <= ST_FLOOR2) { b.publicPush = true; g.issueSal[b.def().area] = Math.min(2, g.issueSal[b.def().area] + 0.1); h.spScore += 0.4; break; }
+                } else {
+                    g.issueSal[issue] = Math.min(2, g.issueSal[issue] + 0.08 * (h.spType == 1 ? 1.5 : 1));
+                    double rec = (g.issueApp[issue] - 48) / 10;
+                    if (kind == 0) h.spScore += rec * 0.5;
+                    else if (kind == 1) { h.spScore += 0.3; g.issueAdj[issue] = clamp(g.issueAdj[issue] + 0.05 * spe, -1.5, 1.5); }
+                    else { h.spAttack++; h.spScore += h.spOpen == 1 ? 0.5 : h.spOpen == 0 ? -0.5 : 0; }
+                    if (h.spIssue < 0) h.spIssue = issue;
+                }
+                h.spStep++;
+                if (h.spStep <= 3) lines(g);
+                else {
+                    Decision d = Decisions.add(g, D_SPEECH, "The close", "Your speechwriters have three endings. Which one do you deliver?", SPEECH_CLOSE,
+                            new String[]{"Communications director: \"Leave them hopeful.\"", "Legislative director: \"Tell them exactly what to ask Congress for.\"", "Political director: \"Make them feel what's at stake.\""});
+                    d.a = 1;
+                }
+            } else {
+                h.spScore += k == 0 ? (h.spOpen == 1 ? -0.2 : 0.5) : k == 1 ? 0.4 : (h.spOpen == 1 ? 0.6 : 0.1);
+                finish(g);
+            }
+        }
+
+        static void lines(Game g) {
+            Home h = g.home;
+            Integer[] iss = new Integer[NPI];
+            for (int i = 0; i < NPI; i++) iss[i] = i;
+            final Game gg = g;
+            Arrays.sort(iss, (a, b) -> Double.compare(gg.issueSal[b], gg.issueSal[a]));
+            int a = iss[(h.spStep - 1) * 2 % NPI], b = iss[((h.spStep - 1) * 2 + 1) % NPI];
+            List<String> lab = new ArrayList<String>();
+            List<Integer> codes = new ArrayList<Integer>();
+            lab.add("Your record on " + PISSUE[a].toLowerCase() + " (" + Math.round(g.issueApp[a]) + "% approve)"); codes.add(a * 4);
+            lab.add("A new plan on " + PISSUE[b].toLowerCase()); codes.add(b * 4 + 1);
+            lab.add("Take the fight to the other side on " + PISSUE[a].toLowerCase()); codes.add(a * 4 + 2);
+            for (Bill bl : g.cong.bills) if (bl.ours && bl.stage >= ST_COMMITTEE && bl.stage <= ST_FLOOR2 && !bl.publicPush) { lab.add("Ask Congress to pass " + bl.name); codes.add(3); break; }
+            Decision d = Decisions.add(g, D_SPEECH, "Line " + h.spStep + " of 3", "What comes next?", lab.toArray(new String[0]), null);
+            d.codes = new int[codes.size()];
+            for (int i = 0; i < d.codes.length; i++) d.codes[i] = codes.get(i);
+        }
+
+        static void finish(Game g) {
+            Home h = g.home;
+            Cand p = g.pres;
+            double spe = p.a[A_SPE] / 70.0;
+            boolean sotu = h.spType == 1;
+            double score = h.spScore * spe + (p.a[A_SPE] - 60) / 25.0 + g.rng.nextGaussian() * 0.5;
+            double k = sotu ? 1.4 : 1.0;
+            g.perf += clamp(score, -2, 3) * 0.5 * k;
+            if (h.spAttack > 0) { for (Bloc b : g.cong.blocs) b.rel = clamp(b.rel + (b.party == g.party ? 1.5 : -2.5) * h.spAttack, 0, 100); h.fac[0] = Math.min(100, h.fac[0] + 2 * h.spAttack); }
+            else for (Bloc b : g.cong.blocs) if (b.party != g.party) b.rel = Math.min(100, b.rel + 1);
+            h.speeches++;
+            if (!sotu) h.lastAddress = g.week;
+            g.stamina = Math.max(0, g.stamina - 3);
+            String verdict = score > 1.5 ? "a triumph" : score > 0.5 ? "a solid success" : score > -0.5 ? "unremarkable" : "a flop";
+            String head = (sotu ? "Critics call the State of the Union " : "Critics call the address ") + verdict;
+            int ov = sotu ? (int) Math.round(clamp(30 + score * 12 + (h.spAttack > 0 ? 6 : 0), 5, 90)) : 0;
+            g.log(score > 0.5 ? NK_GOOD : score < -0.5 ? NK_BAD : NK_INFO, head, sotu ? ov + " standing ovations; the other party sat on its hands for most of them." : null, sotu ? 3 : 1.8);
+            Decisions.info(g, sotu ? "After the speech" : "After the address", head + "." + (sotu ? " You drew " + ov + " standing ovations." : "") + " Your speechwriters say your delivery " + (p.a[A_SPE] >= 70 ? "carried it." : p.a[A_SPE] >= 55 ? "was steady." : "let some lines fall flat."));
+            h.spType = -1;
+        }
+    }
+
+    /** Press conferences and interviews: three questions each. */
+    static final class QA {
+        static final String[] ANSWERS = {"Answer it straight", "Pivot to your message", "Push back on the premise", "Make news: announce something"};
+
+        static String reporter(Game g, int outlet, int n) {
+            Random r = new Random(g.set.seed * 13 + outlet * 101 + n);
+            boolean f = r.nextDouble() < 0.5;
+            return (f ? FIRST_F[r.nextInt(FIRST_F.length)] : FIRST_M[r.nextInt(FIRST_M.length)]) + " " + LASTS[r.nextInt(LASTS.length)];
+        }
+
+        static List<String> topics(Game g) {
+            List<String> t = new ArrayList<String>();
+            for (Scandal s : g.ex.scandals) if (!s.over && s.severity >= 2) { t.add("about " + s.title.toLowerCase()); break; }
+            if (g.econ.infl > 3) t.add("about prices: inflation is " + fmt1(g.econ.infl) + "%");
+            if (g.econ.unemp > 5) t.add("about jobs: unemployment is " + fmt1(g.econ.unemp) + "%");
+            World w = g.world;
+            if (w != null && w.twStage >= 2) t.add("about China's pressure on Taiwan");
+            if (w != null && w.uaStage == 2) t.add("about the war in Ukraine");
+            if (w != null && w.iran > 75) t.add("about Iran's nuclear program");
+            for (Bill b : g.cong.bills) if (b.ours && b.stage >= ST_COMMITTEE && b.stage <= ST_FLOOR2) { t.add("about " + b.name + " in Congress"); break; }
+            int worst = HomeFront.worstIssue(g);
+            t.add("about " + PISSUE[worst].toLowerCase() + ", where you're weakest");
+            t.add("about your approval rating, " + Math.round(g.approval) + "%");
+            t.add("about your health and stamina");
+            return t;
+        }
+
+        /** type 0: a press conference; 1: an interview with one outlet. */
+        static void start(Game g, int type, int outlet) {
+            Home h = g.home;
+            h.qaType = type; h.qaStep = 0; h.qaScore = 0; h.qaOutlet = outlet;
+            List<String> t = topics(g);
+            for (int i = 0; i < 3; i++) h.qaTopic[i] = t.get(Math.min(i, t.size() - 1));
+            if (t.size() > 3) { Collections.shuffle(t, new Random(g.week * 7 + type)); for (int i = 0; i < 3; i++) h.qaTopic[i] = t.get(i); }
+            g.stamina = Math.max(0, g.stamina - (type == 0 ? 3 : 2));
+            ask(g);
+        }
+
+        static void ask(Game g) {
+            Home h = g.home;
+            int o = h.qaType == 1 ? h.qaOutlet : new int[]{3, 7, 0, 5, 2, 11, 9}[(g.week + h.qaStep * 3) % 7];
+            String who = h.qaType == 1 ? (OUT_NAME[o].startsWith("The ") ? "The host" : "The interviewer") : reporter(g, o, h.qaStep + g.week) + " of " + OUT_NAME[o];
+            String q = h.qaTopic[h.qaStep];
+            Decision d = Decisions.add(g, D_QA, (h.qaType == 0 ? "Press conference: question " : "Interview with " + OUT_NAME[o] + ": question ") + (h.qaStep + 1) + " of 3",
+                    who + " asks " + q + ".", ANSWERS,
+                    new String[]{"Press secretary: \"Simple and honest. They respect that.\"", "Communications director: \"Get back to what we want to talk about.\"", "Political director: \"Don't accept their framing.\"", "Chief of staff: \"Give them a headline of our choosing.\""});
+            d.a = o;
+        }
+
+        static void answer(Game g, Decision d, int k) {
+            Home h = g.home;
+            Cand p = g.pres;
+            Random r = g.rng;
+            int o = d.a;
+            double side = g.party == REP ? 1 : -1;
+            double hostile = Math.max(0, -OUT_LEAN[o] * side);
+            double skill = k == 0 ? p.a[A_INT] : k == 1 ? p.a[A_DIS] : k == 2 ? p.a[A_DEB] : p.a[A_CHA];
+            double pOk = clamp(0.35 + (skill - 55) / 80 - hostile * 0.2, 0.1, 0.92);
+            boolean ok = r.nextDouble() < pOk;
+            h.qaScore += ok ? (k == 2 ? 0.6 : k == 3 ? 0.8 : 0.5) * (1 + hostile * 0.5) : (k == 3 ? -1.0 : -0.6);
+            if (k == 2) { h.press = clamp(h.press - 2, 0, 100); h.fac[0] = Math.min(100, h.fac[0] + 1); }
+            if (k == 3 && ok) { int i = Week.topIssue(g); g.issueSal[i] = Math.min(2, g.issueSal[i] + 0.1); g.issueAdj[i] = clamp(g.issueAdj[i] + 0.05, -1.5, 1.5); }
+            if (!ok && p.a[A_DIS] < 55 && r.nextDouble() < 0.4) { g.log(NK_BAD, "A gaffe at the " + (h.qaType == 0 ? "press conference" : "interview") + " dominates the news", null, 1.8); h.qaScore -= 0.6; }
+            h.qaStep++;
+            if (h.qaStep < 3) { ask(g); return; }
+            double s = h.qaScore + g.rng.nextGaussian() * 0.3;
+            double k2 = h.qaType == 1 ? OUT_AUD[h.qaOutlet] / 8.0 : 1.2;
+            g.perf += clamp(s, -2, 2.5) * 0.35 * Math.min(1.6, k2);
+            h.press = clamp(h.press + (h.qaType == 0 ? 2 : 0.5), 0, 100);
+            if (h.qaType == 0) { h.pressers++; h.lastPresser = g.week; } else { h.interviews++; h.lastInterview = g.week; if (hostile > 0.3 && s > 0) for (int gi : new int[]{21, 4}) groupBump(g, gi, 0.5); }
+            String verdict = s > 1.5 ? "sharp and in command" : s > 0.3 ? "steady" : s > -0.8 ? "uneven" : "rattled";
+            g.log(s > 0.3 ? NK_GOOD : NK_BAD, "Reviews of the president's " + (h.qaType == 0 ? "press conference" : "interview with " + OUT_NAME[h.qaOutlet]) + ": " + verdict, null, 1.5);
+            Decisions.info(g, h.qaType == 0 ? "After the press conference" : "After the interview", "The verdict: " + verdict + ".");
+            h.qaType = -1;
+        }
+    }
+
+    static final class Social {
+        static String post(Game g, int issue, int tone) {
+            Home h = g.home;
+            Cand p = g.pres;
+            Random r = g.rng;
+            if (h.postWeek != g.week) { h.postWeek = g.week; h.postsThisWeek = 0; }
+            if (h.postsThisWeek >= 5) return "Your staff take your phone away: five posts a week is plenty.";
+            h.postsThisWeek++; h.posts++;
+            double reach = (p.a[A_SMD] / 70.0) * (1 - 0.15 * (h.postsThisWeek - 1));
+            double risk = (tone >= 2 ? 0.08 : 0.02) + Math.max(0, 60 - p.a[A_DIS]) / 300.0;
+            if (r.nextDouble() < risk) {
+                g.perf -= 0.5;
+                g.log(NK_BAD, "The president's post " + (tone == 4 ? "falls flat and" : "") + " sets off a backlash", null, 1.5);
+                return "It backfired. The post is the story of the day, and not in a good way.";
+            }
+            h.followers += 0.15 * reach;
+            switch (tone) {
+                case 0: g.perf += 0.12 * reach; g.issueAdj[issue] = clamp(g.issueAdj[issue] + 0.02 * reach, -1.5, 1.5); break;
+                case 1: g.issueAdj[issue] = clamp(g.issueAdj[issue] + 0.03 * reach, -1.5, 1.5); break;
+                case 2: h.fac[0] = Math.min(100, h.fac[0] + 1.5 * reach); for (Bloc b : g.cong.blocs) if (b.party != g.party) b.rel = Math.max(0, b.rel - 1); g.issueSal[issue] = Math.min(2, g.issueSal[issue] + 0.04); break;
+                case 3: g.perf += 0.08 * reach; groupBump(g, 0, 0.2 * reach); break;
+                default: g.perf += 0.1 * reach * (p.a[A_CHA] / 70.0); groupBump(g, 0, 0.3 * reach); break;
+            }
+            g.issueSal[issue] = Math.min(2, g.issueSal[issue] + 0.03);
+            return "Posted. " + (reach > 0.9 ? "It's everywhere within the hour." : reach > 0.6 ? "It gets solid engagement." : "It gets a modest response.");
+        }
+    }
+
+    static final class Polls {
+        static String commission(Game g, int issue) {
+            Home h = g.home;
+            if (g.funds < 0.5) return "Your party can't pay for a poll right now ($500,000).";
+            g.funds -= 0.5; h.polls++;
+            StringBuilder b = new StringBuilder("Your pollster's numbers on " + PISSUE[issue].toLowerCase() + ": " + Math.round(g.issueApp[issue]) + "% approve. ");
+            int[] gs = {21, 4, 5, 0, 1, 12, 10, 8, 9, 22};
+            double base = g.issueApp[issue] - g.approval;
+            for (int i = 0; i < gs.length; i++) b.append(i > 0 ? ", " : "By group: ").append(GROUP[gs[i]]).append(" ").append(Math.round(clamp(g.groupApp[gs[i]] + base, 2, 98))).append("%");
+            b.append(". It matters to ").append(g.issueSal[issue] > 1 ? "a lot of" : g.issueSal[issue] > 0.6 ? "many" : "relatively few").append(" voters right now.");
+            h.lastPoll = b.toString();
+            return h.lastPoll;
+        }
+    }
+    // =====================================================================
+    //  36.  THE PRESS BRIEFING ROOM: the press, speeches, social media, your party and the home front
+    // =====================================================================
+    static final class PressRoom {
+        static int tab, outlet = 14, pIssue = PI_ECON, pTone = 0, aIssue = PI_ECON, pollIssue = PI_ECON;
+        static String msg;
+        static final String[] TABS = {"The press", "Speeches", "Social media", "Your party", "The home front"};
+
+        static void draw(ResoluteDesk u, Graphics2D g, Game game) {
+            if (game.home == null) HomeFront.setup(game);
+            u.segmented(g, 48, 116, 760, 30, TABS, tab, i -> { tab = i; msg = null; }, null);
+            if (msg != null) textFit(g, msg, 830, 137, DW - 880, F_XS, C_GOLD);
+            switch (tab) {
+                case 1: speeches(u, g, game); break;
+                case 2: social(u, g, game); break;
+                case 3: party(u, g, game); break;
+                case 4: home(u, g, game); break;
+                default: press(u, g, game); break;
+            }
+        }
+
+        static String[] issues() { String[] s = new String[NPI]; for (int i = 0; i < NPI; i++) s[i] = PISSUE[i]; return s; }
+
+        // ---- the press ----
+        static void press(ResoluteDesk u, Graphics2D g, Game game) {
+            Home h = game.home;
+            u.panel(g, 48, 160, 760, 652, "The press corps");
+            text(g, "Outlet", 66, 196, F_TB, C_FAINT); text(g, "Audience", 330, 196, F_TB, C_FAINT); text(g, "Coverage of you", 430, 196, F_TB, C_FAINT);
+            double y = 212;
+            for (int o = 0; o < OUT_NAME.length; o++) {
+                text(g, OUT_NAME[o], 66, y + 14, F_XS, Color.white);
+                text(g, Math.round(OUT_AUD[o]) + "M", 330, y + 14, F_XS, C_DIM);
+                bar(g, 430, y + 6, 260, 8, h.tone[o] / 100, h.tone[o] >= 60 ? C_GOOD : h.tone[o] >= 40 ? C_GOLD : C_BAD);
+                textR(g, h.tone[o] >= 60 ? "friendly" : h.tone[o] >= 40 ? "mixed" : "hostile", 790, y + 14, F_T, C_DIM);
+                y += 30;
+            }
+            text(g, "Relations with the press corps: " + Math.round(h.press) + " of 100", 66, 800, F_XS, C_TEXT);
+            double px = 822, pw = DW - 48 - px;
+            u.panel(g, px, 160, pw, 300, "Face the press");
+            Person ps = game.ex.staff[S_PRESS];
+            wrap(g, (ps != null ? "Your press secretary, " + ps.name + "," : "Your press office") + " briefs the press every day. A press conference or an interview is you, on the record, answering three questions.", px + 18, 196, pw - 36, F_XS, C_DIM);
+            boolean pc = game.week - h.lastPresser >= 2, iv = game.week - h.lastInterview >= 2;
+            u.button(g, px + 18, 246, pw - 36, 36, pc ? "Hold a press conference" : "Next press conference in a week", pc ? B_GOLD : B_OFF, pc ? () -> { QA.start(game, 0, 0); msg = null; } : null, "Three questions from the White House press corps. Costs some stamina.");
+            text(g, "Sit-down interview with", px + 18, 312, F_S, C_TEXT);
+            u.button(g, px + 200, 294, pw - 218, 28, OUT_NAME[outlet], B_NORM, () -> {
+                List<Integer> l = new ArrayList<Integer>();
+                for (int o = 0; o < OUT_NAME.length; o++) if (OUT_SIT[o]) l.add(o);
+                String[] n = new String[l.size()];
+                for (int i = 0; i < n.length; i++) n[i] = OUT_NAME[l.get(i)] + "  (" + Math.round(OUT_AUD[l.get(i)]) + "M, " + (h.tone[l.get(i)] >= 60 ? "friendly" : h.tone[l.get(i)] >= 40 ? "mixed" : "hostile") + ")";
+                u.openPopup(Math.min(u.mx, DW - 360), 200, 340, "Which outlet?", n, j -> outlet = l.get(j));
+            });
+            u.button(g, px + 18, 334, pw - 36, 36, iv ? "Do the interview" : "Next interview in a week", iv ? B_PRIMARY : B_OFF, iv ? () -> QA.start(game, 1, outlet) : null, "Hostile outlets are harder, but a good showing reaches people who don't usually like you.");
+            text(g, "Press conferences: " + h.pressers + ".  Interviews: " + h.interviews + ".", px + 18, 400, F_XS, C_DIM);
+            u.panel(g, px, 470, pw, 342, "Commission a poll");
+            text(g, "Issue", px + 18, 516, F_S, C_TEXT);
+            u.button(g, px + 90, 498, pw - 108, 28, PISSUE[pollIssue], B_NORM, () -> u.openPopup(Math.min(u.mx, DW - 320), 300, 300, "Poll on which issue?", issues(), j -> pollIssue = j));
+            u.button(g, px + 18, 538, pw - 36, 32, "Run the poll ($500,000 from the party)", game.funds >= 0.5 ? B_NORM : B_OFF, game.funds >= 0.5 ? () -> { Polls.commission(game, pollIssue); msg = "The poll results are in."; } : null);
+            if (h.lastPoll != null) wrap(g, h.lastPoll, px + 18, 594, pw - 36, F_XS, C_TEXT);
+            else wrap(g, "Your pollster breaks down how a group sees you on one issue, before you act on it.", px + 18, 594, pw - 36, F_XS, C_DIM);
+        }
+
+        // ---- speeches ----
+        static void speeches(ResoluteDesk u, Graphics2D g, Game game) {
+            Home h = game.home;
+            u.panel(g, 48, 160, 760, 652, "An address from the Oval Office");
+            wrap(g, "Ask the networks for fifteen minutes of prime time. You build the speech line by line: an opening, three passages and a close. Your speaking skill, a consistent tone and the issues you pick decide how it lands.", 66, 196, 720, F_S, C_TEXT);
+            text(g, "Topic for the first passage", 66, 270, F_S, C_TEXT);
+            u.button(g, 300, 252, 488, 28, PISSUE[aIssue], B_NORM, () -> u.openPopup(Math.min(u.mx, DW - 320), 260, 300, "Address the nation on...", issues(), j -> aIssue = j));
+            boolean can = game.week - h.lastAddress >= 8 && h.spType < 0;
+            u.button(g, 66, 300, 720, 40, can ? "Request airtime for tonight" : h.spType >= 0 ? "A speech is under way" : "The networks will give you time again in " + (8 - (game.week - h.lastAddress)) + " weeks", can ? B_GOLD : B_OFF,
+                    can ? () -> { game.issueSal[aIssue] = Math.min(2, game.issueSal[aIssue] + 0.15); Speech.start(game, 0); } : null);
+            text(g, "Speeches given: " + h.speeches, 66, 370, F_XS, C_DIM);
+            label(g, "Your speaking", 66, 420, C_GOLD);
+            Cand p = game.pres;
+            String[] n = {"Speaking", "Charisma", "Discipline", "Debate"};
+            int[] a = {A_SPE, A_CHA, A_DIS, A_DEB};
+            double y = 446;
+            for (int i = 0; i < 4; i++) { text(g, n[i], 66, y, F_XS, C_TEXT); bar(g, 200, y - 8, 400, 7, p.a[a[i]] / 100.0, WestWing.good(p.a[a[i]])); textR(g, String.valueOf(p.a[a[i]]), 640, y, F_XSB, Color.white); y += 22; }
+            double px = 822, pw = DW - 48 - px;
+            u.panel(g, px, 160, pw, 652, "The State of the Union");
+            int yr = dateOf(game.day())[0];
+            wrap(g, (h.sotuYear == yr ? "You gave this year's address." : "Each winter you address a joint session of Congress, live in prime time, to about 30 million people. It comes up on its own in late January or early February.")
+                    + " It works like an Oval Office address, with a bigger audience and the other party sitting in front of you.", px + 18, 196, pw - 36, F_S, C_TEXT);
+        }
+
+        // ---- social media ----
+        static void social(ResoluteDesk u, Graphics2D g, Game game) {
+            Home h = game.home;
+            u.panel(g, 48, 160, 760, 652, "Post");
+            text(g, "About", 66, 212, F_S, C_TEXT);
+            u.button(g, 160, 194, 628, 28, PISSUE[pIssue], B_NORM, () -> u.openPopup(Math.min(u.mx, DW - 320), 200, 300, "Post about...", issues(), j -> pIssue = j));
+            text(g, "Tone", 66, 256, F_S, C_TEXT);
+            u.segmented(g, 160, 238, 628, 28, POST_TONE, pTone, i -> pTone = i, new String[]{"Lifts your standing a little.", "Helps on the issue.", "Fires up your base; the other side digs in. Riskier.", "Humanizes you.", "Can land well with young voters, or badly."});
+            int left = h.postWeek == game.week ? 5 - h.postsThisWeek : 5;
+            u.button(g, 66, 290, 722, 40, left > 0 ? "Post it (" + left + " left this week)" : "No more posts this week", left > 0 ? B_GOLD : B_OFF, left > 0 ? () -> msg = Social.post(game, pIssue, pTone) : null);
+            wrap(g, "Your reach depends on your feel for social media and how often you post: the fifth post of the week gets less attention than the first. Undisciplined presidents set off backlashes.", 66, 360, 720, F_XS, C_DIM);
+            double px = 822, pw = DW - 48 - px;
+            u.panel(g, px, 160, pw, 652, "Your accounts");
+            text(g, fmt1(h.followers) + " million followers", px + 18, 210, F_H2, Color.white);
+            text(g, h.posts + " posts so far", px + 18, 236, F_S, C_DIM);
+            text(g, "Feel for social media: " + game.pres.a[A_SMD], px + 18, 266, F_S, C_TEXT);
+        }
+
+        // ---- your party ----
+        static void party(ResoluteDesk u, Graphics2D g, Game game) {
+            Home h = game.home;
+            u.panel(g, 48, 160, 760, 652, "Your party");
+            String[] f = HomeFront.factions(game);
+            double y = 210;
+            for (int i = 0; i < 2; i++) {
+                text(g, f[i], 66, y, F_H3, Color.white);
+                bar(g, 66, y + 10, 600, 10, h.fac[i] / 100, WestWing.good(h.fac[i]));
+                textR(g, Math.round(h.fac[i]) + " satisfied", 788, y + 20, F_SB, Color.white);
+                y += 56;
+            }
+            wrap(g, "The two wings judge you by where your laws, orders and choices have landed, and by how popular you are. Unhappy wings cool on you in Congress, and an unhappy base turns out less for the midterms.", 66, y, 720, F_XS, C_DIM);
+            y += 60;
+            String side = h.recW < 0.5 ? "You haven't done enough yet to have a record." : "Your record so far sits " + (Math.abs(h.recE) < 0.15 ? "in the center" : h.recE < 0 ? "to the left" : "to the right") + " on the economy and " + (Math.abs(h.recC) < 0.15 ? "in the center" : h.recC < 0 ? "to the left" : "to the right") + " on social issues.";
+            wrap(g, side, 66, y, 720, F_S, C_TEXT);
+            double px = 822, pw = DW - 48 - px;
+            u.panel(g, px, 160, pw, 652, "The opposition");
+            text(g, PARTIES[Hill.other(game.party)], px + 18, 206, F_H2, partyLight(Hill.other(game.party)));
+            text(g, "Strategy: " + OPP_STRAT[h.opp], px + 18, 232, F_S, h.opp == 2 ? C_BAD : h.opp == 0 ? C_GOOD : C_GOLD);
+            wrap(g, "They decide each quarter how to deal with you, mostly on your approval: a popular president gets cooperation, an unpopular one gets obstruction, and everyone gets obstruction near an election.", px + 18, 256, pw - 36, F_XS, C_DIM);
+            double yy = 320;
+            for (Member m : game.cong.members) if (m.role == RO_LEADER && m.party != game.party) {
+                Portrait.draw(g, m.face, px + 18, yy, 56, 66, u.tsec, 0, true, true);
+                text(g, m.name, px + 86, yy + 22, F_SB, Color.white);
+                text(g, m.title, px + 86, yy + 40, F_XS, C_DIM);
+                yy += 80;
+            }
+        }
+
+        // ---- the home front ----
+        static void home(ResoluteDesk u, Graphics2D g, Game game) {
+            Home h = game.home;
+            u.panel(g, 48, 160, 760, 652, "Conditions at home");
+            double y = 204;
+            SitRoom.gauge(g, "Violent crime, an index (2025 = 100)", (h.crime - 60) * 1.2, true, 66, y, 720, String.valueOf(Math.round(h.crime))); y += 40;
+            SitRoom.gauge(g, "Overdose deaths a year", h.od * 0.8, true, 66, y, 720, Math.round(h.od) + "k"); y += 40;
+            SitRoom.gauge(g, "Protest in the streets", h.protest, true, 66, y, 720); y += 40;
+            SitRoom.gauge(g, "Strain on the power grid", h.grid, true, 66, y, 720); y += 40;
+            String ps = h.pand == 0 ? "No pandemic" : h.pand == 1 ? "A new virus is spreading abroad" : h.pand == 2 ? "Pandemic: about " + commas(h.deaths) + " Americans have died" : "The pandemic is over: " + commas(h.deaths) + " Americans died";
+            text(g, ps, 66, y + 10, F_SB, h.pand == 2 ? C_BAD : h.pand == 1 ? C_AMBER : C_TEXT);
+            y += 40;
+            wrap(g, "Disasters, blackouts, strikes, shootings and fights with the states arrive as events. How well your departments respond depends on their readiness.", 66, y, 720, F_XS, C_DIM);
+            double px = 822, pw = DW - 48 - px;
+            u.panel(g, px, 160, pw, 652, "Disasters");
+            double yy = 198;
+            if (h.disasters.isEmpty()) text(g, "None so far.", px + 18, yy, F_XS, C_DIM);
+            for (int i = h.disasters.size() - 1; i >= 0 && yy < 790; i--) { textFit(g, h.disasters.get(i), px + 18, yy, pw - 36, F_XS, C_TEXT); yy += 20; }
+        }
+    }
+    // =====================================================================
     //  99.  START-UP AND THE TEST HARNESS
     // =====================================================================
     public static void main(String[] args) {
@@ -11149,6 +11995,9 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                     .append(" cases ").append(x.cases.size()).append(" judges ").append(x.judges).append(" justices ").append(x.justices).append(" court R ").append(Courts.count(g, REP)).append("-D ").append(Courts.count(g, DEM))
                     .append(" scandals ").append(scs).append(" pardons ").append(x.pardons).append(" probes ").append(x.probes.size()).append(" impeach ").append(x.impeachments).append(" removed ").append(g.removed).append("\n");
             World wd = g.world;
+            Home hm = g.home;
+            b.append("  home: crime ").append(fmt0(hm.crime)).append(" od ").append(fmt0(hm.od)).append(" protest ").append(fmt0(hm.protest)).append(" grid ").append(fmt0(hm.grid)).append(" pandemic ").append(hm.pand).append(" deaths ").append(hm.deaths)
+                    .append(" disasters ").append(hm.disasters.size()).append(" speeches ").append(hm.speeches).append(" factions ").append(fmt0(hm.fac[0])).append("/").append(fmt0(hm.fac[1])).append(" opp ").append(hm.opp).append(" press ").append(fmt0(hm.press)).append("\n");
             b.append("  world: taiwan ").append(TW_STAGE[wd.twStage]).append(" (t").append(fmt0(wd.twt)).append(" d").append(fmt0(wd.deter)).append(") ukraine ").append(UA_STAGE[wd.uaStage]).append(" (s").append(fmt0(wd.ukr)).append(" talks ").append(fmt0(wd.talks))
                     .append(") gaza ").append(fmt0(wd.gaza)).append(" iran ").append(fmt0(wd.iran)).append(" redsea ").append(fmt0(wd.redsea)).append(" nk ").append(fmt0(wd.nk)).append(" terror ").append(fmt0(wd.terror))
                     .append(" crises ").append(wd.crises).append(" deals ").append(wd.deals).append(" kia ").append(wd.kia).append(" nato ").append(fmt0(wd.nato)).append(" pacific ").append(fmt0(wd.pacific))
@@ -11175,7 +12024,8 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         }
 
         static final String[] FX_KEYS = {"twt", "deter", "twstage", "ua", "defcon", "ukr", "talks", "gaza", "iran", "redsea", "proxy", "nk", "terror", "cyber", "migr", "cartel", "nato", "pacific",
-                "perf", "rally", "for", "sec", "imm", "crime", "oil", "fin", "def", "stress", "tcn", "kia"};
+                "perf", "rally", "for", "sec", "imm", "crime", "oil", "fin", "def", "stress", "tcn", "kia", "econ", "prices", "jobs", "health", "rights", "tech", "energy", "edu",
+                "base", "opp", "scandal", "infl", "demand", "supply", "grid", "protest", "od", "crimeidx", "pandslow", "pandfast", "pandsev", "pandend"};
 
         static void checkFx(String fx) {
             for (String tok : fx.split(" ")) {
@@ -11183,7 +12033,8 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 String[] kv = tok.split("=");
                 if (kv.length != 2) { System.out.println("BAD FX " + tok); continue; }
                 Double.parseDouble(kv[1]);
-                boolean ok = kv[0].startsWith("rel:") && ctIdx(kv[0].substring(4)) >= 0;
+                boolean ok = kv[0].startsWith("rel:") && ctIdx(kv[0].substring(4)) >= 0 || kv[0].startsWith("st:") && stateIdx(kv[0].substring(3)) >= 0
+                        || kv[0].length() > 1 && kv[0].charAt(0) == 'g' && Character.isDigit(kv[0].charAt(1));
                 for (String k : FX_KEYS) if (k.equals(kv[0])) ok = true;
                 if (!ok) System.out.println("UNKNOWN FX KEY " + kv[0]);
             }
@@ -11215,7 +12066,12 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             for (String f : CV_FX) checkFx(f); for (String f : CV_EXPFX) checkFx(f);
             for (String ch : CHANGES25) if (ctIdx(ch.split("\\|")[0]) < 0) System.out.println("BAD CHANGE " + ch);
             for (String f : CT_FLAG) for (String part : f.split("\\|")) for (String hx : part.substring(2).split(",")) if (hx.length() == 6) Integer.parseInt(hx, 16);
-            System.out.println("check done: " + n + " actions, " + nc + " crises");
+            int ne = EV_ID.length;
+            if (EV_COND.length != ne || EV_COOL.length != ne || EV_TITLE.length != ne || EV_BODY.length != ne || EV_OPTS.length != ne) System.out.println("EVENT TABLES DON'T MATCH " + ne + " " + EV_COND.length + " " + EV_COOL.length + " " + EV_TITLE.length + " " + EV_BODY.length + " " + EV_OPTS.length);
+            for (int i = 0; i < Math.min(ne, EV_OPTS.length); i++) for (String o : EV_OPTS[i].split(";;")) { String[] t = o.split("\\|"); if (t.length != 8) System.out.println("EVENT " + EV_ID[i] + " option has " + t.length + " parts"); else { checkFx(t[4]); checkFx(t[5]); Double.parseDouble(t[3]); } }
+            if (OUT_LEAN.length != OUT_NAME.length || OUT_AUD.length != OUT_NAME.length || OUT_SIT.length != OUT_NAME.length) System.out.println("OUTLET TABLES DON'T MATCH");
+            for (String t : DIS_STATES) for (String s : t.split(" ")) if (stateIdx(s) < 0) System.out.println("BAD DISASTER STATE " + s);
+            System.out.println("check done: " + n + " actions, " + nc + " crises, " + ne + " events");
         }
 
         static void whip(int year, String pres, int scen) {
@@ -11297,6 +12153,19 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             g.world.cool[0] = 0; g.world.twt = 70; Diplo.crises(g); Decisions.show(u, g); shot(u, dir, "decision_crisis");
             u.modal = null; g.inbox.clear();
             g.world.summitCountry = CC_CN; g.world.summitWeek = g.week; Summit.start(g); Decisions.show(u, g); shot(u, dir, "decision_summit");
+            u.modal = null; g.inbox.clear(); g.world.summitCountry = -1;
+            SitRoom.tab = 1; HomeFront.brief(g); shot(u, dir, "sit_brief");
+            // the Press Briefing Room
+            g.home.lastPoll = null; Polls.commission(g, PI_PRICES);
+            Rooms.open(u, R_PRESS);
+            for (int t = 0; t < PressRoom.TABS.length; t++) { PressRoom.tab = t; shot(u, dir, "press_" + t); }
+            Speech.start(g, 1); Decisions.show(u, g); shot(u, dir, "decision_sotu");
+            u.modal = null; Decision sd = g.inbox.isEmpty() ? null : null; g.inbox.clear(); Speech.step(g, 0); Decisions.show(u, g); shot(u, dir, "decision_speechline");
+            u.modal = null; g.inbox.clear(); g.home.spType = -1;
+            QA.start(g, 0, 0); Decisions.show(u, g); shot(u, dir, "decision_presser");
+            u.modal = null; g.inbox.clear(); g.home.qaType = -1;
+            Arrays.fill(g.home.cool, 999); for (int i = 0; i < 400 && g.inbox.isEmpty(); i++) { g.home.cool[0] = 0; HomeFront.events(g); }
+            Decisions.show(u, g); shot(u, dir, "decision_event");
             u.modal = null; g.inbox.clear();
         }
     }

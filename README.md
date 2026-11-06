@@ -16,7 +16,7 @@ The game autosaves every week. Use **Continue** on the title screen to pick up w
 
 ## What's in it so far
 
-This is the fourth of six planned updates. The first covered the core of the job: your time, your health, the economy and public opinion. The second added Congress and the budget, the third the executive branch, and the fourth the world.
+This is the fifth of six planned updates. The first covered the core of the job: your time, your health, the economy and public opinion. The second added Congress and the budget, the third the executive branch, the fourth the world, and the fifth the home front and the press.
 
 - **When you take office:**
   - **2025**, the real present. Donald Trump, or anyone else as a what-if.
@@ -172,14 +172,37 @@ Open the Situation Room from the Oval Office, or press 7.
   - NATO and Asia-Pacific alliance cohesion, deterrence in the Taiwan Strait, and DEFCON.
 - **The world feeds back:** oil prices, supply chains and markets, your standing on foreign policy, national security and immigration, and American casualties.
 
+### The home front and the press (update 5)
+
+Open the Press Briefing Room from the Oval Office, or press 8. The daily brief is in the Situation Room.
+
+- **The President's Daily Brief:** each week, what the intelligence community and your staff most want you to know, ranked by urgency.
+- **Twenty-eight events at home**, each with options, odds and results that play out. They cover:
+  - AI: job losses, deepfakes, a dangerous new model, data centers straining the grid, a new chip plant.
+  - Blackouts in heat waves and winter storms.
+  - A bridge collapse, a toxic derailment, an air-traffic outage, a rail strike.
+  - Police shootings and protests, campus protests, a school shooting.
+  - Supreme Court rulings, abortion pills, fights over schools.
+  - States defying federal policy, states suing you.
+  - Overdoses and violent crime, grocery prices.
+  - Rare, non-graphic political violence.
+- **Disasters by season:** hurricanes, wildfires, tornadoes, floods, winter storms and earthquakes, in the states where they really strike. How well FEMA responds depends on Homeland Security's readiness.
+- **A rare pandemic:** it spreads abroad, then here, and ends with a vaccine. You decide on travel limits, gatherings, hospitals and the rollout.
+- **Crime, overdoses, protest and the grid** are tracked from week to week.
+- **The bully pulpit:**
+  - Oval Office addresses and the State of the Union, built line by line: an opening, three passages from your strongest issues and your bills, and a close. Your speaking skill and a consistent tone decide how it lands; the State of the Union counts standing ovations.
+  - Press conferences with fictional reporters from real outlets, and sit-down interviews with networks and podcasts. Each is three questions: answer straight, pivot, push back or make news.
+  - Social media: five posts a week, on any issue, in five tones. Your feel for it decides the reach, and your discipline decides the risk.
+  - Commissioned polls on any issue, by voter group.
+- **The press corps:** eighteen outlets, each with an audience and a tone toward you that follows your approval and your press relations.
+- **Your party:** two wings, such as Progressives and Moderates, or MAGA populists and Traditional conservatives.
+  - They judge you by where your laws, orders and choices have landed, and by how popular you are.
+  - Their mood moves your relationships in Congress and your base's turnout in the midterms.
+- **The opposition** picks a strategy each quarter (cooperate, pick its fights, or obstruct everything) based on your approval and the calendar.
+
 ## Coming next
 
-1. **Crises, the press and public life:**
-   - The President's Daily Brief.
-   - Disasters and pandemics, plus AI, immigration, protests and the hot-button issues.
-   - Speeches, the State of the Union, press conferences, interviews and social media.
-   - Party factions and an opposition with plans of its own.
-2. **History and the verdict:**
+1. **History and the verdict:**
    - Every inauguration from 1933 on.
    - A playable re-election campaign and a second term.
    - The epilogue, historians' ranking and your presidential library.
@@ -203,11 +226,15 @@ Open the Situation Room from the Oval Office, or press 7.
 | ![The world](screenshots/the-world.png) | ![Hot spots](screenshots/hot-spots.png) |
 | ![Operations](screenshots/operations.png) | ![Trade and sanctions](screenshots/trade-and-sanctions.png) |
 | ![A crisis](screenshots/a-crisis.png) | ![A summit](screenshots/a-summit.png) |
+| ![The daily brief](screenshots/daily-brief.png) | ![The press](screenshots/the-press.png) |
+| ![A press conference](screenshots/press-conference.png) | ![Building a speech](screenshots/building-a-speech.png) |
+| ![Your party](screenshots/your-party.png) | ![A domestic event](screenshots/a-domestic-event.png) |
 
 ## Notes
 
 - Real people appear as stylised characters. Their ratings are the game's estimates from public records, not facts, and the game never quotes them.
 - Only fictional officials are ever caught up in personal misconduct. Real justices only ever retire.
+- Reporters are fictional, even when the outlet is real. Outlets' coverage is a number the game simulates, never a quote.
 - Everything that happens in a game is fiction.
 - The 2029 era is a projection from the world of Battleground 2028, not a forecast. Its foreign leaders are today's, carried forward; the three marked as fictional successors (in France, Cuba and the Philippines) are invented.
 - Country outlines are from Natural Earth via the world-atlas package. Flags are stylised.
