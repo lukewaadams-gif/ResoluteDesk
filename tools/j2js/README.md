@@ -32,8 +32,11 @@ order.
 The files in `runtime/` are wrapped around the generated code:
 
 - `head.js`: the page, and the parts of Java and AWT the game uses: collections, strings,
-  `Random`, `Color` (with `brighter` and `darker`), `Font`, `Graphics2D` drawing onto a canvas (shapes, gradients, transforms, text
-  metrics), and the Swing timer and input events.
+  `Random`, `Color` (with `brighter` and `darker`), `Font`, `Graphics2D` drawing onto a canvas (shapes, gradients
+  including multi-stop `LinearGradientPaint` and `RadialGradientPaint`, transforms and their scale and shear, text
+  metrics), offscreen `BufferedImage`s for cached layers, and the Swing timer and input events.
+  `Fonts.registerFonts` becomes a stub: the build embeds the typefaces in the page as `@font-face` rules,
+  and `tail.js` waits for them before the first frame.
 - `mid.js`: browser versions of the few classes that touch the operating system. Sound plays through
   Web Audio. Saves go to IndexedDB and the Hall of Fame to local storage. Battleground 2028 saves
   are read from that game's IndexedDB store when both games are served from the same site.

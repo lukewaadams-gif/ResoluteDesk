@@ -31,6 +31,8 @@ src/main/java/resolutedesk/
   legacy/             the historians' verdict, the library, achievements and the Hall of Fame
   io/                 saving and loading, and reading Battleground 2028 saves
   ui/                 every screen and room, portraits, maps, fonts and the palette
+src/main/resources/
+  fonts/              the typefaces, as TrueType for Java and WOFF2 for the browser, with their licenses
   diagnostics/        command-line data checks, simulations and screenshots
 src/test/java/resolutedesk/
   testkit/            a small test runner, assertions and helpers (no outside libraries)
@@ -124,6 +126,26 @@ Most packages have a few final classes of static members, for example `ui.Theme`
 of the code reaches them through static imports, so a bill table reads as `BILLS` and a colour as
 `C_GOLD`. The bundler relies on this convention (see below), so a holder is only ever used through
 `import static`.
+
+## The art
+
+Every picture is drawn in code with Java2D. `ui.Art` is the painter's toolbox: multi-stop gradients,
+soft pools of light (`glow`), vignettes, soft shadows, bevels, and textures for plaster, wood grain,
+wallpaper and gloss. The scenes are built from it: `OvalArt` (the Oval Office), `HomeArt` (the
+White House at dusk) and `RoomArt` (a setting behind each room's panels). Portraits, maps and panels
+use the same pieces for their light and shadow.
+
+A painted scene has hundreds of shapes, too many to redraw sixty times a second in a browser.
+`Art.layer` paints a scene once into an image at the screen's resolution and caches it under a key.
+It paints the scene again only when the key or the resolution changes. Only the parts that move are drawn
+each frame, over the cached layer: the fountain, the stars, the flag, the lit windows, the dust in
+the light and the president at the desk. The maps cache their ocean, their shadows and their
+lighting the same way, and draw the country colors live between them.
+
+`ui.Fonts` registers the four bundled typefaces with Java at start-up, from `src/main/resources/fonts/`.
+The build embeds the same faces in the browser page as base64 `@font-face` rules. The page waits up to
+four seconds for them to load before it draws its first frame. Without the font files, as in the BlueJ version, Java
+falls back to fonts on the computer, such as Segoe UI and Georgia.
 
 ## Determinism
 

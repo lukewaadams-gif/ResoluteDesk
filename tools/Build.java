@@ -10,6 +10,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.Comparator;
 import java.util.List;
 import java.util.jar.Attributes;
@@ -41,6 +42,7 @@ public final class Build {
     private static final Path TEST = ROOT.resolve("src/test/java");
     private static final Path OUT = ROOT.resolve("build");
     private static final Path CLASSES = OUT.resolve("classes");
+    private static final Path RESOURCES = ROOT.resolve("src/main/resources");
     private static final Path TEST_CLASSES = OUT.resolve("test-classes");
     private static final Path BUNDLE = OUT.resolve("ResoluteDesk.java");
     private static final Path BUNDLE_CLASSES = OUT.resolve("bundle-classes");
@@ -79,6 +81,7 @@ public final class Build {
 
     static void compile() throws IOException {
         javac(sources(MAIN), CLASSES, null, true);
+        copyResources();
         System.out.println("compiled " + sources(MAIN).size() + " files into " + ROOT.relativize(CLASSES));
     }
 
@@ -118,7 +121,7 @@ public final class Build {
         if (exec(cmd, log) != 0) { System.out.print(log); fail("translation failed"); }
         for (String ln : log.toString().split("\n")) if (!ln.isEmpty() && !expectedWarning(ln)) System.out.println("  " + ln);
         StringBuilder html = new StringBuilder();
-        html.append(read(J2JS.resolve("runtime/head.js")));
+        html.append(read(J2JS.resolve("runtime/head.js")).replace("</style>\n</head>", fontFaces() + "</style>\n</head>"));
         html.append(read(parts.resolve("classes.js")));
         html.append(read(parts.resolve("registry.js")));
         html.append("// ---- functions\n").append(read(parts.resolve("functions.js")));
@@ -127,6 +130,34 @@ public final class Build {
         html.append(read(J2JS.resolve("runtime/tail.js")));
         Files.write(WEB, html.toString().getBytes(StandardCharsets.UTF_8));
         System.out.println("wrote " + ROOT.relativize(WEB) + " (" + Files.size(WEB) + " bytes)");
+    }
+
+    /** The resources (the shipped fonts) go next to the classes, so the jar and the tools find them. */
+    static void copyResources() throws IOException {
+        if (!Files.isDirectory(RESOURCES)) return;
+        try (Stream<Path> files = Files.walk(RESOURCES)) {
+            for (Path p : files.filter(Files::isRegularFile).collect(Collectors.toList())) {
+                if (p.toString().endsWith(".woff2")) continue;   // the browser's copies go into the page, not the jar
+                Path to = CLASSES.resolve(RESOURCES.relativize(p).toString());
+                Files.createDirectories(to.getParent());
+                Files.copy(p, to, StandardCopyOption.REPLACE_EXISTING);
+            }
+        }
+    }
+
+    /** CSS that embeds the shipped fonts in the page as WOFF2, so the browser version needs nothing from the network. */
+    static String fontFaces() throws IOException {
+        String[][] faces = {{"Inter-Regular", "Inter", "400", "normal"}, {"Inter-Bold", "Inter", "700", "normal"}, {"PlayfairDisplay-Bold", "Playfair Display", "700", "normal"},
+                {"SourceSerif4-Regular", "Source Serif 4", "400", "normal"}, {"SourceSerif4-Bold", "Source Serif 4", "700", "normal"}, {"SourceSerif4-Italic", "Source Serif 4", "400", "italic"},
+                {"JetBrainsMono-Regular", "JetBrains Mono", "400", "normal"}, {"JetBrainsMono-Bold", "JetBrains Mono", "700", "normal"}};
+        StringBuilder css = new StringBuilder("  /* Inter, Playfair Display, Source Serif 4 and JetBrains Mono: SIL Open Font License 1.1 */\n");
+        for (String[] f : faces) {
+            Path p = RESOURCES.resolve("fonts/" + f[0] + ".woff2");
+            if (!Files.exists(p)) continue;
+            css.append("  @font-face { font-family: '").append(f[1]).append("'; font-weight: ").append(f[2]).append("; font-style: ").append(f[3])
+                    .append("; font-display: block; src: url(data:font/woff2;base64,").append(Base64.getEncoder().encodeToString(Files.readAllBytes(p))).append(") format('woff2'); }\n");
+        }
+        return css.toString();
     }
 
     /**

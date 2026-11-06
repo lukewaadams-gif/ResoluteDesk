@@ -473,13 +473,22 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     /** A glass panel with an optional small-caps title. */
     public void panel(Graphics2D g, double x, double y, double w, double h, String title) {
         RoundRectangle2D rr = new RoundRectangle2D.Double(x, y, w, h, 12, 12);
+        // a soft shadow beneath, so the panel sits above the room
+        for (int i = 3; i >= 1; i--) {
+            g.setColor(new Color(0, 0, 0, 22));
+            g.fill(new RoundRectangle2D.Double(x - i * 1.5, y + i * 2.5, w + i * 3, h + i * 1.5, 12 + i * 4, 12 + i * 4));
+        }
         g.setPaint(new GradientPaint((float) x, (float) y, new Color(18, 28, 48, 236), (float) x, (float) (y + h), new Color(10, 17, 30, 240)));
         g.fill(rr);
+        // light falls on the upper edge of the glass
+        double sh = Math.min(70, h * 0.4);
+        g.setPaint(new GradientPaint((float) x, (float) y, new Color(150, 190, 255, 16), (float) x, (float) (y + sh), new Color(150, 190, 255, 0)));
+        g.fill(new RoundRectangle2D.Double(x, y, w, sh, 12, 12));
         g.setColor(new Color(110, 150, 220, 46));
         g.setStroke(new BasicStroke(1f));
         g.draw(rr);
-        g.setColor(new Color(255, 255, 255, 18));
-        g.draw(new Line2D.Double(x + 10, y + 1, x + w - 10, y + 1));
+        g.setColor(new Color(255, 255, 255, 26));
+        g.draw(new Line2D.Double(x + 10, y + 0.8, x + w - 10, y + 0.8));
         if (title != null) {
             label(g, title, x + 14, y + 22, C_DIM);
         }

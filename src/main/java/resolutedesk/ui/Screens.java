@@ -20,10 +20,7 @@ import java.awt.Color;
 import java.awt.Font;
 import java.awt.GradientPaint;
 import java.awt.Graphics2D;
-import java.awt.geom.Ellipse2D;
 import java.awt.geom.Line2D;
-import java.awt.geom.Path2D;
-import java.awt.geom.Rectangle2D;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -59,77 +56,12 @@ public final class Screens {
         }
     }
 
-    /** The North Portico at night. */
-    static void portico(Graphics2D g, double cx, double base, double sc, double t) {
-        double w = 620 * sc, h = 150 * sc, x = cx - w / 2, y = base - h;
-        g.setColor(new Color(10, 16, 30));
-        g.fill(new Rectangle2D.Double(x - 60 * sc, base, w + 120 * sc, 14 * sc));
-        g.setPaint(new GradientPaint((float) x, (float) y, rgb(0xe9e1cf), (float) x, (float) base, rgb(0xb9b2a2)));
-        g.fill(new Rectangle2D.Double(x, y, w, h));
-        // windows, lit
-        for (int row = 0; row < 2; row++) for (int i = 0; i < 9; i++) {
-            double wx = x + 24 * sc + i * 66 * sc, wy = y + 22 * sc + row * 64 * sc;
-            if (wx + 26 * sc > cx - 140 * sc && wx < cx + 140 * sc) continue;
-            double fl = 0.75 + 0.25 * Math.sin(t * 0.7 + i * 1.3 + row);
-            g.setColor(new Color(255, (int) (196 + 30 * fl), (int) (110 + 40 * fl)));
-            g.fill(new Rectangle2D.Double(wx, wy, 26 * sc, 38 * sc));
-            g.setColor(new Color(120, 110, 90));
-            g.draw(new Line2D.Double(wx + 13 * sc, wy, wx + 13 * sc, wy + 38 * sc));
-        }
-        // the portico: columns and a pediment
-        double px = cx - 120 * sc, pw = 240 * sc, py = y - 34 * sc;
-        g.setColor(rgb(0xefe8d8));
-        Path2D ped = new Path2D.Double();
-        ped.moveTo(px - 14 * sc, py + 26 * sc); ped.lineTo(cx, py - 34 * sc); ped.lineTo(px + pw + 14 * sc, py + 26 * sc); ped.closePath();
-        g.fill(ped);
-        g.fill(new Rectangle2D.Double(px - 14 * sc, py + 26 * sc, pw + 28 * sc, 16 * sc));
-        g.setColor(rgb(0xfff6d6));
-        g.fill(new Rectangle2D.Double(px, py + 42 * sc, pw, h + 34 * sc - 42 * sc));
-        for (int i = 0; i < 4; i++) {
-            double colx = px + 12 * sc + i * (pw - 36 * sc) / 3;
-            g.setPaint(new GradientPaint((float) colx, 0, rgb(0xd8d0bd), (float) (colx + 12 * sc), 0, rgb(0xffffff)));
-            g.fill(new Rectangle2D.Double(colx, py + 42 * sc, 13 * sc, base - py - 42 * sc));
-        }
-        g.setColor(rgb(0xffd27a));
-        g.fill(new Rectangle2D.Double(cx - 18 * sc, base - 60 * sc, 36 * sc, 60 * sc));
-        // the flag on the roof
-        double fx = cx, fy = py - 34 * sc;
-        g.setColor(rgb(0xcfcfcf));
-        g.fill(new Rectangle2D.Double(fx - 1.2 * sc, fy - 70 * sc, 2.4 * sc, 70 * sc));
-        for (int k = 0; k < 7; k++) {
-            g.setColor(k % 2 == 0 ? rgb(0xb22234) : Color.white);
-            Path2D st = new Path2D.Double();
-            double wave = Math.sin(t * 2 + k * 0.3) * 2 * sc;
-            st.moveTo(fx, fy - 70 * sc + k * 4 * sc);
-            st.lineTo(fx + 48 * sc, fy - 70 * sc + k * 4 * sc + wave);
-            st.lineTo(fx + 48 * sc, fy - 66 * sc + k * 4 * sc + wave);
-            st.lineTo(fx, fy - 66 * sc + k * 4 * sc);
-            st.closePath();
-            g.fill(st);
-        }
-        g.setColor(rgb(0x3c3b6e));
-        g.fill(new Rectangle2D.Double(fx, fy - 70 * sc, 20 * sc, 16 * sc));
-    }
-
     public static void home(ResoluteDesk u, Graphics2D g) {
-        double t = u.tsec;
-        g.setPaint(new GradientPaint(0, 0, rgb(0x050a18), 0, DH, rgb(0x16254a)));
-        g.fill(new Rectangle2D.Double(0, 0, DW, DH));
-        Random st = new Random(7);
-        for (int i = 0; i < 160; i++) {
-            double sx = st.nextDouble() * DW, sy = st.nextDouble() * 520, tw = 0.5 + 0.5 * Math.sin(t * 1.5 + i);
-            g.setColor(new Color(255, 255, 255, (int) (40 + 90 * tw * st.nextDouble())));
-            g.fill(new Ellipse2D.Double(sx, sy, 1.6, 1.6));
-        }
-        g.setPaint(new GradientPaint(0, 640, new Color(0, 0, 0, 0), 0, DH, new Color(0, 0, 0, 160)));
-        g.fill(new Rectangle2D.Double(0, 520, DW, DH - 520));
-        portico(g, 1120, 700, 1.25, t);
-        g.setColor(rgb(0x0c1424));
-        g.fill(new Rectangle2D.Double(0, 700, DW, DH - 700));
+        HomeArt.paint(g, u.tsec);
         double in = easeOut(Math.min(1, u.screenT * 1.4));
         double tx = 80 - (1 - in) * 30;
         label(g, "A PRESIDENCY SIMULATOR", tx + 4, 170, C_GOLD);
-        Font big = new Font(SERIF, Font.BOLD, 96);
+        Font big = new Font(DISPLAY, Font.BOLD, 100);
         g.setFont(big);
         g.setColor(C_IVORY);
         g.drawString("RESOLUTE", (float) tx, 262f);

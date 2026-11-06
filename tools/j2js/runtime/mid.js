@@ -10,6 +10,7 @@ function dowOf(day) {
     const d = new Date(Date.UTC(CAL_Y, CAL_M, CAL_D + day));
     return (d.getUTCDay() + 6) % 7;
 }
+function registerFonts() { return true; }   // the browser loads the shipped fonts as web fonts (see tail.js)
 function pickFont(want, fallback) {
     const generic = { SansSerif: 'sans-serif', Serif: 'serif', Monospaced: 'monospace' }[fallback] || 'sans-serif';
     return want.map(w => '"' + w + '"').join(', ') + ', ' + generic;

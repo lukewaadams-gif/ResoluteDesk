@@ -339,6 +339,17 @@ class GradientPaint {
         return this._g;
     }
 }
+class LinearGradientPaint {
+    constructor(x1, y1, x2, y2, fractions, colors) { this.x1 = x1; this.y1 = y1; this.x2 = x2; this.y2 = y2; this.f = fractions; this.c = colors; this._g = null; this._ctx = null; }
+    style(ctx) {
+        if (this._ctx !== ctx) {
+            const g = ctx.createLinearGradient(this.x1, this.y1, this.x2, this.y2);
+            for (let i = 0; i < this.f.length; i++) g.addColorStop(Math.min(1, Math.max(0, this.f[i])), this.c[i].css());
+            this._g = g; this._ctx = ctx;
+        }
+        return this._g;
+    }
+}
 class RadialGradientPaint {
     constructor(center, radius, fractions, colors) { this.cx = center.x; this.cy = center.y; this.r = radius; this.f = fractions; this.c = colors; this._g = null; this._ctx = null; }
     style(ctx) {
@@ -568,6 +579,8 @@ class ClipState { constructor(list) { this.list = list; } }
 class AffineTransform {
     constructor(m) { this.m = m ? m.slice() : [1, 0, 0, 1, 0, 0]; }
     clone() { return new AffineTransform(this.m); }
+    getScaleX() { return this.m[0]; } getShearY() { return this.m[1]; } getShearX() { return this.m[2]; } getScaleY() { return this.m[3]; }
+    getTranslateX() { return this.m[4]; } getTranslateY() { return this.m[5]; }
 }
 
 // ---- the Graphics2D shim -----------------------------------------------------------------------------

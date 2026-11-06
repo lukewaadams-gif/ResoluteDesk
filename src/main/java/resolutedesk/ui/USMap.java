@@ -1,6 +1,7 @@
 package resolutedesk.ui;
 
 import static resolutedesk.data.StateData.*;
+import static resolutedesk.ui.Art.*;
 import static resolutedesk.ui.Draw.*;
 import static resolutedesk.ui.Fonts.*;
 import static resolutedesk.ui.MapData.*;
@@ -10,6 +11,7 @@ import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.GradientPaint;
 import java.awt.Graphics2D;
+import java.awt.Paint;
 import java.awt.geom.AffineTransform;
 import java.awt.geom.Ellipse2D;
 import java.awt.geom.Line2D;
@@ -106,13 +108,11 @@ public final class USMap {
             cur[s] = mix(cur[s] == null ? target[s] : cur[s], target[s], 0.18);
         }
         AffineTransform at = g.getTransform();
-        // drop shadow
+        // the land's shadow on the panel beneath, painted once
+        int[] box = mapBox(f);
+        layer(g, "us-shadow|" + key(box), box[0], box[1], box[2], box[3], (b, bx, by, bw, bh) -> land(b, f, 3, 5, new Color(0, 0, 0, 90), null));
         g.translate(f[1], f[2]);
         g.scale(f[0], f[0]);
-        g.translate(3, 5);
-        g.setColor(new Color(0, 0, 0, 90));
-        for (int s = 0; s < NS; s++) if (shape[s] != null) g.fill(shape[s]);
-        g.translate(-3, -5);
         float edge = (float) (1.0 / f[0]);
         for (int s = 0; s < NS; s++) {
             if (shape[s] == null) continue;
@@ -121,6 +121,12 @@ public final class USMap {
             g.setColor(c);
             g.fill(shape[s]);
         }
+        g.setTransform(at);
+        // light from the upper left across the whole country, painted once over whatever colors the states are
+        layer(g, "us-light|" + key(box), box[0], box[1], box[2], box[3], (b, bx, by, bw, bh) -> land(b, f, 0, 0, null,
+                lin(0, 0, AW, AH, new float[]{0f, 0.45f, 1f}, new Color[]{new Color(255, 255, 255, 34), new Color(255, 255, 255, 0), new Color(0, 0, 20, 60)})));
+        g.translate(f[1], f[2]);
+        g.scale(f[0], f[0]);
         g.setColor(new Color(6, 10, 20, 230));
         g.setStroke(new BasicStroke(0.9f * edge, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
         for (int s = 0; s < NS; s++) if (shape[s] != null) g.draw(shape[s]);
@@ -184,6 +190,23 @@ public final class USMap {
             Portrait.avatar(g, markCand, lx, ly + bob, 10, C_GOLD);
         }
         return f;
+    }
+
+    /** The map's rectangle on screen, in whole design units, with room for the shadow. */
+    static int[] mapBox(double[] f) {
+        int x = (int) Math.floor(f[1]) - 2, y = (int) Math.floor(f[2]) - 2;
+        return new int[]{x, y, (int) Math.ceil(AW * f[0]) + 12, (int) Math.ceil(AH * f[0]) + 14};
+    }
+
+    static String key(int[] box) { return box[0] + "," + box[1] + "," + box[2] + "," + box[3]; }
+
+    /** Fills every state at once, offset in map units, with a color or a paint. */
+    static void land(Graphics2D b, double[] f, double dx, double dy, Color c, Paint p) {
+        b.translate(f[1], f[2]);
+        b.scale(f[0], f[0]);
+        b.translate(dx, dy);
+        if (p != null) b.setPaint(p); else b.setColor(c);
+        for (int s = 0; s < NS; s++) if (shape[s] != null) b.fill(shape[s]);
     }
 
     static boolean isCallout(int s) { for (String c : CALLOUTS) if (STATES[s].ab.equals(c)) return true; return false; }

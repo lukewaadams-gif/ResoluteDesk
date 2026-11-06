@@ -29,7 +29,7 @@ public class J2JS {
     final Set<String> globalNames = new HashSet<>();
     final List<String> warnings = new ArrayList<>();
     final Map<String, String> classRename = new HashMap<>();
-    final Set<String> skipFunctions = new HashSet<>(Arrays.asList("dateOf", "dowOf", "pickFont", "launch", "main"));
+    final Set<String> skipFunctions = new HashSet<>(Arrays.asList("dateOf", "dowOf", "pickFont", "registerFonts", "launch", "main"));
     final Set<String> skipMethods = new HashSet<>(Arrays.asList("SaveGame.dir"));
     final Set<String> emptyClasses = new HashSet<>();
     final Set<String> topFieldsRenamed = new HashSet<>();
@@ -44,7 +44,7 @@ public class J2JS {
     static final String[] JS_GLOBALS = {"Math", "String", "Number", "Object", "Array", "Map", "Set", "Date", "JSON", "console", "window",
             "document", "parseInt", "parseFloat", "isNaN", "isFinite", "Promise", "Symbol", "Error", "RegExp", "Function", "Boolean",
             "Proxy", "Reflect", "Intl", "globalThis", "performance", "setTimeout", "requestAnimationFrame", "Color", "Font", "FontMetrics",
-            "BasicStroke", "GradientPaint", "RadialGradientPaint", "AlphaComposite", "RenderingHints", "Rect2D", "Rectangle2D",
+            "BasicStroke", "GradientPaint", "LinearGradientPaint", "RadialGradientPaint", "AlphaComposite", "RenderingHints", "Rect2D", "Rectangle2D",
             "RoundRectangle2D", "Ellipse2D", "Line2D", "Arc2D", "Point2D", "Path2D", "JPath", "Area", "AffineTransform", "Graphics2D",
             "BufferedImage", "Dimension", "Timer", "JPanelBase", "KeyEvent", "SwingUtilities", "HashMap", "JSet", "StringBuilder", "Random",
             "LinkedHashMap", "HAS_DOM", "NativePath2D", "Float64Array", "Int32Array", "WeakMap", "label"};

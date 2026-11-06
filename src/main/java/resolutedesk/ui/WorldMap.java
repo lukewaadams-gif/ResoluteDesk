@@ -1,5 +1,6 @@
 package resolutedesk.ui;
 
+import static resolutedesk.ui.Art.*;
 import static resolutedesk.ui.Draw.*;
 import static resolutedesk.ui.Fonts.*;
 import static resolutedesk.ui.Theme.*;
@@ -12,8 +13,10 @@ import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.geom.AffineTransform;
 import java.awt.geom.Ellipse2D;
+import java.awt.geom.Line2D;
 import java.awt.geom.Path2D;
 import java.awt.geom.Rectangle2D;
+import java.awt.geom.RoundRectangle2D;
 import resolutedesk.ResoluteDesk;
 import resolutedesk.history.History;
 import resolutedesk.model.Game;
@@ -82,6 +85,9 @@ public final class WorldMap {
         last = f;
         int hover = u.modal == null && u.mx >= x && u.mx < x + w && u.my >= y && u.my < y + h ? at(u.mx, u.my) : -1;
         AffineTransform at = g.getTransform();
+        int bx0 = (int) Math.floor(f[1]), by0 = (int) Math.floor(f[2]), bw0 = (int) Math.ceil(AW * f[0]) + 1, bh0 = (int) Math.ceil(AH * f[0]) + 1;
+        String box = bx0 + "," + by0 + "," + bw0 + "," + bh0;
+        layer(g, "world-sea|" + box, bx0, by0, bw0, bh0, (b, lx, ly, lw, lh) -> sea(b, f, lx, ly, lw, lh));
         g.translate(f[1], f[2]);
         g.scale(f[0], f[0]);
         g.setStroke(new BasicStroke((float) (0.7 / f[0])));
@@ -97,6 +103,7 @@ public final class WorldMap {
         }
         g.setTransform(at);
         g.setStroke(new BasicStroke(1f));
+        layer(g, "world-light|" + box, bx0, by0, bw0, bh0, (b, lx, ly, lw, lh) -> light(b, f));
         // labels for the bigger players, and the selected one
         for (int c = 0; c < NC; c++) {
             boolean big = c == CC_CN || c == CC_RU || c == CC_CA || c == CC_BR || c == CC_AU || c == CC_IN;
@@ -119,6 +126,35 @@ public final class WorldMap {
             g.fill(new Ellipse2D.Double(px - 3, py - 3, 6, 6));
         }
         return hover;
+    }
+
+    /** The ocean: deep water with a faint graticule, the shallows along every coast, and the land's shadow. */
+    static void sea(Graphics2D b, double[] f, double x, double y, double w, double h) {
+        b.setPaint(lin(x, y, x, y + h, new float[]{0f, 1f}, new Color[]{rgb(0x0d2140), rgb(0x07122a)}));
+        b.fill(new RoundRectangle2D.Double(x, y, w, h, 14, 14));
+        glow(b, x + w * 0.45, y + h * 0.38, w * 0.6, h * 0.55, rgb(0x2a5a9a), 0.22);
+        b.setColor(new Color(120, 170, 240, 22));
+        b.setStroke(new BasicStroke(1f));
+        for (int i = 1; i < 12; i++) b.draw(new Line2D.Double(x + w * i / 12, y + 4, x + w * i / 12, y + h - 4));
+        for (int i = 1; i < 6; i++) b.draw(new Line2D.Double(x + 4, y + h * i / 6, x + w - 4, y + h * i / 6));
+        AffineTransform at = b.getTransform();
+        b.translate(f[1], f[2]);
+        b.scale(f[0], f[0]);
+        b.setStroke(new BasicStroke((float) (5 / f[0]), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        b.setColor(new Color(80, 150, 230, 34));
+        for (Path2D s : shape) b.draw(s);
+        b.translate(1.5 / f[0], 2.5 / f[0]);
+        b.setColor(new Color(0, 0, 0, 110));
+        for (Path2D s : shape) b.fill(s);
+        b.setTransform(at);
+    }
+
+    /** Light from the upper left over the land, whatever color each country is. */
+    static void light(Graphics2D b, double[] f) {
+        b.translate(f[1], f[2]);
+        b.scale(f[0], f[0]);
+        b.setPaint(lin(0, 0, AW, AH, new float[]{0f, 0.5f, 1f}, new Color[]{new Color(255, 255, 255, 30), new Color(255, 255, 255, 0), new Color(0, 0, 20, 56)}));
+        for (Path2D s : shape) b.fill(s);
     }
 
     static double warOn(World w, String id) { War x = History.war(w, id); return x != null && x.stage == 2 ? 1 : 0; }

@@ -64,6 +64,7 @@ public final class Rooms {
         Game game = u.game;
         if (game == null) { u.go(SC_HOME); return; }
         u.backdrop(g);
+        RoomArt.backdrop(g, room);
         Oval.topBar(u, g, game);
         u.button(g, 24, 70, 200, 32, "<  Oval Office", B_GHOST, () -> u.go(SC_OVAL), "Back to the Oval Office (Esc)");
         text(g, ROOM_NAME[room], 248, 96, F_DISPLAY, Color.white);

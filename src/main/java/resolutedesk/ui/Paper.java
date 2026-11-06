@@ -52,7 +52,7 @@ public final class Paper {
         g.setColor(C_PAPER);
         g.fill(new Rectangle2D.Double(px, py, pw, ph));
         // masthead
-        Font mast = new Font(SERIF, Font.BOLD, 54);
+        Font mast = new Font(DISPLAY, Font.BOLD, 56);
         textC(g, "The Capital Ledger", px + pw / 2, py + 72, mast, C_INK);
         g.setColor(C_INK);
         g.fill(new Rectangle2D.Double(px + 30, py + 88, pw - 60, 2));
@@ -63,7 +63,7 @@ public final class Paper {
         List<News> st = stories(game);
         News lead = st.isEmpty() ? null : st.get(0);
         double cy = py + 130;
-        Font head = new Font(SERIF, Font.BOLD, 40);
+        Font head = new Font(DISPLAY, Font.BOLD, 40);
         String h = lead == null ? "A quiet week in Washington" : lead.head;
         double hh = wrap(g, cap(h), px + 34, cy + 38, pw - 68, head, C_INK);
         cy += hh + 20;

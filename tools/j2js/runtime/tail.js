@@ -88,13 +88,21 @@ function $boot() {
     requestAnimationFrame(frame);
 }
 if (typeof document !== 'undefined') {
-    window.addEventListener('load', () => setTimeout(() => {
+    // the shipped fonts must be loaded before anything is measured, since text widths are cached
+    const $faces = ['400 16px Inter', '700 16px Inter', '700 16px "Playfair Display"', '400 16px "Source Serif 4"', '700 16px "Source Serif 4"',
+        'italic 400 16px "Source Serif 4"', '400 16px "JetBrains Mono"', '700 16px "JetBrains Mono"'];
+    const $start = () => {
         try { $boot(); } catch (e) {
             console.error(e);
             const b = document.getElementById('boot');
             if (b) b.textContent = 'Could not start the game: ' + e;
         }
-    }, 20));
+    };
+    window.addEventListener('load', () => {
+        const fonts = document.fonts && document.fonts.load ? Promise.all($faces.map(f => document.fonts.load(f))) : Promise.resolve();
+        const late = new Promise(r => setTimeout(r, 4000));
+        Promise.race([fonts, late]).catch(() => null).then(() => setTimeout($start, 20));
+    });
 }
 
 })();

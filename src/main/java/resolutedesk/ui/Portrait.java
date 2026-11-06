@@ -2,6 +2,7 @@ package resolutedesk.ui;
 
 import static resolutedesk.core.Num.*;
 import static resolutedesk.model.Parties.*;
+import static resolutedesk.ui.Art.*;
 import static resolutedesk.ui.Theme.*;
 
 import java.awt.BasicStroke;
@@ -146,6 +147,7 @@ public final class Portrait {
         g.setTransform(preHair);
         // ---- body
         body(g, c, L, breath);
+        glow(g, 106, 190 + breath, 40, 14, Color.black, 0.32);   // the head's shadow on the collar
         g.rotate(tilt, 100, 190);
         g.translate(100, 197);
         g.scale(1.13, 1.13);
@@ -200,6 +202,16 @@ public final class Portrait {
         }
         g.setPaint(new GradientPaint((float) cx, (float) (cy + hh * 0.5), new Color(0, 0, 0, 0), (float) cx, (float) (cy + hh), new Color(0, 0, 0, 34)));
         g.fill(new Rectangle2D.Double(cx - hw, cy + hh * 0.5, hw * 2, hh * 0.6));
+        // the key light is up and to the left: the far side of the face turns away into shadow,
+        // and the forehead, the near cheekbone and the chin catch the light
+        Color core = shade(skin, 0.42);
+        g.setPaint(lin(cx - hw, 0, cx + hw, 0, new float[]{0f, 0.5f, 0.78f, 1f},
+                new Color[]{alpha(Color.white, 0.06), alpha(core, 0), alpha(core, 0.14), alpha(core, 0.34)}));
+        g.fill(new Rectangle2D.Double(cx - hw - 2, cy - hh * 1.4, hw * 2 + 4, hh * 2.6));
+        glow(g, cx - hw * 0.22, cy - hh * 0.6, hw * 0.6, hh * 0.32, Color.white, 0.16);
+        glow(g, cx - hw * 0.5, cy + 13, hw * 0.28, 8, Color.white, 0.12);
+        glow(g, cx - 3, cy + hh * 0.9, chinW + 5, 6, Color.white, 0.09);
+        glow(g, cx + 1, cy + 47, 11, 3.5, core, 0.22);           // under the lower lip
         // stubble / shaved-head shadow inside the face
         if (L.facial == 3 || L.facial == 1 || L.facial == 2) {
             g.setColor(alpha(shade(hair, 0.7), L.facial == 3 ? 0.20 : 0.10));
@@ -247,12 +259,15 @@ public final class Portrait {
                 Shape pc = g.getClip();
                 g.clip(eye);
                 double ix = ex + gazeX, iy = eyeY - 0.6;
-                g.setColor(iris);
+                g.setPaint(new RadialGradientPaint(new Point2D.Double(ix - 0.6, iy + 1.2), 4.4f, new float[]{0f, 0.65f, 1f},
+                        new Color[]{shade(iris, 1.45), iris, shade(iris, 0.5)}));
                 g.fill(new Ellipse2D.Double(ix - 4.3, iy - 4.3, 8.6, 8.6));
                 g.setColor(rgb(0x0d0907));
                 g.fill(new Ellipse2D.Double(ix - 2.1, iy - 2.1, 4.2, 4.2));
                 g.setColor(new Color(255, 255, 255, 220));
-                g.fill(new Ellipse2D.Double(ix + 0.6, iy - 2.6, 1.9, 1.9));
+                g.fill(new Ellipse2D.Double(ix - 2.6, iy - 2.8, 2.2, 2.2));
+                g.setColor(new Color(255, 255, 255, 90));
+                g.fill(new Ellipse2D.Double(ix + 1.4, iy + 1.2, 1.1, 1.1));
                 g.setColor(new Color(0, 0, 0, 40));
                 g.fill(new Rectangle2D.Double(ex - ew, eyeY - 8, ew * 2, 3.2));
                 g.setClip(pc);
@@ -296,6 +311,10 @@ public final class Portrait {
         tip.quadTo(cx + 4, cy + 28.5, cx + 7, cy + 24);
         g.setColor(alpha(shade(skin, 0.55), 0.85));
         g.draw(tip);
+        glow(g, cx + 7.5, cy + 26, 8, 4, shade(skin, 0.4), 0.32);     // the shadow the nose casts
+        g.setColor(alpha(Color.white, 0.16));
+        g.setStroke(new BasicStroke(2.4f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g.draw(new Line2D.Double(cx - 0.5, eyeY + 5, cx + 0.5, cy + 17));
         g.setColor(alpha(shade(skin, 1.25), 0.6));
         g.fill(new Ellipse2D.Double(cx - 2.5, cy + 19, 4, 3));
         // ---- facial hair under the mouth
@@ -429,6 +448,12 @@ public final class Portrait {
         Color jacket = vest ? rgb(0xe9eef6) : suit;
         g.setPaint(new GradientPaint(0, (float) (180 + by), shade(jacket, 1.12), 0, 244, shade(jacket, 0.7)));
         g.fill(sh);
+        Shape pc0 = g.getClip();
+        g.clip(sh);
+        glow(g, 40, 196 + by, 46, 16, Color.white, 0.12);
+        g.setPaint(lin(0, 0, 200, 0, new float[]{0f, 0.55f, 1f}, new Color[]{alpha(Color.black, 0), alpha(Color.black, 0.04), alpha(Color.black, 0.32)}));
+        g.fill(new Rectangle2D.Double(-4, 170, 208, 80));
+        g.setClip(pc0);
         if (casual) {
             // open-collar shirt
             g.setColor(shade(suit, 0.8));
@@ -549,6 +574,17 @@ public final class Portrait {
         g.fill(p);
     }
 
+    /** Light on hair: a soft band of shine where the crown faces the light, and shade on the far side. */
+    static void sheen(Graphics2D g, Shape hairShape, Color hair, double cx, double cy, double hw, double hh) {
+        Shape pc = g.getClip();
+        g.clip(hairShape);
+        glow(g, cx - hw * 0.3, cy - hh * 1.0, hw * 0.75, hh * 0.22, shade(hair, 1.9), 0.4);
+        g.setPaint(lin(cx - hw, 0, cx + hw * 1.1, 0, new float[]{0f, 0.6f, 1f},
+                new Color[]{alpha(Color.black, 0), alpha(Color.black, 0.05), alpha(Color.black, 0.32)}));
+        g.fill(new Rectangle2D.Double(cx - hw - 8, cy - hh * 1.6, hw * 2 + 16, hh * 3.2));
+        g.setClip(pc);
+    }
+
     static void frontHair(Graphics2D g, Look L, Color hair, double cx, double cy, double hw, double hh, double jawW) {
         int st = L.style;
         Color hi = shade(hair, L.hair >= 5 ? 1.12 : 1.45), dk = shade(hair, 0.7);
@@ -610,6 +646,7 @@ public final class Portrait {
             }
             g.setPaint(new GradientPaint((float) cx, (float) (cy - hh * 1.1), shade(hair, 1.12), (float) cx, (float) (cy + low), shade(hair, 0.82)));
             g.fill(front);
+            sheen(g, front, hair, cx, cy, hw, hh);
             Shape pc = g.getClip();
             g.clip(front);
             g.setColor(alpha(hi, 0.30));
@@ -648,6 +685,7 @@ public final class Portrait {
         p.closePath();
         g.setPaint(new GradientPaint((float) cx, (float) (cy - hh * top), shade(hair, 1.1), (float) cx, (float) (cy - hh * 0.3), shade(hair, 0.85)));
         g.fill(p);
+        sheen(g, p, hair, cx, cy, hw, hh);
         double capTop = cy - hh * top * 0.75;
         // volume on top: soft waves (5, 10) or a swept-back pompadour (11)
         if (st == 5 || st == 10) {

@@ -4,7 +4,6 @@ import static resolutedesk.congress.CongressRules.*;
 import static resolutedesk.core.Dates.*;
 import static resolutedesk.core.Fmt.*;
 import static resolutedesk.core.Num.*;
-import static resolutedesk.model.Parties.*;
 import static resolutedesk.model.Tracking.*;
 import static resolutedesk.sim.Schedule.*;
 import static resolutedesk.ui.Draw.*;
@@ -16,12 +15,9 @@ import static resolutedesk.ui.Theme.*;
 
 import java.awt.BasicStroke;
 import java.awt.Color;
-import java.awt.GradientPaint;
 import java.awt.Graphics2D;
 import java.awt.Shape;
 import java.awt.event.KeyEvent;
-import java.awt.geom.AffineTransform;
-import java.awt.geom.Arc2D;
 import java.awt.geom.Ellipse2D;
 import java.awt.geom.Line2D;
 import java.awt.geom.Path2D;
@@ -296,193 +292,5 @@ public final class Oval {
         g.setClip(clip);
     }
 
-    static void scene(ResoluteDesk u, Graphics2D g, Game game) {
-        double t = u.tsec;
-        // the curved back wall
-        g.setPaint(new GradientPaint(0, 56, rgb(0xefe3c8), 0, 560, rgb(0xd8c7a3)));
-        g.fill(new Rectangle2D.Double(0, 56, DW, 560));
-        g.setColor(new Color(255, 255, 255, 30));
-        for (int i = 0; i < 9; i++) { double px = 40 + i * 190; g.draw(new Line2D.Double(px, 80, px, 520)); }
-        // crown moulding and the oval ceiling's edge
-        g.setColor(rgb(0xcdb98e));
-        g.fill(new Rectangle2D.Double(0, 56, DW, 18));
-        g.setColor(rgb(0xb9a37a));
-        g.fill(new Rectangle2D.Double(0, 520, DW, 14));
-        // three windows behind the desk, onto the South Lawn
-        for (int i = 0; i < 3; i++) {
-            double wx = 600 + i * 140, wy = 130, ww = 110, wh = 240;
-            g.setPaint(new GradientPaint((float) wx, (float) wy, rgb(0x9cc8ef), (float) wx, (float) (wy + wh), rgb(0xdcefff)));
-            g.fill(new Rectangle2D.Double(wx, wy, ww, wh));
-            g.setColor(rgb(0x6f9f4f));
-            g.fill(new Rectangle2D.Double(wx, wy + wh * 0.72, ww, wh * 0.28));
-            if (i == 1) {   // the Washington Monument in the distance
-                g.setColor(rgb(0xf4f1ea));
-                Path2D ob = new Path2D.Double();
-                ob.moveTo(wx + ww / 2 - 6, wy + wh * 0.72); ob.lineTo(wx + ww / 2 - 4, wy + 40); ob.lineTo(wx + ww / 2, wy + 30); ob.lineTo(wx + ww / 2 + 4, wy + 40); ob.lineTo(wx + ww / 2 + 6, wy + wh * 0.72); ob.closePath();
-                g.fill(ob);
-            }
-            g.setColor(rgb(0xf7f2e6));
-            g.setStroke(new BasicStroke(5f));
-            g.draw(new Rectangle2D.Double(wx, wy, ww, wh));
-            g.setStroke(new BasicStroke(2.5f));
-            for (int k = 1; k < 3; k++) g.draw(new Line2D.Double(wx + ww * k / 3, wy, wx + ww * k / 3, wy + wh));
-            for (int k = 1; k < 5; k++) g.draw(new Line2D.Double(wx, wy + wh * k / 5, wx + ww, wy + wh * k / 5));
-            g.setStroke(new BasicStroke(1f));
-            // gold drapes
-            for (int side = 0; side < 2; side++) {
-                double dx = side == 0 ? wx - 26 : wx + ww - 4;
-                g.setPaint(new GradientPaint((float) dx, 0, rgb(0xc9962e), (float) (dx + 30), 0, rgb(0xf0c862)));
-                Path2D d = new Path2D.Double();
-                d.moveTo(dx, wy - 16); d.lineTo(dx + 30, wy - 16); d.curveTo(dx + 26, wy + wh * 0.5, dx + 34, wy + wh * 0.8, dx + 32, wy + wh + 30); d.lineTo(dx - 4, wy + wh + 30); d.curveTo(dx + 4, wy + wh * 0.7, dx - 2, wy + wh * 0.4, dx, wy - 16); d.closePath();
-                g.fill(d);
-            }
-        }
-        g.setColor(rgb(0xb4862a));
-        g.fill(new Rectangle2D.Double(560, 108, 480, 16));
-        // flags either side of the windows
-        flag(g, 520, 180, t, true);
-        flag(g, 1080, 180, t, false);
-        // doors: West Wing (far left), press office, Roosevelt Room, residence (far right)
-        door(g, 60, 210, 90, 290, hot == 4);
-        door(g, 215, 160, 70, 260, hot == 7);
-        door(g, 1190, 170, 70, 240, hot == 5);
-        door(g, 1450, 210, 90, 290, hot == 3);
-        // portraits
-        frame(g, 330, 150, 120, 150, rgb(0x3f4a5e));
-        frame(g, 1290, 160, 110, 140, rgb(0x5e4a3f));
-        // the floor
-        g.setPaint(new GradientPaint(0, 534, rgb(0x7a5230), 0, DH, rgb(0x4c321d)));
-        g.fill(new Rectangle2D.Double(0, 534, DW, DH - 534));
-        g.setColor(new Color(0, 0, 0, 40));
-        for (int i = 0; i < 40; i++) g.draw(new Line2D.Double(i * 44 - 200, 534, i * 44 + 120, DH));
-        // the oval rug with the seal
-        Color rug = game.party == REP ? rgb(0xb98a2e) : rgb(0x1f3a7a);
-        g.setColor(shade(rug, 0.7));
-        g.fill(new Ellipse2D.Double(220, 560, 1160, 300));
-        g.setColor(rug);
-        g.fill(new Ellipse2D.Double(240, 568, 1120, 284));
-        g.setColor(new Color(242, 193, 78, 160));
-        g.setStroke(new BasicStroke(3f));
-        g.draw(new Ellipse2D.Double(270, 580, 1060, 260));
-        for (int i = 0; i < 24; i++) {
-            double a = i * Math.PI * 2 / 24;
-            g.draw(new Line2D.Double(800 + Math.cos(a) * 150, 710 + Math.sin(a) * 40, 800 + Math.cos(a) * 470, 710 + Math.sin(a) * 118));
-        }
-        g.setStroke(new BasicStroke(1f));
-        AffineTransform at = g.getTransform();
-        g.translate(800, 710);
-        g.scale(1, 0.3);
-        seal(g, 0, 0, 120);
-        g.setTransform(at);
-        // sofas and the coffee table
-        sofa(g, 330, 610, 250, true);
-        sofa(g, 1020, 610, 250, false);
-        g.setColor(rgb(0x3b2414));
-        g.fill(new RoundRectangle2D.Double(690, 778, 220, 40, 8, 8));
-        g.setColor(rgb(0x5a3a22));
-        g.fill(new RoundRectangle2D.Double(690, 770, 220, 18, 8, 8));
-        g.setColor(rgb(0xf4f0e6));
-        g.fill(new Rectangle2D.Double(730, 760, 70, 14));
-        g.fill(new Rectangle2D.Double(812, 762, 64, 12));
-        g.setColor(rgb(0x333333));
-        g.fill(new Rectangle2D.Double(736, 763, 56, 2));
-        // the globe on its stand
-        g.setColor(rgb(0x4a2e18));
-        g.fill(new Rectangle2D.Double(350, 520, 8, 46));
-        g.fill(new Rectangle2D.Double(330, 562, 50, 6));
-        g.setPaint(new GradientPaint(320, 440, rgb(0x6fa8c9), 380, 510, rgb(0x2e5f80)));
-        g.fill(new Ellipse2D.Double(318, 438, 76, 76));
-        g.setColor(rgb(0xa9c77b));
-        double spin = (t * 6) % 76;
-        for (int k = 0; k < 3; k++) { double cx = 318 + ((spin + k * 26) % 76); g.fill(new Ellipse2D.Double(cx - 8, 456 + k * 14, 16 + k * 3, 10)); }
-        g.setColor(rgb(0xb4862a));
-        g.setStroke(new BasicStroke(2f));
-        g.draw(new Arc2D.Double(312, 432, 88, 88, 200, 320, Arc2D.OPEN));
-        g.setStroke(new BasicStroke(1f));
-        // the side table and the briefing book
-        g.setColor(rgb(0x3b2414));
-        g.fill(new Rectangle2D.Double(1296, 500, 108, 64));
-        g.setColor(rgb(0x5a3a22));
-        g.fill(new Rectangle2D.Double(1290, 492, 120, 12));
-        g.setColor(rgb(0x1a2f63));
-        g.fill(new Rectangle2D.Double(1312, 470, 76, 22));
-        g.setColor(C_GOLD);
-        text(g, "CEA", 1334, 486, F_TB, C_GOLD);
-        // the Resolute Desk and the chair
-        g.setColor(rgb(0x2b1b12));
-        g.fill(new RoundRectangle2D.Double(762, 400, 76, 80, 20, 20));
-        g.setPaint(new GradientPaint(650, 450, rgb(0x6a4026), 650, 600, rgb(0x3e2414)));
-        g.fill(new Rectangle2D.Double(660, 460, 280, 130));
-        g.setColor(rgb(0x7a4b2d));
-        g.fill(new Rectangle2D.Double(648, 448, 304, 18));
-        g.setColor(rgb(0x4a2c18));
-        g.fill(new Rectangle2D.Double(752, 480, 96, 106));
-        g.setColor(new Color(242, 193, 78, 120));
-        g.draw(new Rectangle2D.Double(756, 484, 88, 98));
-        seal(g, 800, 528, 26);
-        g.setColor(rgb(0x3e2414));
-        for (int k = 0; k < 2; k++) g.draw(new Rectangle2D.Double(672 + k * 186, 478, 70, 100));
-        g.setColor(rgb(0xf4f0e6));
-        g.fill(new Rectangle2D.Double(700, 440, 60, 10));
-        g.setColor(rgb(0x222222));
-        g.fill(new RoundRectangle2D.Double(866, 438, 36, 12, 4, 4));
-        // the president, at the desk
-        Portrait.draw(g, game.pres, 770, 360, 60, 72, u.tsec, 0, true, false);
-    }
-
-    static void flag(Graphics2D g, double x, double y, double t, boolean us) {
-        g.setColor(rgb(0xc9a24a));
-        g.fill(new Rectangle2D.Double(x - 2, y - 40, 4, 360));
-        g.fill(new Ellipse2D.Double(x - 6, y - 50, 12, 12));
-        for (int k = 0; k < 7; k++) {
-            g.setColor(us ? (k % 2 == 0 ? rgb(0xb22234) : rgb(0xf5f5f0)) : (k < 4 ? rgb(0x1a2f63) : rgb(0x223c78)));
-            Path2D p = new Path2D.Double();
-            double sway = Math.sin(t * 0.8 + k * 0.4) * 2;
-            p.moveTo(x + 2, y - 30 + k * 26);
-            p.curveTo(x + 18, y - 26 + k * 26, x + 10 + sway, y - 10 + k * 26, x + 26 + sway, y - 4 + k * 26);
-            p.lineTo(x + 26 + sway, y + 22 + k * 26);
-            p.curveTo(x + 10 + sway, y + 16 + k * 26, x + 18, y + 2 + k * 26, x + 2, y - 4 + k * 26);
-            p.closePath();
-            g.fill(p);
-        }
-        if (us) { g.setColor(rgb(0x3c3b6e)); g.fill(new Rectangle2D.Double(x + 2, y - 30, 14, 60)); }
-        else { g.setColor(C_GOLD); g.fill(new Ellipse2D.Double(x + 6, y + 30, 14, 14)); }
-    }
-
-    static void door(Graphics2D g, double x, double y, double w, double h, boolean lit) {
-        g.setColor(rgb(0xcdb98e));
-        g.fill(new Rectangle2D.Double(x - 10, y - 22, w + 20, h + 22));
-        Path2D ped = new Path2D.Double();
-        ped.moveTo(x - 16, y - 22); ped.lineTo(x + w / 2, y - 50); ped.lineTo(x + w + 16, y - 22); ped.closePath();
-        g.fill(ped);
-        g.setPaint(new GradientPaint((float) x, (float) y, lit ? rgb(0xfaf3e1) : rgb(0xf2e9d3), (float) (x + w), (float) (y + h), rgb(0xd9ccad)));
-        g.fill(new Rectangle2D.Double(x, y, w, h));
-        g.setColor(new Color(0, 0, 0, 40));
-        g.draw(new Rectangle2D.Double(x + 8, y + 10, w - 16, h * 0.42));
-        g.draw(new Rectangle2D.Double(x + 8, y + h * 0.5, w - 16, h * 0.46));
-        g.setColor(C_GOLD);
-        g.fill(new Ellipse2D.Double(x + w - 18, y + h * 0.5, 7, 7));
-    }
-
-    static void frame(Graphics2D g, double x, double y, double w, double h, Color c) {
-        g.setColor(rgb(0xb4862a));
-        g.fill(new Rectangle2D.Double(x - 8, y - 8, w + 16, h + 16));
-        g.setPaint(new GradientPaint((float) x, (float) y, shade(c, 1.4), (float) x, (float) (y + h), shade(c, 0.6)));
-        g.fill(new Rectangle2D.Double(x, y, w, h));
-        g.setColor(new Color(255, 230, 190, 60));
-        g.fill(new Ellipse2D.Double(x + w * 0.3, y + h * 0.18, w * 0.4, h * 0.42));
-    }
-
-    static void sofa(Graphics2D g, double x, double y, double w, boolean left) {
-        Color c = rgb(0xe8dcc0);
-        g.setColor(shade(c, 0.7));
-        g.fill(new RoundRectangle2D.Double(x, y + 30, w, 60, 18, 18));
-        g.setColor(c);
-        g.fill(new RoundRectangle2D.Double(x, y, w, 48, 20, 20));
-        g.setColor(shade(c, 0.88));
-        g.fill(new RoundRectangle2D.Double(x + 10, y + 36, w - 20, 34, 14, 14));
-        g.setColor(shade(c, 0.8));
-        g.fill(new RoundRectangle2D.Double(left ? x - 8 : x + w - 22, y + 18, 30, 68, 12, 12));
-        g.fill(new RoundRectangle2D.Double(left ? x + w - 22 : x - 8, y + 18, 30, 68, 12, 12));
-    }
+    static void scene(ResoluteDesk u, Graphics2D g, Game game) { OvalArt.paint(u, g, game, hot); }
 }

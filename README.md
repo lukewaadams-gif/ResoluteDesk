@@ -321,6 +321,16 @@ The eras are on the **New presidency** screen. The campaign is in the Press Brie
   - **Stop for big decisions:** bills to sign or veto, shutdowns and the debt limit, crises and war, court rulings, scandals, storylines and the campaign. When one reaches your desk, watch mode waits for you, then carries on.
 - **From Battleground 2028:** take office as the winner of a Battleground 2028 game. Their face, ratings and running mate come across, with the Congress the election produced and the economy they inherit. The desktop versions read the other game's saves on the same computer; the browser versions read them in the same browser and site.
 
+### The look (new in version 2)
+
+Every picture in the game is drawn in code, with no image files.
+
+- **The rooms:** the Oval Office is painted with light from its windows, sunlight on the floor, wood grain, drapes, a lit rug and the desk's shadow. The title screen shows the White House at dusk. Each room behind the panels has its own setting: walnut by lamplight at the desk, the Yellow Oval Room's fire in the Residence, the red walls of the Roosevelt Room, the glowing screens of the Situation Room, the blue curtain of the briefing room and the coral drapes of the Cabinet Room.
+- **The portraits:** light from the upper left, with shadow on the far side of the face, light on the brow, cheek and chin, the shadow of the nose, shine in the hair and the eyes, and the head's shadow on the collar.
+- **The maps:** the world sits in a dark ocean with a graticule and shallows along every coast; both maps cast shadows and catch the light.
+- **The type:** Inter for the interface, Playfair Display for titles and mastheads, Source Serif 4 for the paper and JetBrains Mono for figures. The fonts ship inside the jar and the page, so they work offline.
+- The painted layers are drawn once at the screen's resolution and cached, so the detail costs nothing frame to frame.
+
 ## Coming in version 2
 
 Version 2 arrives in stages, each one playable:
@@ -331,7 +341,7 @@ Version 2 arrives in stages, each one playable:
 4. **Foreign policy and war** (done). Objectives with all 40 countries, a full set of tools from arms sales to covert action, wars of choice against any country, many ways to end a war, and realistic consequences (see [Statecraft and wars of choice](#statecraft-and-wars-of-choice-new-in-version-2)).
 5. **News and runaway storylines** (done). 541 stories of their era and sixteen storylines that grow with your choices and can take over a presidency (see [The news and runaway storylines](#the-news-and-runaway-storylines-new-in-version-2)).
 6. **Watch mode priorities and the 2029 setup** (done). Presets, sliders, a bill list and stops for big decisions in watch mode; sliders for the 2028 result, the deficit, the Court and three hot spots in 2029.
-7. **New art.** Lit, textured rooms, detailed portraits, and a new interface with real typefaces.
+7. **New art** (done). Lit, textured rooms, shaded portraits and maps, and real typefaces (see [The look](#the-look-new-in-version-2)).
 
 ## Screenshots
 
@@ -375,6 +385,7 @@ Version 2 arrives in stages, each one playable:
 - What happens after an era begins is alternate history: the turning points arrive on their real dates, but the outcomes are yours.
 - Country outlines are from Natural Earth via the world-atlas package. Flags are stylised; those of the past are simplified and carry no emblems.
 - The browser version is generated from the Java source, so the two play the same game.
+- The typefaces are Inter, Playfair Display, Source Serif 4 and JetBrains Mono, used under the SIL Open Font License. The licenses are in `src/main/resources/fonts/`.
 
 ## The code
 
@@ -383,6 +394,7 @@ The game is plain Java 8 with Swing, and it uses no outside libraries. The sourc
 ```
 src/main/java/resolutedesk/   the game, one package per mechanic: economy, opinion, congress, executive,
                               world, history, home, press, campaign, legacy, sim (the turn), ui and more
+src/main/resources/fonts/     the four typefaces and their licenses
 src/test/java/resolutedesk/   tests for each mechanic and whole-presidency simulations
 tools/Build.java              the build: compile, test, bundle, translate, package
 tools/bundle/                 merges the project into the one-file BlueJ version
