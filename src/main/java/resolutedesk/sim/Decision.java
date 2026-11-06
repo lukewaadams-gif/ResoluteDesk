@@ -8,6 +8,7 @@ import resolutedesk.executive.Case;
 import resolutedesk.executive.Person;
 import resolutedesk.executive.Probe;
 import resolutedesk.executive.Scandal;
+import resolutedesk.stories.Storyline;
 import resolutedesk.world.War;
 
 /** A decision waiting on the president's desk, with its options and the advice that comes with them. */
@@ -24,6 +25,7 @@ public final class Decision implements Serializable {
     public Person person;
     public Member member;
     public War war;
+    public Storyline story;
     public int[] codes;
     Person[] advisers;
 }

@@ -292,7 +292,7 @@ public final class History {
         return best;
     }
 
-    static double var(Game g, String k) {
+    public static double var(Game g, String k) {
         World w = g.world;
         if (k.equals("year")) return yearNow(g);
         if (k.startsWith("war_")) { War x = war(w, k.substring(4)); return x == null ? 0 : x.stage; }

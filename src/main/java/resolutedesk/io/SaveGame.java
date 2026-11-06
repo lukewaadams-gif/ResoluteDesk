@@ -35,6 +35,7 @@ import resolutedesk.opinion.Elect;
 import resolutedesk.opinion.Groups;
 import resolutedesk.policy.Policies;
 import resolutedesk.sim.Decision;
+import resolutedesk.stories.Stories;
 import resolutedesk.world.Diplo;
 import resolutedesk.world.Statecraft;
 
@@ -107,6 +108,7 @@ public final class SaveGame {
         if (g.world.name == null) History.world(g, g.era.year, false);
         if (g.world.wars == null) History.setup(g);
         if (g.world.milAid == null) Statecraft.upgrade(g);
+        Stories.upgrade(g);
         if (g.termWeeks <= 0 || g.term == 1 && g.termWeeks == 208 && g.era.inM != 0) g.termWeeks = termEnd(g);
         if (g.milestones == null) g.milestones = new ArrayList<String>();
         if (g.histOk == null) g.histOk = new ArrayList<String>();

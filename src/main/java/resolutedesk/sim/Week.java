@@ -31,6 +31,7 @@ import resolutedesk.model.Econ;
 import resolutedesk.model.Game;
 import resolutedesk.opinion.Approval;
 import resolutedesk.policy.Policies;
+import resolutedesk.stories.Stories;
 import resolutedesk.world.Diplo;
 
 /** The president's calendar plays out slot by slot; then the economy, opinion and the news move. */
@@ -202,6 +203,7 @@ public final class Week {
             if (g.home != null) HomeFront.week(g);
             g.issueAdj[PI_ECON] = clamp(g.issueAdj[PI_ECON] + 0.003 * (Cabinet.sq(g, S_NEC) - 0.6), -1.5, 1.5);
         }
+        if (g.stories != null && g.home != null) Stories.week(g);
         record(g);
         g.week++;
         Terms.check(g);

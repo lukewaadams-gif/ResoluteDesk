@@ -17,6 +17,7 @@ import resolutedesk.executive.Exec;
 import resolutedesk.home.Home;
 import resolutedesk.policy.PolicyState;
 import resolutedesk.sim.Decision;
+import resolutedesk.stories.StoryState;
 import resolutedesk.transition.Transition;
 import resolutedesk.world.World;
 
@@ -60,6 +61,7 @@ public final class Game implements Serializable {
     public Reelect re;                         // the campaign for another term
     public Transition trans;                   // the weeks before the inauguration, if they were played
     public PolicyState pol;                    // where every policy stands, and the outcomes
+    public StoryState stories;                 // the era's news, and the storylines under way
     public int tut = -1;                       // the tutorial's step (-1: off)
     public boolean watch;                      // watch mode: the game plays itself
     public int watchSpeed = 1;

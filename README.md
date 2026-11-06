@@ -240,6 +240,20 @@ The Statecraft tab of the Situation Room, or the button under any country on the
   - Consequences: casualties, oil shocks, refugees, terror threats, protests at home, damaged alliances, and support at home that falls about six points with every tenfold rise in American deaths. An unpopular war drags on your approval for as long as it lasts.
   - Many ways out: win, reach a settlement, withdraw now, set a timetable of six months or a year, hand over to the new government or to allies, declare victory (believable only if the front holds), or escalate.
 
+### The news and runaway storylines (new in version 2)
+
+- **541 stories of their era** beyond the White House, filed under science, culture, sports, business, health, technology, the weather and daily life. They fill the Capital Ledger and the ticker on quiet weeks, and each runs once a presidency.
+  - From 1933 to mid-2026 they are real events in their real months: the Hindenburg, the Golden Gate Bridge, the polio vaccine trials, Telstar, Woodstock, the Miracle on Ice, Chernobyl, the Dream Team, the first iPhone, the Webb telescope, the first American pope.
+  - After that they are plausible inventions about no one real.
+  - Others follow the state of the country: breadlines in the 1930s and job fairs today when unemployment is high, gas lines when prices spike, crime waves, war production and gold stars in the windows during a war, the storms of each season, and the sports calendar.
+  - Some make voters care more about an issue: a crime story raises the salience of crime, a pump-price story raises energy.
+  - Turning points the game already plays as decisions, and anything about presidents themselves, are left out. No one is quoted.
+- **Sixteen storylines that can grow until they take over a presidency:** a run on the banks, a strike wave, a protest movement, a third-party insurgency, the great drought, the loyalty hunt of the late 1940s and 1950s, the wage-price spiral, the polio summers, the crime panic, the gas lines, the housing bubble, the overdose epidemic, the ransomware wave, the viral election hoax, states defying Washington, and the AI layoffs.
+  - Each starts small, in a state of the game's choosing and often around a made-up figure, and has three or four stages. Every stage brings a decision with options, advisers and odds.
+  - A storyline has heat. Your answer cools it or feeds it, a failed gamble makes it worse, and the country keeps feeding it: unemployment feeds a strike wave, a falling market a bank run, low approval a third party.
+  - At the end of each stage a hot storyline grows into the next and a cool one fades. One still hot at the end of its last stage takes over the presidency, with its full effect on the economy and approval, a lasting hold on what voters care about, and a place in the record.
+  - The paper tracks every storyline under way beside the front page, and the daily brief flags the ones that are growing.
+
 ### The home front and the press (update 5)
 
 Open the Press Briefing Room from the Oval Office, or press 8. The daily brief is in the Situation Room.
@@ -311,7 +325,7 @@ Version 2 arrives in stages, each one playable:
 2. **The transition and your team** (done). Ten weeks from Election Day to the inauguration to choose your cabinet and staff from shortlists, with vetting, leaks and early Senate whip counts. A new approval model with real presidents' range, from honeymoons in the 60s to lows in the 20s and rallies near 90%. Political capital gives way to relationships you build: goodwill with blocs, leaders and committee chairs, and favors owed.
 3. **Policies and their real-world effects** (done). About 150 policies in 12 areas, changed through bills, executive orders, agency rules or the budget. Each changes measurable outcomes over months and years, and each has an impacts panel with winners, losers, timing, precedents and how sure the evidence is. A map of the whole system shows what affects what.
 4. **Foreign policy and war** (done). Objectives with all 40 countries, a full set of tools from arms sales to covert action, wars of choice against any country, many ways to end a war, and realistic consequences (see [Statecraft and wars of choice](#statecraft-and-wars-of-choice-new-in-version-2)).
-5. **News and runaway storylines.** Hundreds of new stories, and stories that grow with your choices and can take over a presidency.
+5. **News and runaway storylines** (done). 541 stories of their era and sixteen storylines that grow with your choices and can take over a presidency (see [The news and runaway storylines](#the-news-and-runaway-storylines-new-in-version-2)).
 6. **Watch mode priorities and the 2029 setup.** Presets and sliders for the computer president, and sliders for the world you inherit in 2029.
 7. **New art.** Lit, textured rooms, detailed portraits, and a new interface with real typefaces.
 
@@ -337,6 +351,7 @@ Version 2 arrives in stages, each one playable:
 | ![Your party](screenshots/your-party.png) | ![A domestic event](screenshots/a-domestic-event.png) |
 | ![Every inauguration](screenshots/eras.png) | ![The tour](screenshots/the-tour.png) |
 | ![Statecraft](screenshots/statecraft.png) | ![A war of choice](screenshots/a-war-of-choice.png) |
+| ![The paper and its storylines](screenshots/the-paper-storylines.png) | ![A storyline](screenshots/a-storyline.png) |
 | ![The world in 1942](screenshots/the-world-1942.png) | ![A war](screenshots/a-war.png) |
 | ![The Hill in 1942](screenshots/the-hill-1942.png) | ![The cabinet in 1942](screenshots/the-cabinet-1942.png) |
 | ![A turning point](screenshots/a-turning-point.png) | ![The campaign](screenshots/the-campaign.png) |

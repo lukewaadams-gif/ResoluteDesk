@@ -8,4 +8,5 @@ public final class News implements Serializable {
     public int day, kind;
     public String head, body;
     public double weight;                      // how big a story it is
+    public String section;                     // the paper's section for a story from beyond the White House, or null
 }

@@ -37,6 +37,7 @@ import resolutedesk.home.HomeFront;
 import resolutedesk.model.Game;
 import resolutedesk.press.QA;
 import resolutedesk.press.Speech;
+import resolutedesk.stories.Storylines;
 import resolutedesk.ui.HillUI;
 import resolutedesk.ui.Modal;
 import resolutedesk.ui.Sfx;
@@ -141,6 +142,7 @@ public final class Decisions {
             case D_CAMPAIGN: return Reelection.auto(g, d);
             case D_ASK: return Relations.auto(g, d);
             case D_WARPOWERS: return Wars.auto(g, d);
+            case D_STORY: return Storylines.auto(g, d);
             case D_SPEECH: return d.codes != null ? (g.week % d.codes.length) : d.a == 0 ? 0 : 0;
             case D_SUMMIT: case D_GSUMMIT: case D_DISASTER: case D_QA: return 0;
             default: return 0;
@@ -238,6 +240,7 @@ public final class Decisions {
             case D_CAMPAIGN: Reelection.decide(g, d, k); break;
             case D_ASK: Relations.answer(g, d, k); break;
             case D_WARPOWERS: Wars.warPowers(g, d, k); break;
+            case D_STORY: Storylines.decide(g, d, k); break;
             case D_HOME: HomeFront.eventDecision(g, d.a, k); break;
             case D_DISASTER: HomeFront.disasterDecision(g, d, k); break;
             case D_SPEECH: Speech.step(g, d.codes != null ? d.codes[k] : k); break;

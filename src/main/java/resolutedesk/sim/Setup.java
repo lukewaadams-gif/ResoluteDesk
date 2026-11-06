@@ -23,6 +23,7 @@ import resolutedesk.model.Game;
 import resolutedesk.model.Settings;
 import resolutedesk.opinion.Approval;
 import resolutedesk.policy.Policies;
+import resolutedesk.stories.Stories;
 import resolutedesk.transition.Transitions;
 import resolutedesk.world.Diplo;
 
@@ -74,6 +75,7 @@ public final class Setup {
         Approval.init(g);
         HomeFront.setup(g);
         Policies.setup(g);
+        Stories.setup(g);
         History.setup(g);
         Week.routine(g);
         if (s.transition) Transitions.begin(g);         // the oath comes when the transition ends

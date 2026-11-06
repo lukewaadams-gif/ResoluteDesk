@@ -16,6 +16,7 @@ import static resolutedesk.model.Parties.*;
 import static resolutedesk.opinion.Issues.*;
 import static resolutedesk.press.Outlets.*;
 import static resolutedesk.sim.DecisionKinds.*;
+import static resolutedesk.stories.StoryData.*;
 import static resolutedesk.world.WorldTables.*;
 
 import java.util.ArrayList;
@@ -32,6 +33,8 @@ import resolutedesk.model.Game;
 import resolutedesk.press.Speech;
 import resolutedesk.sim.Decision;
 import resolutedesk.sim.Decisions;
+import resolutedesk.stories.Storyline;
+import resolutedesk.stories.Storylines;
 import resolutedesk.world.Diplo;
 import resolutedesk.world.War;
 import resolutedesk.world.World;
@@ -263,6 +266,8 @@ public final class HomeFront {
         if (h.grid > 55) b.add("1|ENERGY: The grid has little spare capacity; a heat wave or a storm could cause blackouts.");
         if (h.od > 85) b.add("2|FENTANYL: Overdose deaths are rising again.");
         if (h.protest > 55) b.add("1|DOMESTIC: Protests are expected in several cities this weekend.");
+        for (Storyline l : Storylines.active(g))
+            b.add((l.heat >= SL_GROW ? "3" : l.heat >= 45 ? "2" : "1") + "|DEVELOPING: " + Storylines.stageHead(l) + ". " + (l.heat >= SL_GROW ? "It is growing, and could get worse." : l.heat >= 45 ? "It hasn't gone away." : "It is cooling."));
         if (b.isEmpty()) b.add("1|A quiet week. Nothing urgent overnight.");
         h.brief = b;
     }

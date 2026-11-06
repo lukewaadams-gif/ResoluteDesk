@@ -5229,6 +5229,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             }
             if (what.equals("ui")) ui(a.length > 2 ? a[2] : "shots");
             if (what.equals("policies")) policySim(a.length > 2 ? Integer.parseInt(a[2]) : 2025, a.length > 3 ? Integer.parseInt(a[3]) : 104);
+            if (what.equals("stories")) storySim(a.length > 2 ? Integer.parseInt(a[2]) : 2025, a.length > 3 ? Integer.parseInt(a[3]) : 104);
             if (what.equals("wars")) warSim(a.length > 2 ? Integer.parseInt(a[2]) : 2025, a.length > 3 ? Integer.parseInt(a[3]) : 80);
             if (what.equals("transition")) transitionSim(a.length > 2 ? Integer.parseInt(a[2]) : 2025, a.length > 3 ? Integer.parseInt(a[3]) : 52);
             if (what.equals("check")) check();
@@ -5344,6 +5345,18 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             }
         }
 
+        /** A story's effects without the keys only stories know (salience and housing), for checkFx. */
+        static String storyFx(String fx) {
+            if (fx.equals("-")) return "";
+            StringBuilder b = new StringBuilder();
+            for (String t : fx.split(" ")) {
+                if (t.isEmpty() || t.startsWith("housing=")) continue;
+                if (t.startsWith("sal:")) { if (Stories.issue(t.substring(4, t.indexOf('='))) < 0) System.out.println("BAD ISSUE " + t); continue; }
+                b.append(b.length() > 0 ? " " : "").append(t);
+            }
+            return b.toString();
+        }
+
         /** Every parallel data table must line up. */
         static void check() {
             int n = AD_ID.length;
@@ -5423,6 +5436,25 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 }
             }
             System.out.println("statecraft: " + nobj + " objectives");
+            for (StoryDef d : Stories.defs()) {
+                if (d.from > d.to) System.out.println("STORY RUNS BACKWARD: " + d.head);
+                checkFx(storyFx(d.fx));
+                if (d.head.contains("\"") || d.body.contains("\"")) System.out.println("STORY QUOTES SOMEONE: " + d.head);
+            }
+            for (StorylineDef d : Storylines.defs()) {
+                checkFx(storyFx(d.endFx.replace("{st}", "TX")));
+                for (int i = 0; i < d.stages(); i++) {
+                    checkFx(storyFx(d.weekFx[i].replace("{st}", "TX")));
+                    for (String[] o : d.options[i]) {
+                        if (!"dmihjxcs".contains(o[2]) || o[2].length() != 1) System.out.println("STORYLINE " + d.id + ": odds kind " + o[2]);
+                        Double.parseDouble(o[3]); Double.parseDouble(o[4]); Double.parseDouble(o[5]);
+                        checkFx(storyFx(o[6].replace("{st}", "TX"))); checkFx(storyFx(o[7].replace("{st}", "TX")));
+                        boolean adv = false; for (String lab : ADV_LABEL) if (lab.equals(o[1])) adv = true;
+                        if (!adv) System.out.println("STORYLINE " + d.id + ": no adviser " + o[1]);
+                    }
+                }
+            }
+            System.out.println("stories: " + Stories.defs().size() + " of their era, " + Storylines.defs().size() + " storylines");
             System.out.println("history: " + ERAS.size() + " eras, " + HIST.size() + " historical figures, " + FLASH.length + " turning points, " + HBILL_SPEC.length + " historical bills");
             System.out.println("check done: " + n + " actions, " + nc + " crises, " + ne + " events");
         }
@@ -5515,6 +5547,26 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             System.out.println(b);
         }
 
+        /** The era's news and its storylines over a presidency left to the hands-off president: every story, and how each storyline went. */
+        static void storySim(int year, int weeks) {
+            Game g = newGame(91, year, null, 0);
+            StringBuilder b = new StringBuilder("=== stories " + year + " " + g.pres.name() + ", " + Stories.inYear(year) + " stories for the year\n");
+            int seen = 0;
+            for (int k = 0; k < weeks && !g.over; k++) {
+                Auto.week(g); Week.resolve(g); Decisions.autoAll(g);
+                for (; seen < g.news.size(); seen++) {
+                    News n = g.news.get(seen);
+                    if (n.section != null) b.append("  wk").append(g.week).append(" [").append(n.section).append("] ").append(n.head).append("\n");
+                }
+                seen = g.news.size();
+                for (Storyline l : Storylines.active(g)) if (g.week % 4 == 0) b.append("  wk").append(g.week).append(" storyline ").append(Storylines.describe(l)).append(" heat ").append(fmt0(l.heat)).append("\n");
+            }
+            for (Storyline l : g.stories.lines) b.append("  ").append(Storylines.def(l).name).append(": ").append(SL_STATUS[l.status]).append(" at stage ").append(l.stage + 1).append(", weeks ").append(l.started).append("-").append(l.ended).append(", ").append(l.choices).append(" choices, who ").append(l.who).append("\n");
+            b.append("  ambient stories ").append(g.stories.ran).append(" approval ").append(fmt1(g.approval)).append("\n");
+            for (String m : g.milestones) b.append("  * ").append(m).append("\n");
+            System.out.println(b);
+        }
+
         static void transitionSim(int year, int weeks) {
             Settings s = new Settings();
             Era e = era(year);
@@ -5566,6 +5618,22 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             for (int i = 0; i < g.world.wars.size(); i++) if (g.world.wars.get(i).enemy == CC_VE) SitRoom.selWar = 0;
             shot(u, dir, "war_venezuela");
             SitRoom.tab = 0;
+        }
+
+        /** The paper with the era's stories and a storyline under way, and a storyline's decision. */
+        static void storyShots(ResoluteDesk u, String dir) {
+            Game g = u.game;
+            u.modal = null; g.inbox.clear();
+            int strike = 0;
+            for (int i = 0; i < Storylines.defs().size(); i++) if (Storylines.defs().get(i).id.equals("strike")) strike = i;
+            Storyline l = Storylines.start(g, strike);
+            Decisions.show(u, g); shot(u, dir, "storyline_decision");
+            u.modal = null; g.inbox.clear();
+            l.heat = 70;
+            for (int w = 0; w < 4; w++) { Week.routine(g); Week.resolve(g); }
+            g.inbox.clear();
+            u.go(SC_PAPER); shot(u, dir, "paper_stories");
+            u.go(SC_OVAL);
         }
 
         /** The Cabinet Room: a policy and its impacts, the outcomes, and the system map. */
@@ -5631,6 +5699,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             for (int t = 0; t < HillUI.TABS.length; t++) { HillUI.tab = t; HillUI.sel = -1; shot(u, dir, "hill_" + t); }
             policyShots(u, dir);
             worldShots(u, dir);
+            storyShots(u, dir);
             HillUI.tab = 1; HillUI.draftSel = 1; HillUI.draft = Legis.draft(u.game, HillUI.agenda(u.game).get(1)); shot(u, dir, "hill_draft");
             HillUI.tab = 0; HillUI.chairCh = 1; shot(u, dir, "hill_senate_chairs");
             for (Bill b : u.game.cong.bills) if (b.stage == ST_LAW) { Legis.toDesk(u.game, b); break; }
@@ -7922,7 +7991,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             return best;
         }
 
-        static double var(Game g, String k) {
+        public static double var(Game g, String k) {
             World w = g.world;
             if (k.equals("year")) return yearNow(g);
             if (k.startsWith("war_")) { War x = war(w, k.substring(4)); return x == null ? 0 : x.stage; }
@@ -8883,6 +8952,8 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             if (h.grid > 55) b.add("1|ENERGY: The grid has little spare capacity; a heat wave or a storm could cause blackouts.");
             if (h.od > 85) b.add("2|FENTANYL: Overdose deaths are rising again.");
             if (h.protest > 55) b.add("1|DOMESTIC: Protests are expected in several cities this weekend.");
+            for (Storyline l : Storylines.active(g))
+                b.add((l.heat >= SL_GROW ? "3" : l.heat >= 45 ? "2" : "1") + "|DEVELOPING: " + Storylines.stageHead(l) + ". " + (l.heat >= SL_GROW ? "It is growing, and could get worse." : l.heat >= 45 ? "It hasn't gone away." : "It is cooling."));
             if (b.isEmpty()) b.add("1|A quiet week. Nothing urgent overnight.");
             h.brief = b;
         }
@@ -9331,6 +9402,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             if (g.world.name == null) History.world(g, g.era.year, false);
             if (g.world.wars == null) History.setup(g);
             if (g.world.milAid == null) Statecraft.upgrade(g);
+            Stories.upgrade(g);
             if (g.termWeeks <= 0 || g.term == 1 && g.termWeeks == 208 && g.era.inM != 0) g.termWeeks = termEnd(g);
             if (g.milestones == null) g.milestones = new ArrayList<String>();
             if (g.histOk == null) g.histOk = new ArrayList<String>();
@@ -10040,6 +10112,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         public Reelect re;                         // the campaign for another term
         public Transition trans;                   // the weeks before the inauguration, if they were played
         public PolicyState pol;                    // where every policy stands, and the outcomes
+        public StoryState stories;                 // the era's news, and the storylines under way
         public int tut = -1;                       // the tutorial's step (-1: off)
         public boolean watch;                      // watch mode: the game plays itself
         public int watchSpeed = 1;
@@ -10098,6 +10171,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         public int day, kind;
         public String head, body;
         public double weight;                      // how big a story it is
+        public String section;                     // the paper's section for a story from beyond the White House, or null
     }
 
     // ---------------------------------------------------------------------
@@ -11841,6 +11915,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
         public Person person;
         public Member member;
         public War war;
+        public Storyline story;
         public int[] codes;
         Person[] advisers;
     }
@@ -11851,7 +11926,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
     //  Things only the president can decide land in the inbox. Each choice comes with what your advisers say.
     public static final int D_SIGN = 1, D_CR = 2, D_SHUTDOWN = 3, D_DEBT = 4, D_BUDGET = 5, D_INFO = 6, D_MUSTPASS = 7,
             D_CRA = 8, D_EMERG_END = 9, D_COURT = 10, D_SCANDAL = 11, D_LEAK = 12, D_PARDON = 13, D_SUBPOENA = 14, D_IMPEACH = 15,
-            D_WORLD = 16, D_SUMMIT = 17, D_GSUMMIT = 18, D_HOME = 19, D_DISASTER = 20, D_SPEECH = 21, D_QA = 22, D_HIST = 23, D_CAMPAIGN = 24, D_ASK = 25, D_WARPOWERS = 26;
+            D_WORLD = 16, D_SUMMIT = 17, D_GSUMMIT = 18, D_HOME = 19, D_DISASTER = 20, D_SPEECH = 21, D_QA = 22, D_HIST = 23, D_CAMPAIGN = 24, D_ASK = 25, D_WARPOWERS = 26, D_STORY = 27;
 
     /** Making decisions: the options of each kind of decision, the advice, what each choice does, and how the hands-off president chooses. */
     static final class Decisions {
@@ -11949,6 +12024,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 case D_CAMPAIGN: return Reelection.auto(g, d);
                 case D_ASK: return Relations.auto(g, d);
                 case D_WARPOWERS: return Wars.auto(g, d);
+                case D_STORY: return Storylines.auto(g, d);
                 case D_SPEECH: return d.codes != null ? (g.week % d.codes.length) : d.a == 0 ? 0 : 0;
                 case D_SUMMIT: case D_GSUMMIT: case D_DISASTER: case D_QA: return 0;
                 default: return 0;
@@ -12046,6 +12122,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 case D_CAMPAIGN: Reelection.decide(g, d, k); break;
                 case D_ASK: Relations.answer(g, d, k); break;
                 case D_WARPOWERS: Wars.warPowers(g, d, k); break;
+                case D_STORY: Storylines.decide(g, d, k); break;
                 case D_HOME: HomeFront.eventDecision(g, d.a, k); break;
                 case D_DISASTER: HomeFront.disasterDecision(g, d, k); break;
                 case D_SPEECH: Speech.step(g, d.codes != null ? d.codes[k] : k); break;
@@ -12190,6 +12267,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             Approval.init(g);
             HomeFront.setup(g);
             Policies.setup(g);
+            Stories.setup(g);
             History.setup(g);
             Week.routine(g);
             if (s.transition) Transitions.begin(g);         // the oath comes when the transition ends
@@ -12382,6 +12460,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 if (g.home != null) HomeFront.week(g);
                 g.issueAdj[PI_ECON] = clamp(g.issueAdj[PI_ECON] + 0.003 * (Cabinet.sq(g, S_NEC) - 0.6), -1.5, 1.5);
             }
+            if (g.stories != null && g.home != null) Stories.week(g);
             record(g);
             g.week++;
             Terms.check(g);
@@ -12415,6 +12494,1421 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
             g.maxApproval = Math.max(g.maxApproval, g.approval);
             g.hist.add(new double[]{g.week, g.approval, e.unemp, e.infl, e.gdp, e.stocks, e.gas, e.deficit, e.debt, e.fed, e.sentiment, g.stamina, g.stress, e.tenYr, g.issueApp[PI_ECON], g.issueApp[PI_PRICES]});
         }
+    }
+
+    /**
+     * Stories that follow the state of the country rather than the calendar: hard times and good times, prices, crime,
+     * war, the weather of each season and the sports year. The layout is AmbientEarly's; year ranges keep the words
+     * right for the era (relief rolls in the 1930s, job fairs today).
+     */
+    static final class AmbientAny {
+        private AmbientAny() {
+        }
+
+        static final String[] ROWS = {
+                // ---- jobs ----
+                "1933|1959|unemp>9|E|Men line up at dawn for a day's work in {state}|Hundreds wait outside the gates each morning for a few dozen jobs. Those turned away try the next plant down the road.|sal:JOBS=0.04",
+                "1960|1989|unemp>7.5|E|The unemployment line wraps around the block in {state}|Laid-off workers wait hours to file their claims. Caseworkers say they haven't seen it this bad in years.|sal:JOBS=0.04",
+                "1990|2037|unemp>7|E|A job fair in {state} draws ten times the expected crowd|Organizers ran out of applications in the first hour. Many in line said they had been looking for months.|sal:JOBS=0.04",
+                "1933|2037|unemp>8|D|Young people move home as jobs dry up|Parents in {state} say grown children who lost their jobs are back in their old bedrooms.|sal:JOBS=0.02",
+                "1933|2037|uchg>1|E|Layoffs spread from factories to offices|Companies in {state} that were hiring a year ago are now cutting staff. Economists say the slowdown is broadening.|sal:JOBS=0.03",
+                "1933|2037|uchg<-1|E|Hiring signs go up across {state}|Employers are competing for workers again. Some are offering signing bonuses and raising starting pay.|",
+                "1946|2037|unemp<4|E|Help wanted: businesses in {state} can't find workers|Restaurants are cutting hours and factories are turning down orders because they can't hire enough people.|",
+                "1960|2037|unemp<4.5|E|Wages are rising for the lowest-paid workers|With jobs plentiful, workers are switching employers for better pay, and wages at the bottom are climbing fastest.|",
+                "1933|2037|unemp>6|D|Charities in {state} say demand has never been higher|Food pantries and shelters are serving families who used to donate to them.|sal:JOBS=0.02",
+                // ---- growth and the markets ----
+                "1933|2037|gdp<0|E|Economists say a recession has begun|Output has fallen for two quarters in a row. Business owners in {state} say customers have pulled back.|sal:ECON=0.05",
+                "1933|2037|gdp>4|E|The economy is booming|Factories are running flat out and stores report record sales. Some economists worry it can't last.|",
+                "1933|2037|mkt<-10|B|Stocks tumble, and savers watch their nest eggs shrink|The market has lost more than a tenth of its value in three months. Brokers say the phones haven't stopped ringing.|sal:ECON=0.04",
+                "1933|2037|mkt<-18|B|Panic selling on Wall Street|The worst stretch for stocks in years. Retirees in {state} say they're postponing plans.|sal:ECON=0.06",
+                "1933|2037|mkt>12|B|Stocks hit a record high|The market is up more than a tenth in three months. Investors are pouring in, and some analysts are warning of froth.|",
+                "1933|2037|mkt>20|B|A stock market frenzy|Shoeshine boys and cab drivers are trading tips. Old hands on Wall Street say they've seen this movie before.|",
+                "1933|2037|deficit>6|E|The deficit worries Wall Street|Bond traders say the government is borrowing too much. Interest rates are creeping up.|sal:ECON=0.02",
+                "1945|2037|fed>7|E|High interest rates freeze buyers out of the market|Car dealers and home builders in {state} say customers can't afford the loans.|sal:ECON=0.03",
+                "1960|2037|fed<1.5|E|Cheap money: borrowing costs at rock bottom|Mortgages and car loans are the cheapest in years. Savers complain their accounts earn almost nothing.|",
+                "1933|2037|sent<65|E|Consumers are gloomier than they've been in years|Surveys show Americans expect hard times ahead, and they're putting off big purchases.|sal:ECON=0.03",
+                "1933|2037|sent>100|E|Shoppers are in a buying mood|Confidence is at its highest in years. Families are buying cars, furniture and vacations.|",
+                // ---- prices ----
+                "1933|2037|infl>6|E|Prices at the grocery store keep climbing|Shoppers in {state} are buying store brands and skipping meat. Every week the bill is higher.|sal:PRICES=0.05",
+                "1933|2037|infl>9|E|Double-digit inflation squeezes retirees|Pensioners on fixed incomes in {state} say they're choosing between food and medicine.|sal:PRICES=0.06",
+                "1933|1940|infl<0|E|Falling prices hurt farmers and debtors|Wheat and cotton bring less every season, but mortgage payments stay the same.|",
+                "1946|2037|infl<1|E|Prices are flat, and some are falling|Economists say slow price growth is a sign of weak demand.|",
+                "1933|2037|gasup>1|D|Drivers grumble at the pump|Filling the tank costs far more than a year ago. Commuters in {state} say they're cutting back on trips.|sal:ENERGY=0.04 sal:PRICES=0.03",
+                "1933|2037|gasup<-0.5|D|Cheap gas puts drivers on the road|With prices down, families are taking road trips and buying bigger cars.|",
+                "1990|2037|infl>4|E|Rent, insurance and child care eat up paychecks|Families in {state} say even with raises they're falling behind.|sal:PRICES=0.04",
+                // ---- the farm ----
+                "1933|2037|farm<85|E|Farm prices collapse, and farmers in {state} are going under|Crops are selling for less than they cost to grow. Banks are calling in loans.|sal:ECON=0.03",
+                "1933|2037|farm>115|E|A bumper year on the farm|Prices are high and the harvest is big. Farm towns in {state} are buying new equipment.|",
+                "1933|2037|month>8,month<11|N|Harvest time in {state}|Combines are working through the night to bring in the crop before the weather turns.|",
+                // ---- crime and the courts ----
+                "1933|2037|crimeidx>110|L|Murders climb in the big cities|Police chiefs say a handful of neighborhoods account for most of the violence. Residents want more officers.|sal:CRIME=0.05",
+                "1933|2037|crimeidx<85|L|Crime falls to a generational low|Police in {state} report the fewest killings in decades. Criminologists debate why.|",
+                "1933|1965||L|A bank robbery and a car chase in {state}|Three men in overcoats held up a bank and escaped in a stolen sedan. State police have set up roadblocks.|sal:CRIME=0.01",
+                "1966|2037|crimeidx>100|L|Car thefts and break-ins worry the suburbs|Neighborhood watch groups are forming in towns that used to leave their doors unlocked.|sal:CRIME=0.03",
+                "1990|2037|od>70|H|Overdoses fill the emergency rooms in {state}|Hospitals say they treat overdose patients every night. Families are burying sons and daughters.|sal:HEALTH=0.04",
+                "1933|2037||L|A jury acquits in a case that gripped {state}|After three weeks of testimony, the jury deliberated for two days. The defendant wept as the verdict was read.|",
+                "1933|2037||L|A long-unsolved case is cracked in {state}|Detectives say new evidence led them to a suspect decades after the crime.|",
+                // ---- war and peace ----
+                "1933|2037|wars>0|D|A hometown sends off its soldiers|A crowd filled the station in a small town in {state} to see off a unit bound for the war.|",
+                "1933|2037|wars>0,kia>1000|D|A town in {state} buries a soldier|Flags flew at half-staff as a soldier killed in the war was laid to rest. Thousands lined the route of the funeral procession.|sal:SECURITY=0.03",
+                "1933|2037|wars>0|E|War production lifts factory towns|Defense plants in {state} are hiring, and the towns around them are busier than they've been in years.|",
+                "1960|2037|wars>0|D|Protesters picket a military base in {state}|Demonstrators against the war are holding a vigil outside the base gates.|",
+                "1933|2037|wars<1|D|Veterans return to a quieter country|With no war on, veterans in {state} are going back to school and starting businesses.|",
+                "1990|2037|terror>55|D|Security tightens at airports and stadiums|Bag checks and longer lines as officials warn of a heightened threat.|sal:SECURITY=0.04",
+                "1990|2037|migr>65|D|Border towns in Texas and Arizona say they're overwhelmed|Shelters are full, and local officials are asking for federal help.|sal:IMMIG=0.05",
+                "2005|2037|cyber>60|T|Hackers steal millions of customer records|A big retailer says hackers stole names, addresses and card numbers. Customers are being urged to change passwords.|sal:TECH=0.03",
+                // ---- protest and public life ----
+                "1933|2037|protest>55|D|Marchers fill the streets of {state}'s capital|Thousands rallied outside the statehouse. Organizers say they'll keep coming back.|",
+                "1933|2037|protest<20|D|A quiet season in public life|Pollsters say the country's mood is calmer than it has been in years.|",
+                "1933|2037||D|A town in {state} celebrates its centennial|Parades, fireworks and a time capsule mark a hundred years since the town was founded.|",
+                "1933|2037||D|A spelling bee champion from {state}|An eighth-grader won the national spelling bee in Washington, spelling a word most adults have never heard.|",
+                "1933|2037||D|A new bridge opens in {state}|The span replaces a ferry that has run for more than eighty years. Hundreds walked across on opening day.|",
+                "1933|2037||D|A county fair in {state} draws record crowds|Prize hogs, pie contests and a Ferris wheel. Organizers say it was the best fair in memory.|",
+                "1950|2037||D|A small town in {state} loses its last factory|The plant that employed half the town is closing. The mayor says they'll find a way to start over.|",
+                "1960|2037||D|A community in {state} rallies after a flood|Volunteers are filling sandbags and gutting homes. Churches are serving meals around the clock.|",
+                "1933|2037||D|A centenarian in {state} recalls a century of change|She remembers the first automobile in her town. Her advice for a long life: keep busy and stay curious.|",
+                // ---- the seasons ----
+                "1933|2037|month<3|N|A winter storm shuts down {state}|A foot of snow and sheets of ice have closed schools and highways. Utility crews are working to restore power.|",
+                "1933|2037|month<3|N|Bitter cold grips the northern states|Temperatures fell below zero from Montana to Maine. Shelters opened extra beds.|",
+                "1933|2037|month>11|N|A December blizzard strands holiday travelers|Bus and rail stations are packed with travelers waiting out the storm.|",
+                "1933|2037|month>2,month<6|N|Spring floods along the rivers of {state}|Melting snow and heavy rain have pushed rivers over their banks. Families are moving to higher ground.|",
+                "1933|2037|month>3,month<7|N|Tornadoes rip through {state}|A line of storms spun up several tornadoes overnight, flattening homes and barns.|",
+                "1933|2037|month>5,month<9|N|A heat wave scorches {state}|Temperatures above 100 for a week. Officials are urging people to check on elderly neighbors.|",
+                "1933|2037|month>5,month<9|N|Drought dries up wells in {state}|Farmers are hauling water to their livestock, and towns are banning lawn watering.|farm=-1",
+                "1933|2037|month>6,month<11|N|A hurricane makes landfall on the Gulf Coast|The storm pushed a surge into coastal towns and knocked out power to hundreds of thousands.|",
+                "1933|2037|month>6,month<11|N|A hurricane brushes the Carolinas|Coastal towns are cleaning up after a storm that flooded streets and tore off roofs.|",
+                "1960|2037|month>6,month<11|N|Wildfires force evacuations in the West|Firefighters are battling blazes in several states. Whole towns have been told to leave.|",
+                "1933|2037|month>8,month<11|N|An early frost hits the orchards of {state}|Growers say they lost much of the apple crop in a single night.|",
+                "1933|2037||N|An earthquake rattles California|The quake knocked items off shelves across the region but caused little serious damage.|",
+                // ---- sports ----
+                "1933|2037|month>3,month<5|X|Opening day: baseball is back|Fans filled ballparks across the country. Even in the cold, the stands were full.|",
+                "1933|2037|month>9,month<11|X|The World Series opens tonight|Two teams that took different roads to the Series meet in the opener. Office radios and televisions will be on all week.|",
+                "1933|2037|month>4,month<6|X|The Kentucky Derby draws a record crowd|A long shot came from behind to win the run for the roses at Churchill Downs.|",
+                "1933|2037|month>4,month<6|X|Speed and heat at the Indianapolis 500|More than two hundred thousand fans watched the race at the Brickyard.|",
+                "1967|2037|month>0,month<3|X|The Super Bowl is the most-watched broadcast of the year|Parties across the country, and advertisers paying record sums for a few seconds of airtime.|",
+                "1975|2037|month>2,month<5|X|March Madness: an underdog shocks a top seed|Office pools across the country were busted when a small school knocked off one of the favorites.|",
+                "1950|2037|month>5,month<7|X|The basketball finals go to a seventh game|The series has been tied after every pair of games. Tickets are going for ten times face value.|",
+                "1933|2037|month>5,month<9|X|A rookie throws a no-hitter|The young pitcher, called up from the minors only last month, didn't allow a hit.|",
+                "1933|2037|month>8|X|College football season kicks off|Stadiums on campuses across the country are full again on Saturday afternoons.|",
+                "1933|2037|month>10|X|A rivalry game decides the conference title|Two old rivals met with a championship on the line, and the game went down to the last play.|",
+                "1933|2037||X|A hometown hero from {state} retires|After eighteen seasons, the beloved veteran played his last game before a standing ovation.|",
+                "1933|2037||X|A beloved ballpark will be torn down|The team will move to a new stadium next year. Fans are lining up for one last look.|",
+                // ---- health, science and technology ----
+                "1933|2037|month>10|H|Flu season arrives early|Doctors' offices are filling up and schools in {state} report high absences.|",
+                "1933|1960|month>5,month<9|H|A polio scare closes the pools in {state}|Health officials closed public pools after several children fell ill.|sal:HEALTH=0.03",
+                "1946|2037||H|A new hospital opens in {state}|The hospital will serve a rural region where the nearest emergency room was more than an hour away.|",
+                "1990|2037||H|Rural hospitals in {state} are closing|Three hospitals have shut their doors in two years. Patients must drive hours for care.|sal:HEALTH=0.03",
+                "1933|2037||S|Astronomers report a new comet|The comet may be visible to the naked eye next month if it survives its pass near the sun.|",
+                "1950|2037||S|Scientists in {state} report a promising cancer treatment|Early trials show tumors shrinking in some patients. Researchers caution that more study is needed.|",
+                "1960|2037||S|A meteor lights up the night sky over {state}|Hundreds of people reported seeing a fireball streak across the sky. Some heard a sonic boom.|",
+                "1990|2037||T|A tech company opens a giant campus in {state}|The company says it will hire thousands. Local officials offered millions in tax breaks to win it.|",
+                "2015|2037||D|Teenagers and their phones: a debate in every household|Schools in {state} are banning phones in class, and parents are trading tips on screen time.|",
+                "2019|2037||B|Sports betting apps are everywhere|Millions of Americans now bet on games from their phones. Counselors say calls to gambling hotlines are up.|",
+                "1955|2037||B|A new shopping center opens outside {state}'s biggest city|The developer says it will be the region's largest, with department stores and hundreds of shops.|",
+                "1995|2037||B|A downtown in {state} comes back to life|Old warehouses are now apartments, restaurants and breweries.|",
+                // ---- culture ----
+                "1933|2037||C|A novel about a family from {state} tops the bestseller lists|Readers say the story of three generations rings true. Hollywood has bought the rights.|",
+                "1933|2037||C|A summer blockbuster breaks box-office records|Audiences are lining up for the season's biggest picture. Theater owners say it's their best weekend in years.|",
+                "1950|2037||C|A singer from {state} has the number one song in the country|The young singer recorded it in a small studio. Now it's on every radio.|",
+                "1933|2037||C|A museum in {state} unveils a newly discovered painting|Experts say the work, found in an attic, is by an American master.|",
+                "1960|2037||C|An awards show draws a huge audience|Hollywood's biggest night ended with a surprise winner for best picture.|",
+                "2013|2037||C|A streaming series becomes a sensation|Everyone seems to be talking about the same show, and the actors are suddenly famous.|",
+        };
+    }
+
+    /**
+     * The news of 1933 to 1960 beyond the White House. Each row: first year|last year|conditions|section|headline|story|effects.
+     * Sections: P politics, E economy, W world, S science, C culture, X sports, L crime and courts, N weather and the land,
+     * B business, H health, D daily life, T technology. Real events run in their real months; the rest could happen any time
+     * in their years. No one is quoted, and no real person is cast in a bad light.
+     */
+    static final class AmbientEarly {
+        private AmbientEarly() {
+        }
+
+        static final String[] ROWS = {
+                // ---- 1933-1940: the Depression ----
+                "1933|1933|month>2,month<6|C|A giant ape atop the Empire State Building packs the movie houses|Lines stretch around the block for the new monster picture, and theater owners say it is the biggest draw since the talkies arrived.|",
+                "1933|1933|month>6,month<8|X|The first All-Star Game is played in Chicago|The best players of both leagues met at Comiskey Park in a game organized to go with the World's Fair. The American League won, 4 to 2.|",
+                "1933|1934|month>4,month<11|S|Chicago's Century of Progress fair draws millions|Visitors crowd the halls of science and industry on the lakefront, where the future is on display: streamlined trains, model homes and a sky ride.|",
+                "1933|1933|month>5,month<8|B|A drive-in movie theater opens in New Jersey|Customers watch the picture from their own cars, with the sound piped through speakers. The owner says it's the coming thing.|",
+                "1933|1933|month>11|D|Prohibition ends: taverns reopen across the country|With the 21st Amendment ratified, beer and liquor are legal again after thirteen years. Crowds filled bars and hotels last night.|",
+                "1933|1934|unemp>15|D|A shantytown of tin and cardboard grows outside {state}'s largest city|Families who lost their homes are living in shacks built from packing crates and scrap. Volunteers bring soup twice a day.|sal:JOBS=0.04",
+                "1933|1935|unemp>14|E|Breadlines stretch around the block in {state}|Church and charity kitchens say they are feeding twice as many people as a year ago, and the lines start forming before dawn.|sal:JOBS=0.04",
+                "1933|1933||D|A jigsaw puzzle craze sweeps the country|Drugstores can't keep them in stock. A puzzle a week is sold at newsstands, and families say it's the cheapest entertainment there is.|",
+                "1933|1937||D|Dish night: a free plate with every movie ticket|Theaters are giving away a piece of dinnerware each week to keep customers coming. Housewives are building whole sets a dime at a time.|",
+                "1934|1934|month>4,month<6|T|A streamlined train races from Denver to Chicago in a day|The stainless-steel Zephyr made the run of more than a thousand miles in about thirteen hours, at speeds over a hundred miles an hour.|",
+                "1934|1934|month>4,month<6|L|Two notorious outlaws are killed in an ambush in Louisiana|The couple, wanted for a string of killings and robberies across the Southwest, died when lawmen opened fire on their car on a country road.|",
+                "1934|1934|month>6,month<8|L|Federal agents gun down a famous bank robber outside a Chicago theater|The man the Bureau called Public Enemy Number One was shot as he left a movie house. Crowds gathered at the scene for hours.|sal:CRIME=0.03",
+                "1934|1934|month>7,month<10|L|A new federal prison opens on an island in San Francisco Bay|Alcatraz will hold the most dangerous prisoners in the country. Officials say no one will escape the cold currents around the rock.|",
+                "1934|1934|month>2,month<4|X|A new golf tournament begins in Augusta|Some of the best golfers in the world played the first invitational at the Augusta National course this week.|",
+                "1934|1939||C|Swing music fills the dance halls|Big bands are playing to packed ballrooms, and the young are dancing the jitterbug. Older listeners say the music is too loud.|",
+                "1935|1935|month>3,month<5|N|Black Sunday: a wall of dust engulfs the southern plains|A storm of dust a thousand feet high rolled across the panhandles of Oklahoma and Texas, turning day into night. Many thought the world was ending.|farm=-2",
+                "1935|1935|month>4,month<6|X|Baseball plays its first night game under the lights|The Cincinnati Reds beat the Phillies before a crowd of 20,000, with the lights switched on from Washington by telegraph.|",
+                "1935|1935|month>4,month<7|X|Baseball's greatest slugger plays his last game|The home run king retired after a final season in Boston. He hit 714 home runs in his career, a record many say will never be broken.|",
+                "1935|1935|month>0,month<3|L|The trial of the century: the aviator's baby kidnapping case goes to the jury|A German-born carpenter is on trial in New Jersey for the kidnapping and murder of the famous flier's infant son. Reporters from around the world are in the courtroom.|",
+                "1935|1935|month>8,month<10|N|A hurricane devastates the Florida Keys|The strongest storm on record has struck the Keys, killing hundreds, many of them veterans working on a highway project.|",
+                "1935|1935|month>8,month<11|D|A giant dam on the Colorado River is dedicated|The dam in Black Canyon, the largest in the world, will bring water and power to the Southwest.|",
+                "1935|1935|month>10|T|A flying boat carries the first airmail across the Pacific|The China Clipper landed in Manila after a flight of six days from California, with stops at Hawaii, Midway, Wake and Guam.|",
+                "1935|1936||B|Beer in cans goes on sale|A brewery is selling beer in tin cans for the first time. Customers say it tastes the same, and it's easier to carry home.|",
+                "1935|1938||D|A board game about buying real estate is the hit of the season|Families are buying and selling Atlantic City properties around the kitchen table. Stores can't keep the game in stock.|",
+                "1935|1937||B|Parking meters appear on the streets of Oklahoma City|Drivers now pay a nickel an hour to park downtown. Merchants say it keeps spaces turning over.|",
+                "1936|1936|month>0,month<3|N|A bitter cold wave grips the Midwest and the plains|Temperatures fell to forty below in the Dakotas. It is the coldest February on record across much of the country.|",
+                "1936|1936|month>3,month<5|N|Tornadoes tear through Tupelo and Gainesville|Two of the deadliest tornadoes in the nation's history struck Mississippi and Georgia on successive days.|",
+                "1936|1936|month>6,month<9|N|A record heat wave kills thousands across the Midwest|Temperatures above 110 degrees have lasted for weeks. Crops are burning in the fields and people are sleeping in the parks.|farm=-3",
+                "1936|1936|month>6,month<8|W|Civil war breaks out in Spain|Army officers have risen against the Spanish republic. Fighting is reported in Madrid, Barcelona and across the country.|",
+                "1936|1936|month>7,month<9|X|An American sprinter wins four gold medals at the Berlin Olympics|The track star from Ohio State won the 100 meters, the 200 meters, the long jump and the relay, under the eyes of Germany's leaders.|",
+                "1936|1936|month>11|W|The King of England gives up his throne to marry an American|King Edward VIII has abdicated so that he can marry an American divorcee. His brother becomes king.|",
+                "1936|1936|month>5,month<8|T|A new airliner, the DC-3, enters passenger service|The airliner can fly coast to coast with only a few stops. Airlines say it will make flying pay for the first time.|",
+                "1936|1937||X|A new football honor, the Heisman, goes to the best college player|The trophy from the Downtown Athletic Club in New York names the season's outstanding college football player.|",
+                "1936|1936|month>1,month<3|X|Pro football holds its first draft of college players|The teams took turns choosing the best college seniors. The first player chosen was a halfback from Chicago.|",
+                "1937|1937|month>0,month<3|N|The Ohio River floods, leaving a million homeless|The worst flood in the valley's history has put Louisville and Cincinnati under water. Refugees are living in schools and churches.|",
+                "1937|1937|month>4,month<6|D|The airship Hindenburg bursts into flames at Lakehurst|The German zeppelin caught fire while landing in New Jersey. Thirty-six people died, and a radio reporter's account of the disaster was heard across the country.|",
+                "1937|1937|month>4,month<6|D|The Golden Gate Bridge opens in San Francisco|Two hundred thousand people walked across the new bridge on its first day. Its main span is the longest in the world.|",
+                "1937|1937|month>5,month<8|D|A famous aviator vanishes over the Pacific|The flier, attempting to circle the globe, disappeared near Howland Island with her navigator. The Navy is searching thousands of square miles of ocean.|",
+                "1937|1937|month>9,month<12|H|A poisonous cough syrup kills more than a hundred|A drug company dissolved a sulfa drug in a toxic solvent, and patients across the South died. There is no law requiring drugs to be tested.|sal:HEALTH=0.04",
+                "1937|1937|month>11|C|Hollywood's first feature-length cartoon delights audiences|A fairy-tale picture about a princess and seven dwarfs opened to sold-out crowds. Critics call it a marvel of animation.|",
+                "1937|1937|month>11|W|Reports of mass killings as Japan takes Nanking|Western witnesses describe a reign of terror against civilians in the fallen Chinese capital.|",
+                "1937|1937||B|The shopping cart makes its debut in an Oklahoma grocery|A grocer has put wheels and a basket on a folding chair so customers can buy more at a time. Shoppers are skeptical, but they're using them.|",
+                "1938|1938|month>5,month<7|X|The heavyweight champion knocks out the German challenger in the first round|The champion from Detroit won in barely two minutes at Yankee Stadium. Celebrations went on in Harlem all night.|",
+                "1938|1938|month>5,month<8|C|A new comic book hero who can leap tall buildings|A strongman in a cape is the star of a new comic book. Children are buying every copy on the newsstands.|",
+                "1938|1938|month>8,month<10|N|A hurricane strikes Long Island and New England without warning|The storm drove a wall of water ashore, killing hundreds and flattening forests from Connecticut to Vermont.|",
+                "1938|1938|month>9,month<11|C|A radio drama about Martians landing in New Jersey sets off a panic|Many listeners who tuned in late took the broadcast for real news. Police switchboards were jammed with calls.|",
+                "1938|1938|month>10|X|A small racehorse beats the Triple Crown winner|Seabiscuit beat War Admiral by four lengths in a match race at Pimlico. Forty million people listened on the radio.|",
+                "1939|1939|month>0,month<3|S|Physicists report that they have split the uranium atom|Scientists in Europe say the uranium atom can be split in two, releasing enormous energy. American laboratories are repeating the experiment.|",
+                "1939|1940|month>3,month<11|S|The World's Fair opens in New York with a vision of tomorrow|Crowds line up to see a model of the America of 1960, with superhighways and towers. Television makes its public debut at the fair.|",
+                "1939|1939|month>5,month<7|X|Baseball opens its Hall of Fame in Cooperstown|The game's greatest players were honored at a small village in New York, said to be where baseball began.|",
+                "1939|1939|month>6,month<8|X|Baseball's Iron Horse bids farewell at Yankee Stadium|The first baseman, forced to retire by a rare disease, thanked sixty thousand fans in a farewell that left the stadium in tears.|",
+                "1939|1939|month>11|C|An epic of the Old South premieres in Atlanta|The picture from the best-selling novel opened to a crowd of three hundred thousand in the streets. It runs nearly four hours.|",
+                "1940|1940|month>4,month<6|B|Nylon stockings go on sale, and sell out in hours|Women lined up at department stores for stockings made of the new fiber. Four million pairs sold in the first four days.|",
+                "1940|1940|month>9,month<11|T|A turnpike through the Pennsylvania mountains opens|The four-lane highway, with tunnels through the mountains and no traffic lights, cuts hours off the trip from Harrisburg to Pittsburgh.|",
+                "1940|1940|month>10|N|A suspension bridge in Washington state twists apart in the wind|The new Tacoma Narrows bridge buckled and fell into Puget Sound. A newsreel of its collapse is playing in theaters.|",
+                "1940|1940|month>7,month<11|W|The Battle of Britain: German bombers over London|The German air force is bombing London night after night. American radio correspondents are reporting from the rooftops.|",
+                "1933|1940|unemp>10|E|Families on relief stretch every dollar|Social workers say families on relief are living on beans and bread, and mothers are making dresses from flour sacks.|sal:JOBS=0.03",
+                "1933|1940|unemp<10|E|Factories in {state} are hiring again|Plants that were idle a few years ago are adding shifts. Men who had been out of work for years are back on the line.|",
+                "1933|1941||D|Families gather around the radio for the evening serials|Comedies, mysteries and cowboy dramas fill the evening air. Advertisers say four homes in five now have a radio.|",
+                "1934|1940||H|Sulfa drugs are saving lives from infection|Doctors say the new sulfa drugs can cure infections that were once a death sentence, from pneumonia to blood poisoning.|",
+                "1937|1941||H|A hospital in Chicago opens the first blood bank|Blood can now be stored for days and given when it's needed. Hospitals in other cities are planning their own.|",
+                // ---- 1941-1945: the war years ----
+                "1941|1941|month>4,month<8|X|A Yankee outfielder's hitting streak reaches 56 games|The center fielder has hit safely in every game since May. The streak is the talk of every barbershop in the country.|",
+                "1941|1941|month>8|X|A Red Sox slugger finishes the season hitting .406|The young left fielder played both games of a doubleheader on the last day rather than protect his average, and got six hits.|",
+                "1941|1941|month>3,month<6|C|A newspaper drama about a publisher's life divides critics|A young director's first picture is called a masterpiece by some critics. Some theater chains won't show it.|",
+                "1941|1941|month>9,month<11|D|Mount Rushmore is finished|After fourteen years, the faces of four presidents carved into a mountain in South Dakota are complete.|",
+                "1942|1945|wars>0|D|Rationing: sugar, coffee and gasoline by the coupon|Families have ration books for sugar, coffee, meat and gasoline. Housewives trade tips on making the coupons last.|",
+                "1942|1945|wars>0|D|Victory gardens sprout in backyards and vacant lots|Millions of families are growing their own vegetables to free farm produce for the troops. Even city rooftops have gardens.|",
+                "1942|1945|wars>0|D|Scrap drives: children collect tin, rubber and paper|Schoolchildren are pulling wagons from door to door collecting scrap metal and old tires for the war effort.|",
+                "1942|1945|wars>0|E|Women take jobs in the war plants|With the men overseas, women are building ships, planes and tanks. Factories in {state} say they couldn't run without them.|",
+                "1942|1945|wars>0|E|War bond drives raise billions|Movie stars are touring the country selling war bonds. Schoolchildren buy stamps a dime at a time toward a bond.|",
+                "1942|1942|month>10,month<12|D|A nightclub fire in Boston kills nearly five hundred|The Cocoanut Grove was packed with diners when a fire swept through it. Most of the exits were locked or blocked.|",
+                "1942|1942|month>11|C|A ballad about a white Christmas becomes the song of the season|A crooner's recording of the holiday song is selling faster than any record ever made. Soldiers overseas are requesting it.|",
+                "1943|1943|month>2,month<5|C|A musical about the Oklahoma territory opens on Broadway|The new show from a songwriting team is a sellout, with songs that audiences are humming in the streets.|",
+                "1943|1943|month>5,month<8|D|Fights between servicemen and young men in zoot suits in Los Angeles|Sailors attacked young Mexican Americans wearing the baggy suits, and the brawls went on for days.|",
+                "1943|1945|wars>0|X|A women's professional baseball league plays to big crowds|With many major leaguers in uniform, a new league of women's teams is drawing crowds across the Midwest.|",
+                "1943|1945||H|Penicillin, the miracle drug, goes into mass production|American factories are now making enough of the drug to treat wounded soldiers. Doctors hope it will soon be available at home.|",
+                "1944|1944|month>6,month<8|D|A circus tent catches fire in Hartford|The big top burned during an afternoon show, killing more than 160 people, most of them women and children.|",
+                "1944|1944||S|A computing machine at Harvard solves problems in hours|An electromechanical calculator fifty feet long can do the work of a roomful of mathematicians.|",
+                "1945|1945|month>6,month<8|D|A bomber crashes into the Empire State Building in fog|A B-25 hit the building at the 79th floor, killing fourteen. The building was open again two days later.|",
+                "1945|1945||E|Factories prepare to turn from tanks to cars|Automakers say they'll be making cars again within months. Pent-up demand for new cars, homes and appliances is enormous.|",
+                "1941|1945|wars>0|D|Gold stars hang in windows across {state}|A gold star in the window means a son or husband who won't be coming home. In some small towns every street has one.|sal:SECURITY=0.03",
+                "1941|1945|wars>0|C|Hollywood stars go to war|Some of the biggest names in pictures have enlisted, and others are touring the camps with the USO.|",
+                // ---- 1946-1952: the postwar boom ----
+                "1946|1949||D|Veterans crowd college campuses on the GI Bill|Colleges are bursting with veterans whose tuition is paid by the government. Many live in Quonset huts with their wives and babies.|",
+                "1946|1950||D|The baby boom: maternity wards are full|More babies are being born than ever before. Hospitals are adding beds, and towns are planning new schools.|",
+                "1946|1948||E|A housing shortage: veterans live in trailers and garages|Millions of returning veterans can't find a place to live. Some are living with their in-laws or in converted chicken coops.|",
+                "1947|1947|month>3,month<5|X|A Brooklyn infielder breaks baseball's color line|For the first time in modern history, a Black player has taken the field in the major leagues. He played first base for the Dodgers on opening day.|",
+                "1947|1951||D|Levittown: a new kind of town on Long Island potato fields|A builder is putting up thousands of identical houses, one every fifteen minutes. Veterans can buy one with nothing down.|",
+                "1947|1947|month>9,month<11|T|A test pilot breaks the sound barrier|An Air Force pilot flew a rocket plane faster than the speed of sound over the California desert. The flight was kept secret for months.|",
+                "1947|1947|month>5,month<8|D|Reports of flying saucers fill the newspapers|A pilot in Washington state says he saw nine shining discs flying in formation. Sightings are now being reported across the country.|",
+                "1947|1947|month>3,month<5|D|A ship explosion levels the docks at Texas City|A freighter loaded with fertilizer blew up in the harbor, setting off fires and explosions that killed nearly six hundred.|",
+                "1948|1952||T|Television sets are flying out of the stores|Families are crowding into neighbors' living rooms to watch. The number of sets in American homes is doubling every year.|",
+                "1948|1948|month>5,month<7|S|A giant telescope on Palomar Mountain is dedicated|The 200-inch telescope in California is the largest in the world. Astronomers say it can see a billion light-years into space.|",
+                "1948|1948|month>5|T|Bell Laboratories shows off a tiny device called the transistor|Engineers say the device can do the work of a vacuum tube, using a fraction of the power. Radios could one day fit in a pocket.|",
+                "1949|1951||C|A play about a traveling salesman moves Broadway audiences|The new drama about a salesman at the end of his rope has audiences in tears. Critics are calling it an American tragedy.|",
+                "1950|1950|month>0,month<3|L|Robbers take millions from an armored car company in Boston|A gang in Halloween masks walked out of the Brink's building with nearly three million dollars in cash and checks.|sal:CRIME=0.02",
+                "1950|1952||C|Comedy and variety shows rule the television set|On Tuesday nights, restaurants and movie houses empty out as viewers stay home to watch the comedian everyone calls Uncle Miltie.|",
+                "1951|1951|month>9,month<11|X|The shot heard round the world: the Giants win the pennant|A ninth-inning home run beat the Dodgers in a playoff and capped a comeback from thirteen games back.|",
+                "1951|1952||T|Coast-to-coast television arrives|A new cable link carries live broadcasts from New York to San Francisco. Millions watched the first coast-to-coast program.|",
+                "1951|1953||C|A comedy about a zany redhead and her bandleader husband is the most-watched show on television|Two-thirds of the sets in the country are tuned to it on Monday nights.|",
+                "1952|1952||H|Polio strikes nearly 58,000, the worst year yet|More children were paralyzed this year than ever before. Parents are keeping children away from pools and crowds all summer.|sal:HEALTH=0.04",
+                "1952|1952|month>9|S|The United States tests a hydrogen bomb in the Pacific|A thermonuclear device hundreds of times more powerful than the Hiroshima bomb wiped an island off the map.|",
+                "1946|1952|infl>6|E|Prices are climbing fast, and shoppers are angry|Butter, meat and rent cost far more than a year ago. Housewives in {state} have organized a buyers' strike against high meat prices.|sal:PRICES=0.05",
+                "1946|1952|infl<3|E|Department stores report a record year|Shoppers are buying refrigerators, washing machines and new cars as fast as factories can make them.|",
+                // ---- 1953-1960: the fifties ----
+                "1953|1953|month>4,month<7|W|Climbers reach the summit of Everest|A New Zealand beekeeper and a Sherpa guide have stood on top of the world's highest mountain.|",
+                "1953|1953|month>3,month<5|S|Scientists in England describe the shape of DNA: a double helix|Two researchers at Cambridge say the molecule that carries heredity is a twisted ladder. Biologists call it the discovery of the century.|",
+                "1953|1953|month>5,month<7|W|A new queen is crowned at Westminster Abbey|Millions of Americans watched film of the coronation of Queen Elizabeth II, flown across the Atlantic the same day.|",
+                "1954|1956||C|Rock and roll worries parents|Teenagers are buying records with a heavy beat and dancing to them in the aisles. Ministers are preaching against it.|",
+                "1953|1960||T|Color television goes on sale, at a price|The first color sets cost a thousand dollars, as much as a used car. Networks are broadcasting a few programs in color each week.|",
+                "1954|1954|month>3,month<7|H|Schoolchildren line up for the polio vaccine trial|Nearly two million children, called polio pioneers, are getting shots in the largest medical experiment in history.|sal:HEALTH=0.03",
+                "1954|1954|month>4,month<6|X|An Englishman runs a mile in under four minutes|A medical student at Oxford broke a barrier many thought impossible, finishing in three minutes and 59.4 seconds.|",
+                "1954|1955||B|A new fast-food stand in Illinois sells hamburgers for 15 cents|A salesman has bought the rights to a California hamburger stand and is opening franchises across the Midwest.|",
+                "1954|1954|month>7|X|A new magazine devoted entirely to sports goes on sale|Its first cover shows a ballgame in Milwaukee. The publishers say Americans spend more on sports than ever.|",
+                "1955|1955|month>3,month<5|H|The polio vaccine works: church bells ring across the country|Scientists announced that the vaccine is safe and effective. Parents wept in the streets, and the vaccine's developer is a national hero.|sal:HEALTH=-0.05",
+                "1955|1955|month>6,month<8|D|A new amusement park opens in Anaheim|A movie producer's park of castles, rocket ships and Main Street drew huge crowds on opening day.|",
+                "1955|1955|month>7,month<10|L|A Black teenager from Chicago is murdered in Mississippi|The boy was abducted and killed while visiting relatives. His mother insisted on an open casket so the world would see what was done.|sal:RIGHTS=0.05",
+                "1955|1955|month>11|D|A bus boycott in Montgomery|Black residents of Montgomery, Alabama, are refusing to ride the city buses after a seamstress was arrested for not giving up her seat.|sal:RIGHTS=0.05",
+                "1956|1956|month>0,month<12|D|The Montgomery bus boycott goes on|Black residents of Montgomery are still walking and carpooling to work rather than ride segregated buses. A young minister has emerged as the boycott's leader.|sal:RIGHTS=0.04",
+                "1955|1955|month>8,month<11|C|A young actor dies in a car crash in California|The star of a new picture about troubled teenagers was killed when his sports car crashed on a highway. He was 24.|",
+                "1956|1956|month>0,month<4|C|A singer from Memphis sets off a frenzy on television|The young singer's hip-shaking performances have teenagers screaming and parents writing angry letters to the networks.|",
+                "1956|1956|month>9,month<11|X|A perfect game in the World Series|A Yankee pitcher retired all 27 Dodgers he faced, the first perfect game in Series history.|",
+                "1956|1958||T|Construction begins on the interstate highways|Survey crews and bulldozers are at work on the first stretches of a 41,000-mile network of superhighways.|",
+                "1957|1957|month>11|S|An American rocket explodes on the launch pad|The Vanguard rocket rose four feet and fell back in flames. Newspapers call it Flopnik.|sal:EDU=0.03",
+                "1957|1959||C|Teenagers dance to American Bandstand|A Philadelphia dance show is now on the network every afternoon, and teenagers across the country are learning the latest steps.|",
+                "1957|1958||D|The Dodgers and Giants are leaving New York for California|Brooklyn is in mourning. Both teams will play on the West Coast next season.|",
+                "1958|1958|month>0,month<3|S|America's first satellite reaches orbit|An Army rocket carried the Explorer satellite into space. It has found a belt of radiation around the earth.|",
+                "1958|1959||D|The hula hoop craze|Millions of plastic hoops have been sold in a few months. Children and adults are twirling them on every block.|",
+                "1958|1958|month>9,month<11|T|Jet airliners begin service across the Atlantic|The new jets cross from New York to Europe in less than eight hours, far faster than the old propeller planes.|",
+                "1958|1958|month>11|X|The greatest game ever played: the Colts win in overtime|Baltimore beat the Giants in the first championship game decided in sudden death. Millions watched on television.|",
+                "1959|1959|month>0,month<3|C|A plane crash in Iowa kills three young rock and roll stars|The singers were on a winter tour of the Midwest. Fans are calling it the day the music died.|",
+                "1959|1959|month>0,month<3|D|Alaska becomes the 49th state, and Hawaii follows in August|The flag will get two new stars. The new states add more land than Texas, and islands in the Pacific.|",
+                "1959|1959|month>2,month<5|S|NASA introduces the first seven astronauts|The seven test pilots, chosen from more than a hundred, will train to ride a capsule into space.|",
+                "1959|1959|month>2,month<5|B|A new doll in a bathing suit goes on sale at a toy fair|The eleven-inch fashion doll is aimed at older girls. Some buyers say mothers won't approve.|",
+                "1959|1960||L|A scandal over rigged television quiz shows|A former champion says the producers gave him the answers. Congress is holding hearings.|",
+                "1960|1960|month>1,month<4|D|Students sit in at a lunch counter in Greensboro|Four Black college students refused to leave a whites-only lunch counter. Sit-ins have spread to dozens of cities.|sal:RIGHTS=0.05",
+                "1960|1960|month>4,month<7|H|The birth control pill is approved|The government has approved the first oral contraceptive. Doctors expect millions of women to use it.|",
+                "1960|1960|month>7,month<10|X|A young boxer from Louisville wins Olympic gold in Rome|The light heavyweight champion of the Rome Olympics is turning professional. Boxing writers say he has the fastest hands they have ever seen.|",
+                "1960|1960|month>8,month<10|X|A home run in the ninth wins the World Series for Pittsburgh|A second baseman's homer in the bottom of the ninth of the seventh game beat the Yankees.|",
+                "1953|1960|unemp>6|E|Layoffs at the auto plants in {state}|The automakers are cutting production as sales slump, and thousands of workers have been sent home.|sal:JOBS=0.04",
+                "1953|1960|unemp<5|E|Help wanted: factories in {state} can't hire fast enough|Plants are running three shifts, and the want ads are full. Wages are rising.|",
+                "1953|1960||D|Families flock to the suburbs|New subdivisions of ranch houses are going up on farmland outside every city. Families say they want a yard and good schools.|",
+                "1953|1960||B|Shopping centers replace Main Street|A new kind of shopping center, with parking for thousands of cars, has opened outside {state}'s biggest city. Downtown merchants are worried.|",
+                "1953|1960||D|The family car gets bigger, with tail fins|This year's models are longer, lower and heavier, with chrome and tail fins. Dealers say sales are booming.|",
+                "1954|1960||D|Families build fallout shelters in their backyards|Civil defense officials are urging families to stock shelters with food and water. Schoolchildren practice ducking under their desks.|sal:SECURITY=0.02",
+                "1955|1960||T|A computer at the Census Bureau counts the country|Electronic computers, with thousands of tubes, are being used by the government and big companies to keep records.|",
+        };
+    }
+
+    /**
+     * The news of 1961 to 1992 beyond the White House. The layout is AmbientEarly's. Events that are turning points
+     * of the game, and anything about presidents themselves, are left out.
+     */
+    static final class AmbientMiddle {
+        private AmbientMiddle() {
+        }
+
+        static final String[] ROWS = {
+                // ---- 1961-1968 ----
+                "1961|1961|month>3,month<5|S|A Soviet cosmonaut becomes the first man in space|The Soviet pilot orbited the earth once and landed safely. The United States hopes to send its own astronaut up within weeks.|sal:EDU=0.03",
+                "1961|1961|month>4,month<6|S|An American astronaut rides a rocket into space|The Navy test pilot flew fifteen minutes up and back in his capsule, splashing down in the Atlantic. Millions watched the launch on television.|",
+                "1961|1961|month>4,month<7|D|Freedom Riders' bus is firebombed in Alabama|Black and white volunteers riding buses through the South to test integration were attacked by a mob outside Anniston.|sal:RIGHTS=0.05",
+                "1961|1961|month>9,month<11|X|A Yankee outfielder hits his 61st home run|The right fielder broke the single-season record on the last day of the season. The commissioner says the record will carry an asterisk.|",
+                "1961|1961|month>9|C|A musical about rival gangs in New York comes to the screen|The film version of the Broadway hit is filling theaters, and its songs are on every radio.|",
+                "1962|1962|month>1,month<3|S|An astronaut orbits the earth three times|The Marine pilot circled the globe in under five hours. Ticker-tape parades are planned in his honor.|",
+                "1962|1962|month>2,month<4|X|A center scores 100 points in one basketball game|The Philadelphia Warriors' giant scored 100 points against the Knicks in Hershey, Pennsylvania.|",
+                "1962|1962|month>3,month<11|D|The World's Fair opens in Seattle with a needle in the sky|Millions are visiting the Century 21 Exposition, with its monorail and its tower topped by a revolving restaurant.|",
+                "1962|1962|month>6,month<8|T|A satellite carries the first live television across the Atlantic|Europeans and Americans watched each other live, by way of the Telstar satellite.|",
+                "1962|1962|month>6,month<9|B|A new discount store opens in Rogers, Arkansas|A former five-and-dime operator says his store will offer the lowest prices in town.|",
+                "1962|1962|month>8,month<11|N|A book on pesticides warns of a silent spring|A biologist's new book says chemicals like DDT are killing birds and fish. Chemical companies call it alarmist.|sal:ENERGY=0.03",
+                "1963|1963|month>1,month<4|C|A book on the problem that has no name|A writer's study of suburban housewives who feel trapped is a bestseller, and women are writing to her by the thousands.|",
+                "1963|1963|month>7,month<9|D|A quarter million march on Washington for jobs and freedom|The crowd filled the Mall from the Lincoln Memorial to the Washington Monument, and a Baptist minister from Atlanta spoke of his dream.|sal:RIGHTS=0.06",
+                "1963|1963|month>8,month<10|L|A bomb at a Birmingham church kills four girls|The girls were in the basement of the Sixteenth Street Baptist Church getting ready for Sunday services.|sal:RIGHTS=0.06",
+                "1963|1963|month>10|T|Push-button telephones go on sale|The telephone company's new touch-tone phones replace the dial with buttons. Calls go through faster.|",
+                "1963|1965||C|Folk singers fill the coffeehouses|Young people are crowding into coffeehouses to hear folk songs about civil rights and the bomb.|",
+                "1964|1964|month>0,month<2|H|The Surgeon General says smoking causes lung cancer|A landmark report links cigarettes to cancer and heart disease. Tobacco companies dispute it.|sal:HEALTH=0.04",
+                "1964|1964|month>1,month<3|C|Seventy-three million watch four young Englishmen on Sunday night television|The British band's appearance on a variety show drew the largest audience in television history. Teenage girls screamed through every song.|",
+                "1964|1964|month>1,month<3|X|A brash young challenger takes the heavyweight title|The 22-year-old from Louisville beat the champion when he failed to answer the bell for the seventh round.|",
+                "1964|1964|month>2,month<4|N|A great earthquake shakes Alaska|The strongest earthquake ever recorded in North America has devastated Anchorage and sent a tsunami down the coast.|",
+                "1964|1964|month>3,month<5|B|A sporty new car called the Mustang is an instant hit|Ford sold 22,000 on the first day. Dealers have waiting lists.|",
+                "1964|1965|month>3,month<11|D|The World's Fair opens in Queens|Visitors ride escalators through the future and sit in the cars of tomorrow. The fair's giant steel globe is its symbol.|",
+                "1964|1964|month>5,month<9|D|Three civil rights workers vanish in Mississippi|The young men were registering Black voters. The FBI has joined the search, and sailors are dragging the swamps.|sal:RIGHTS=0.06",
+                "1965|1965|month>3,month<5|X|The Astrodome opens in Houston, the first domed stadium|The eighth wonder of the world, its owners call it. Baseball under a roof, with air conditioning.|",
+                "1965|1965|month>5,month<7|S|An astronaut walks in space|The Gemini pilot floated outside his capsule for twenty minutes, tethered by a golden cord, steering himself with a hand-held jet.|",
+                "1965|1965|month>10,month<12|D|A blackout plunges the Northeast into darkness|Thirty million people lost power when a relay failed in Ontario. New Yorkers walked home by candlelight, and the subways stopped.|",
+                "1965|1968||C|The miniskirt arrives from London|Hemlines are rising, and stores can't keep the new short skirts in stock. School principals are measuring.|",
+                "1966|1966|month>5,month<7|D|A new organization for women's rights is founded|Activists meeting in Washington have formed the National Organization for Women to push for equal pay and equal treatment.|",
+                "1966|1966|month>8,month<10|C|A science fiction series about a starship premieres|The new show follows a crew exploring the galaxy. Ratings are modest, but its fans are devoted.|",
+                "1967|1967|month>0,month<2|X|Green Bay wins the first championship game between the two pro football leagues|The Packers beat Kansas City 35 to 10 in Los Angeles. The game was carried on two networks.|",
+                "1967|1967|month>0,month<2|S|Three astronauts die in a fire on the launch pad|A flash fire swept through the Apollo capsule during a test. NASA has halted the program while it investigates.|",
+                "1967|1967|month>4,month<9|C|The Summer of Love in San Francisco|Tens of thousands of young people have come to the Haight-Ashbury district. Long hair, music and flowers are everywhere.|",
+                "1967|1967|month>11|H|Surgeons in South Africa transplant a human heart|The patient survived eighteen days. American surgeons say they will try the operation soon.|",
+                "1968|1968|month>3,month<6|C|A film about a voyage to Jupiter mystifies audiences|The director's new science fiction picture is long, slow and strange. Some walked out; others went back to see it again.|",
+                "1968|1968|month>9,month<11|X|Two American sprinters raise their fists on the Olympic podium|The gold and bronze medalists in the 200 meters bowed their heads and raised black-gloved fists during the anthem in Mexico City.|sal:RIGHTS=0.03",
+                "1968|1968|month>11|S|Astronauts orbit the moon on Christmas Eve|The crew of Apollo 8 read from the book of Genesis as they circled the moon. Their photograph of the earth rising is on every front page.|",
+                "1961|1968|wars>0,year>1964|D|Young men burn their draft cards|Protesters are burning their draft cards on college campuses, and the number of young men refusing induction is rising.|sal:SECURITY=0.02",
+                "1961|1968||D|Families gather to watch the moon program on television|Every launch from Cape Kennedy draws the whole country to the television set. Schools wheel sets into classrooms.|",
+                "1964|1970||B|Muscle cars rule the drag strips|Detroit is building big engines into small cars, and teenagers are spending their summers racing them.|",
+                "1961|1970||N|Smog alerts in Los Angeles|Schoolchildren have been kept indoors as a brown haze settles over the city. Doctors say the air is a danger to health.|",
+                // ---- 1969-1976 ----
+                "1969|1969|month>0,month<2|X|A brash quarterback guarantees victory and delivers|The New York Jets beat the heavily favored Baltimore Colts, the first win for the young league in the championship.|",
+                "1969|1969|month>5,month<7|N|An oil-slicked river catches fire in Cleveland|The Cuyahoga River burned for half an hour. It was not the first time, but this time it made the national magazines.|sal:ENERGY=0.04",
+                "1969|1969|month>5,month<7|D|Patrons fight back during a police raid on a Greenwich Village bar|The raid on the Stonewall Inn set off nights of protest. Organizers say they are tired of hiding.|",
+                "1969|1969|month>7,month<9|C|Half a million gather at a music festival on a New York farm|Three days of music, rain and mud at Woodstock. The roads were jammed for miles, and the crowd was peaceful.|",
+                "1969|1969|month>9,month<11|X|The Miracle Mets win the World Series|The team that lost 120 games in its first season beat Baltimore in five games.|",
+                "1969|1969|month>9,month<11|T|A computer in Los Angeles sends the first message over a new network|A government-funded network linking university computers sent its first message, from UCLA to a research institute near Stanford. The system crashed after two letters.|",
+                "1970|1970|month>0,month<2|T|The jumbo jet enters service|The Boeing 747, carrying more than 350 passengers, made its first commercial flight from New York to London.|",
+                "1970|1970|month>3,month<5|S|An explosion cripples Apollo 13 on its way to the moon|The crew are using their lunar module as a lifeboat. The world is waiting to see if they get home.|",
+                "1970|1970|month>3,month<5|N|Twenty million Americans celebrate the first Earth Day|Rallies, teach-ins and cleanups in every state. Organizers say it is the largest demonstration in the nation's history.|sal:ENERGY=0.04",
+                "1971|1971|month>0,month<2|H|Cigarette ads vanish from television|A ban on broadcast tobacco advertising took effect at midnight on New Year's Day.|",
+                "1971|1971|month>9,month<11|D|Walt Disney World opens in Florida|The Magic Kingdom is the centerpiece of a resort that covers 27,000 acres near Orlando.|",
+                "1971|1971|month>2,month<4|X|The fight of the century: the champion keeps his title|The undefeated champion won a unanimous decision at Madison Square Garden over the former champion, who was knocked down in the fifteenth round.|",
+                "1972|1972|month>2,month<4|C|A film about a crime family breaks box-office records|Audiences are lining up for the epic about a Mafia dynasty. Critics are calling it one of the great American pictures.|",
+                "1972|1972|month>8,month<10|X|An American swimmer wins seven gold medals in Munich|The swimmer from California set a world record in every one of his races.|",
+                "1972|1972|month>8,month<10|W|Terrorists kill eleven Israeli athletes at the Olympics|Palestinian gunmen took the athletes hostage in the Olympic village. All eleven died, along with a German policeman.|sal:SECURITY=0.04",
+                "1972|1972|month>10|T|A video game of table tennis appears in a California bar|Customers are lining up to play the coin-operated game, called Pong.|",
+                "1973|1973|month>0,month<2|X|Miami completes a perfect season|The Dolphins won the championship game to finish 17 and 0, the first perfect season in pro football.|",
+                "1973|1973|month>4,month<6|D|The world's tallest building is finished in Chicago|The Sears Tower rises 110 stories above the Loop.|",
+                "1973|1973|month>5,month<7|X|A chestnut colt wins the Triple Crown by 31 lengths|Secretariat ran away from the field at Belmont, the first Triple Crown winner in 25 years.|",
+                "1973|1973|month>8,month<10|X|A women's tennis champion beats a former men's champion in the battle of the sexes|Ninety million people watched the match at the Houston Astrodome. She won in straight sets.|",
+                "1974|1974|month>3,month<5|X|A Braves slugger breaks the career home run record|The outfielder hit number 715 in Atlanta, passing the record that had stood since 1935.|",
+                "1974|1974|month>3,month<5|N|A super outbreak: 148 tornadoes in less than a day|Tornadoes tore through thirteen states from Alabama to Michigan, killing more than 300.|",
+                "1974|1975||D|Streaking is the latest fad on campus|College students are running naked across quads and ballgames. Police say they can't catch them.|",
+                "1975|1975|month>0,month<2|T|A computer you can build yourself goes on sale|A hobby magazine's cover shows the Altair 8800, a kit computer for under $400. Two young programmers are writing software for it.|",
+                "1975|1975|month>5,month<8|C|A shark movie keeps swimmers out of the water|The thriller about a great white shark is the biggest picture of the summer. Beach towns say business is down.|",
+                "1975|1975|month>9,month<11|X|The Thrilla in Manila|The champion won when his opponent's corner stopped the fight after fourteen brutal rounds in the Philippines.|",
+                "1975|1975|month>9,month<11|C|A late-night comedy show debuts live from New York|The new program features a cast of young comedians and a musical guest. The network says it is an experiment.|",
+                "1975|1975|month>10|N|An ore freighter sinks in a Lake Superior storm|The Edmund Fitzgerald went down with all 29 crew in a November gale.|",
+                "1975|1976||D|A pet rock in a box is the year's strangest hit|An advertising man is selling ordinary stones in cardboard carriers, with a training manual. He has sold more than a million.|",
+                "1976|1976|month>6,month<8|D|Tall ships sail into New York for the Bicentennial|Two hundred years of independence were celebrated with fireworks, parades and a fleet of sailing ships from around the world.|",
+                "1976|1976|month>6,month<8|S|A Viking lander sends back the first pictures from the surface of Mars|The photographs show a rusty, rock-strewn desert under a pink sky.|",
+                "1976|1976|month>6,month<9|H|A mysterious illness kills veterans at a Philadelphia convention|Dozens of people who attended an American Legion convention have died of a pneumonia doctors can't identify.|sal:HEALTH=0.03",
+                "1976|1977||D|CB radio is the craze of the highway|Truckers' lingo is everywhere, and millions of drivers have bought citizens band radios for their cars.|",
+                "1976|1979||C|Disco fills the dance floors|Clubs with mirrored balls and pulsing lights are packed every night, and disco records are topping the charts.|",
+                "1969|1976||D|Joggers take to the streets|Running is no longer just for athletes. Doctors say it's good for the heart, and sneaker sales are soaring.|",
+                "1973|1976|gasup>0.5|D|Lines at the gas pump stretch around the block|Drivers in {state} are waiting an hour or more for gas, and some stations are open only to regular customers.|sal:ENERGY=0.05 sal:PRICES=0.03",
+                "1969|1984|infl>7|E|Inflation eats into paychecks|A grocery cart that cost twenty dollars a few years ago now costs thirty. Families in {state} say their raises can't keep up.|sal:PRICES=0.05",
+                // ---- 1977-1984 ----
+                "1977|1977|month>0,month<2|C|A miniseries about slavery draws the largest audience in television history|Eight nights tracing a family from Africa through slavery to freedom. More than a hundred million people watched the finale.|sal:RIGHTS=0.02",
+                "1977|1977|month>4,month<9|C|A space fantasy becomes the biggest picture of all time|Lines wrap around theaters for the adventure set a long time ago in a galaxy far, far away.|",
+                "1977|1977|month>5,month<7|T|A personal computer with a keyboard and color graphics goes on sale|Two young men from California are selling the Apple II for $1,298. They say there will be a computer in every home.|",
+                "1977|1977|month>6,month<8|D|A blackout leaves New York in darkness, and looting follows|Lightning struck power lines and the city lost power for a day. Thousands of stores were looted.|sal:CRIME=0.03",
+                "1977|1977|month>7,month<9|C|The King of rock and roll dies at Graceland|The singer was 42. Fans are gathering by the thousands outside his Memphis home.|",
+                "1977|1977|month>9|H|Doctors record what may be the last case of smallpox|A hospital cook in Somalia has recovered from the disease. Health officials believe smallpox has been wiped out.|",
+                "1978|1978|month>1,month<3|N|A blizzard buries New England and the Midwest|Drivers were stranded on highways for days, and Boston was shut down for a week.|",
+                "1978|1978|month>6,month<8|H|The first baby conceived in a test tube is born in England|A healthy girl was born to a couple who had tried for nine years to have a child.|",
+                "1979|1979|month>6,month<8|S|Skylab falls to earth over Australia|The abandoned space station broke up as it reentered the atmosphere. Pieces landed in the Australian outback.|",
+                "1979|1979|month>8,month<10|C|A cable channel devoted entirely to sports goes on the air|It will broadcast sports around the clock from Bristol, Connecticut.|",
+                "1979|1981|gasup>0.5|D|Odd-even days at the pump|Drivers can buy gas only on odd or even days, depending on their license plates. Fights are breaking out in the lines in {state}.|sal:ENERGY=0.05",
+                "1980|1980|month>1,month<3|X|The miracle on ice: American college players beat the Soviets|A team of amateurs beat the Soviet Union, the best hockey team in the world, at the Lake Placid Olympics. They went on to win gold.|rally=0.5",
+                "1980|1980|month>4,month<6|N|Mount St. Helens erupts|The volcano in Washington state blew its top, flattening forests for miles. Ash fell across the Northwest.|",
+                "1980|1980|month>5,month<7|C|A news channel that never signs off goes on the air|The Cable News Network will broadcast news 24 hours a day from Atlanta.|",
+                "1980|1980|month>6,month<9|N|A heat wave and drought scorch the South and plains|Temperatures topped 100 for weeks, crops are failing, and more than a thousand people have died of the heat.|farm=-3",
+                "1980|1980|month>10|C|Eighty million tune in to learn who shot the oil baron|The prime-time soap's mystery was solved in one of the most-watched broadcasts ever.|",
+                "1980|1982||D|A puzzle cube from Hungary is the toy of the year|Millions of the colorful cubes have been sold, and almost nobody can solve one.|",
+                "1981|1981|month>3,month<5|S|The space shuttle Columbia flies|The first reusable spaceship launched from Florida and landed two days later in the California desert.|",
+                "1981|1981|month>5,month<7|H|Doctors report a rare pneumonia among young men in Los Angeles|The Centers for Disease Control says five previously healthy young men have a rare infection usually seen in transplant patients.|",
+                "1981|1981|month>6,month<8|W|The heir to the British throne marries at St. Paul's|An estimated 750 million people around the world watched the royal wedding in London.|",
+                "1981|1981|month>6,month<8|D|Walkways collapse at a Kansas City hotel during a dance|Two suspended walkways fell into a crowded lobby, killing 114 people.|",
+                "1981|1981|month>7,month<9|C|A cable channel plays music videos around the clock|Its first video was about video killing the radio star. Teenagers can't stop watching.|",
+                "1981|1981|month>7,month<9|T|IBM's personal computer goes on sale|The business machine giant is entering the home and office computer market. The basic model costs $1,565.|",
+                "1982|1982|month>5,month<8|C|A movie about a boy and a lost alien has audiences in tears|The new picture from the director of the shark movie is the biggest hit of the year.|",
+                "1982|1982|month>8,month<11|L|Poisoned pain relievers kill seven in Chicago|Someone laced capsules with cyanide. Stores have pulled the brand from their shelves nationwide.|sal:CRIME=0.03",
+                "1982|1982|month>10|D|A black granite wall honors the Vietnam dead|The memorial on the Mall bears the names of more than 58,000 Americans. Veterans wept as they found the names of friends.|",
+                "1983|1983|month>1,month<3|C|A record audience says goodbye to an army surgical hospital|The final episode of the long-running comedy set in Korea was the most-watched program in television history.|",
+                "1983|1983|month>5,month<7|S|The first American woman flies in space|A physicist from California flew aboard the shuttle Challenger.|",
+                "1983|1983|month>9,month<11|T|Mobile telephones go on sale in Chicago|The first commercial cellular phone service has begun. The phones weigh two pounds and cost nearly $4,000.|",
+                "1983|1983|month>10|D|Shoppers brawl over cabbage-faced dolls|Stores are rationing the dolls, which come with adoption papers. Some parents drove hundreds of miles to find one.|",
+                "1984|1984|month>0,month<2|T|A computer with a mouse and pictures on the screen|Apple's new Macintosh is introduced with a television commercial during the Super Bowl.|",
+                "1984|1984|month>6,month<9|X|The Olympics in Los Angeles end with a record medal haul|With the Soviet bloc staying away, American athletes won 174 medals. The games turned a profit.|rally=0.5",
+                "1984|1984|month>9|W|A famine in Ethiopia shocks the world|Television pictures of starving children have set off a wave of donations.|",
+                "1984|1984|month>11|W|A gas leak at a chemical plant in India kills thousands|A cloud of toxic gas escaped from a pesticide plant in Bhopal at night.|",
+                "1980|1984|mortgage>13|E|Mortgage rates near 18 percent freeze the housing market|Home sales have collapsed in {state}. Builders are laying off workers and realtors say buyers have vanished.|sal:ECON=0.04",
+                "1979|1987|unemp>7|E|Another plant closes in the Rust Belt|A steel mill in {state} that employed 3,000 is shutting down for good. The company blames foreign competition.|sal:JOBS=0.05",
+                "1980|1984||D|Teenagers fill the video arcades|Quarters are pouring into arcade machines. Some towns are trying to limit arcades near schools.|",
+                // ---- 1985-1992 ----
+                "1985|1985|month>3,month<6|B|A soft-drink maker changes its formula, and customers revolt|The company is getting thousands of angry calls a day. It brought back the old formula within three months.|",
+                "1985|1985|month>6,month<8|C|Live Aid: concerts in London and Philadelphia raise millions for famine relief|A billion and a half people watched the sixteen-hour broadcast.|",
+                "1985|1985|month>6,month<9|C|A teenager travels back in time in a DeLorean|The comedy about a high school student stuck in 1955 is the biggest hit of the summer.|",
+                "1985|1985|month>8,month<10|X|A Cincinnati veteran breaks the career hits record|The player-manager singled for hit number 4,192, passing a record that stood since 1928.|",
+                "1985|1985|month>8,month<10|W|An earthquake devastates Mexico City|Thousands died when buildings collapsed. American rescue teams are helping search the rubble.|",
+                "1986|1986|month>3,month<6|W|A nuclear reactor explodes at Chernobyl in the Soviet Union|A radioactive cloud has spread across Europe. The Soviets admitted the accident only after Sweden detected the radiation.|",
+                "1986|1986|month>4,month<6|D|Hands across America|Millions of people joined hands in a chain stretching across the country to raise money for the hungry and homeless.|",
+                "1986|1986|month>6,month<8|D|The Statue of Liberty turns 100, freshly restored|Fireworks lit up New York harbor for the centennial of the statue, which has been restored inside and out.|",
+                "1986|1986|month>9,month<11|X|A ground ball rolls through a first baseman's legs, and the Mets win|New York came back from the brink of elimination in Game Six and won the World Series two nights later.|",
+                "1987|1987|month>1,month<3|S|A star explodes in a neighboring galaxy|Astronomers saw a supernova in the Large Magellanic Cloud, the brightest seen from earth in nearly 400 years.|",
+                "1987|1987|month>9,month<11|D|A toddler is rescued after 58 hours in a well in Texas|Rescuers drilled a parallel shaft to reach the girl. Millions watched live.|",
+                "1987|1987|month>11|H|A new kind of antidepressant is approved|Doctors say the drug has fewer side effects than older medicines.|",
+                "1988|1988|month>5,month<9|N|Drought withers the corn belt|The worst drought in fifty years has cut the corn crop by a third. Barges are stuck on the shrunken Mississippi.|farm=-5",
+                "1988|1988|month>6,month<10|N|Wildfires burn a third of Yellowstone|Thousands of firefighters are battling blazes across the park. Only the snows of autumn are expected to put them out.|",
+                "1988|1988|month>9,month<11|X|A hobbled slugger's pinch-hit home run wins Game One for the Dodgers|He could barely walk, but he hit a two-run homer in the bottom of the ninth.|",
+                "1988|1988|month>11|W|A bomb destroys a jumbo jet over Scotland|All 259 people aboard Pan Am Flight 103 and eleven on the ground died. Investigators suspect terrorists.|sal:SECURITY=0.05",
+                "1989|1989|month>2,month<4|N|A tanker runs aground in Alaska and spills millions of gallons of oil|Crude oil from the Exxon Valdez is spreading across Prince William Sound, coating beaches and wildlife.|sal:ENERGY=0.05",
+                "1989|1989|month>8,month<10|N|Hurricane Hugo slams into South Carolina|The storm struck near Charleston with winds of 140 miles an hour.|",
+                "1989|1989|month>9,month<11|N|An earthquake rocks San Francisco during the World Series|Part of the Bay Bridge collapsed and a freeway in Oakland pancaked. Fans watching the game felt the stadium shake.|",
+                "1989|1989|month>11|C|A cartoon family from Springfield gets its own show|The animated comedy about a bumbling father and his family premiered on the Fox network.|",
+                "1990|1990|month>1,month<3|W|Nelson Mandela walks free after 27 years in prison|The South African leader was released from prison near Cape Town. Crowds danced in the streets of Soweto.|",
+                "1990|1990|month>3,month<5|S|The Hubble Space Telescope goes into orbit|The shuttle Discovery released the telescope, which astronomers say will let them see to the edge of the universe.|",
+                "1990|1990|month>9,month<11|W|Germany reunites|East and West Germany became one country at midnight. Fireworks lit the sky over Berlin.|",
+                "1991|1991|month>2,month<4|L|A bystander's video shows Los Angeles police beating a motorist|The tape, shot from a balcony, shows officers striking a Black driver more than fifty times. Four officers have been charged.|sal:RIGHTS=0.05 sal:CRIME=0.02",
+                "1991|1991|month>9,month<11|N|A firestorm sweeps the Oakland hills|More than 3,000 homes burned in a day as hot, dry winds drove the fire.|",
+                "1991|1991|month>7|T|A physicist in Switzerland puts the World Wide Web online|The system links documents on computers around the world. So far only a few hundred people use it.|",
+                "1992|1992|month>4,month<6|C|The king of late night signs off after thirty years|The host's final show drew one of the largest audiences in late-night history.|",
+                "1992|1992|month>6,month<9|X|The Dream Team wins Olympic gold in Barcelona|The first American Olympic basketball team with NBA stars won its games by an average of 44 points.|",
+                "1992|1992|month>7,month<9|N|Hurricane Andrew levels south Florida|The storm destroyed more than 60,000 homes. Homestead looks like a war zone.|",
+                "1992|1992|month>7,month<9|B|The country's largest shopping mall opens in Minnesota|The Mall of America has an amusement park in the middle and more than 400 stores.|",
+                "1985|1991|crimeidx>98|L|Crack cocaine spreads through the cities|A cheap, smokable form of cocaine has swept through neighborhoods in {state}. Police say it's behind a surge in shootings.|sal:CRIME=0.05",
+                "1980|1987|farm<100|E|Farm foreclosures hit the heartland|Farmers in {state} who borrowed heavily when prices were high are losing their land. Auctions are held every week.|sal:ECON=0.03",
+                "1986|1991||B|Savings and loans fail by the hundreds|Regulators are closing thrift institutions that made risky real estate loans. The cleanup may cost taxpayers billions.|",
+                "1984|1990||D|Families rent movies for the VCR|Video rental stores are opening on every corner. Theater owners are worried.|",
+                "1985|1992||B|Japanese cars and electronics win American customers|Buyers say Japanese cars are better built. Detroit is losing ground every year.|sal:TRADE=0.03",
+                "1983|1989||D|Aerobics classes and leg warmers|Workout videos are selling millions, and health clubs are opening in every shopping center.|",
+                "1987|1992||T|Fax machines are in every office|Businesses are sending documents across the country in minutes over the telephone line.|",
+                "1985|1992||H|AIDS is killing thousands of young Americans|The disease has now killed tens of thousands. Researchers are racing for treatments, and quilts with the names of the dead are being stitched across the country.|sal:HEALTH=0.04",
+        };
+    }
+
+    /**
+     * The news of 1993 to 2037 beyond the White House. The layout is AmbientEarly's. Through mid-2026 these are real
+     * events in their real months; after that they are plausible inventions, and no one in them is real.
+     */
+    static final class AmbientRecent {
+        private AmbientRecent() {
+        }
+
+        static final String[] ROWS = {
+                // ---- 1993-2000 ----
+                "1993|1993|month>1,month<4|L|A truck bomb explodes beneath the World Trade Center|Six people were killed and more than a thousand injured in a blast in the parking garage under the North Tower. Investigators suspect a terrorist cell.|sal:SECURITY=0.04",
+                "1993|1993|month>2,month<4|N|The storm of the century buries the East|A storm stretching from Cuba to Canada dumped snow on twenty states, closed every major airport on the East Coast and killed more than 200 people.|",
+                "1993|1993|month>5,month<9|N|The Mississippi and Missouri rivers flood the Midwest|Levees have failed up and down the rivers. Towns in nine states are under water, and the damage runs to billions.|farm=-4",
+                "1993|1993|month>5,month<8|C|Dinosaurs brought back to life fill the theaters|The new adventure about a theme park of cloned dinosaurs is breaking box-office records, thanks to computer-made creatures.|",
+                "1993|1994||T|A program called Mosaic lets anyone browse the World Wide Web|Students at the University of Illinois wrote a free browser that shows pictures and text together. The number of web sites is doubling every few months.|",
+                "1994|1994|month>0,month<2|N|An earthquake strikes Northridge, California|The quake before dawn collapsed freeways and apartment buildings across the San Fernando Valley, killing 57.|",
+                "1994|1994|month>5,month<8|X|The World Cup comes to America|Soccer's championship is being played in nine American cities, and the crowds are the biggest in the tournament's history.|",
+                "1994|1994|month>8,month<11|X|A players' strike cancels the World Series|For the first time in ninety years there will be no World Series. Fans say they may not come back.|",
+                "1994|1995||T|Netscape goes on sale, and the Internet goes mainstream|A new web browser from a California startup is being downloaded by millions. America Online is mailing discs to every home in the country.|",
+                "1995|1995|month>6,month<8|N|A heat wave kills hundreds in Chicago|Temperatures topped 100 and the heat index reached 120. Most of the dead were elderly people living alone.|",
+                "1995|1995|month>7,month<9|T|Windows 95 goes on sale at midnight|Customers lined up outside computer stores to buy the new operating system with its Start button.|",
+                "1995|1995|month>8,month<10|X|A Baltimore shortstop plays his 2,131st straight game|He broke a record that stood for 56 years. The game stopped for 22 minutes as he took a lap around the field.|",
+                "1995|1995|month>10|C|The first feature film made entirely by computer|A movie about toys that come alive when no one is watching is the hit of the holiday season.|",
+                "1995|1997||B|Online bookstores and auction sites open for business|A Seattle startup is selling books over the web, and a San Jose site lets people auction anything. Wall Street is taking notice.|",
+                "1996|1996|month>6,month<8|D|A jumbo jet explodes off Long Island|All 230 aboard TWA Flight 800, bound for Paris, were killed. Investigators are trying to learn whether it was a bomb.|",
+                "1996|1996|month>6,month<9|X|The Olympics open in Atlanta|The Centennial Games have drawn more than ten thousand athletes. A bomb in a crowded park marred the second week.|",
+                "1996|1996|month>11|D|Parents fight over a giggling red doll|Stores are selling out of a stuffed toy that laughs when tickled. Some are reselling for hundreds of dollars.|",
+                "1996|1996||C|A dance song from Spain has everyone doing the same moves|The Macarena is on every radio and at every wedding, ballgame and convention.|",
+                "1997|1997|month>1,month<3|S|Scientists in Scotland clone a sheep|A lamb named Dolly is the first mammal cloned from an adult cell. Ethicists are asking whether humans are next.|",
+                "1997|1997|month>2,month<5|S|A bright comet lights the evening sky|Hale-Bopp is visible to the naked eye, even in the cities. It won't return for 2,500 years.|",
+                "1997|1997|month>3,month<5|X|A 21-year-old wins the Masters by twelve strokes|The young golfer set a record score at Augusta and became the first champion of African and Asian descent.|",
+                "1997|1997|month>4,month<6|T|A computer beats the world chess champion|IBM's Deep Blue won a six-game match in New York, the first time a computer has beaten a reigning champion in a match.|",
+                "1997|1997|month>6,month<8|S|A rover rolls across the surface of Mars|The Pathfinder mission landed on the Fourth of July and released a small rover. Millions are visiting NASA's web site for the pictures.|",
+                "1997|1997|month>7,month<10|W|Princess Diana is killed in a car crash in Paris|The princess died when her car crashed in a tunnel while being chased by photographers. Millions are mourning around the world.|",
+                "1998|1998|month<4|C|An epic about a sinking ocean liner becomes the biggest film ever|Audiences are seeing it again and again. It has passed a billion dollars at the box office.|",
+                "1998|1998|month>2,month<5|H|A pill for impotence is approved|The new drug is the fastest-selling prescription in history.|",
+                "1998|1998|month>8,month<10|X|The home run record falls|Two sluggers chasing the single-season record have both passed 61, and the country is following every at-bat.|",
+                "1998|1998|month>8,month<11|B|Two Stanford students start a search engine|Their company works out of a garage in Menlo Park. Its odd name comes from the number one followed by a hundred zeroes.|",
+                "1998|1998|month>10|S|The first piece of the International Space Station reaches orbit|A Russian rocket carried up the station's first module. An American shuttle will bring the next one in two weeks.|",
+                "1999|1999|month>6,month<8|X|The American women win the World Cup on penalty kicks|Ninety thousand fans filled the Rose Bowl, the largest crowd ever for a women's sporting event.|",
+                "1999|1999|month>5|T|A file-sharing program lets students trade music for free|Record companies are suing. College networks are clogged with music files.|",
+                "1999|1999|month>9|T|The Y2K bug: companies race to fix computer dates|Banks, airlines and utilities are spending billions to make sure their systems don't fail when the calendar turns to 2000.|",
+                "1998|2000|mkt>8|B|Internet stocks soar on dreams of the new economy|Companies with no profits are going public to a frenzy, and day traders are quitting their jobs to trade full time.|",
+                "2000|2000|month>0,month<2|T|Y2K arrives quietly|The computers kept running. Experts disagree on whether the billions spent were money well spent or overkill.|",
+                "2000|2000|month>5,month<7|S|Scientists announce a rough draft of the human genome|Two rival teams say they have read nearly all of the three billion letters of human DNA.|",
+                "2000|2000|month>10|S|The first crew moves into the space station|An American and two Russians have begun what NASA hopes will be decades of continuous human presence in orbit.|",
+                // ---- 2001-2008 ----
+                "2001|2001|month>0,month<3|T|A free encyclopedia anyone can edit goes online|Skeptics say it will be full of errors. Its founders say thousands of volunteers will correct each other.|",
+                "2001|2001|month>9,month<12|L|Letters laced with anthrax kill five|Envelopes containing the deadly spores were mailed to news offices and two senators. Post offices are screening mail.|sal:SECURITY=0.04",
+                "2001|2001|month>9,month<12|T|A music player that holds a thousand songs in your pocket|Apple's new iPod costs $399. Critics wonder who will pay that much.|",
+                "2001|2001|month>10|B|Enron collapses into bankruptcy|The energy trader, once the seventh-largest company in the country, hid billions in debt. Thousands of employees lost their retirement savings.|sal:ETHICS=0.04",
+                "2002|2002|month>1,month<3|X|The Winter Olympics in Salt Lake City|Security was tight five months after the attacks, but the games went off smoothly, and Americans won 34 medals.|",
+                "2003|2003|month>1,month<3|S|The space shuttle Columbia breaks apart over Texas|All seven astronauts died as the shuttle returned from a sixteen-day mission. Debris fell across East Texas.|",
+                "2003|2003|month>2,month<6|H|A new virus called SARS spreads from Asia|Travelers have carried the respiratory illness to Toronto and beyond. Airports are screening passengers.|sal:HEALTH=0.03",
+                "2003|2003|month>7,month<9|D|The largest blackout in American history|Fifty million people from Ohio to New York lost power on a summer afternoon. New Yorkers walked home across the bridges.|",
+                "2004|2004|month>0,month<3|S|Twin rovers land on Mars|Spirit and Opportunity are exploring opposite sides of the planet, looking for signs that water once flowed.|",
+                "2004|2004|month>1,month<4|T|A college student launches a social network for Harvard|The site lets students post profiles and connect with friends. It's spreading to other campuses.|",
+                "2004|2004|month>9,month<12|X|The Red Sox win the World Series for the first time since 1918|Boston came back from three games down against the Yankees, then swept the Cardinals.|",
+                "2004|2004|month>11|W|A tsunami in the Indian Ocean kills more than 200,000|An undersea earthquake off Sumatra sent waves crashing into coastlines from Indonesia to Africa.|",
+                "2005|2005|month>3,month<5|W|Pope John Paul II dies|The Polish pope led the Catholic Church for 26 years. Millions are traveling to Rome for his funeral.|",
+                "2005|2005|month>6,month<8|W|Bombs on London's subway and a bus kill 52|Suicide bombers struck during the morning rush hour.|sal:SECURITY=0.03",
+                "2005|2006||T|A site for sharing home videos takes off|Millions of people are watching clips uploaded by strangers. Television networks are scrambling to keep up.|",
+                "2006|2006|month>7,month<9|S|Astronomers vote that Pluto is no longer a planet|The International Astronomical Union has reclassified it as a dwarf planet. Schoolchildren are protesting.|",
+                "2006|2007||T|A service for posting short messages catches on|Users are posting updates of no more than 140 characters about what they're doing.|",
+                "2007|2007|month>5,month<7|T|Apple's iPhone goes on sale|Lines stretched for blocks outside Apple stores. The phone has a touch screen, a web browser and no keyboard.|",
+                "2008|2008|month>7,month<9|X|An American swimmer wins eight gold medals in Beijing|He broke the record for golds at a single Olympics, set in 1972.|",
+                "2008|2008|month>8,month<10|S|The world's largest particle collider switches on|Physicists at the new collider on the French-Swiss border hope to find the Higgs boson.|",
+                "2003|2006|mortgage<6.5|E|Home prices keep climbing in {state}|Houses are selling within days, often for more than the asking price. Buyers are taking loans with little or nothing down.|",
+                "2005|2008|gasup>0.6|E|Gas tops three dollars, then four|Drivers in {state} are trading in SUVs for smaller cars. Truckers say diesel is eating their profits.|sal:ENERGY=0.04 sal:PRICES=0.03",
+                "2004|2008||D|Americans are spending hours on social networking sites|Teenagers are posting photos and messages to their friends every day. Parents are worried about who else is reading.|",
+                // ---- 2009-2016 ----
+                "2009|2009|month>0,month<2|D|A jetliner lands safely on the Hudson|Geese knocked out both engines after takeoff from LaGuardia, and the pilot glided the plane onto the river. All 155 aboard survived.|",
+                "2009|2009|month>0,month<3|T|A programmer releases a new digital currency called bitcoin|The currency has no central bank. A few hobbyists are trading it.|",
+                "2009|2009|month>3,month<7|H|A new swine flu spreads from Mexico|Schools in several states have closed, and health officials have declared a public health emergency.|sal:HEALTH=0.04",
+                "2009|2009|month>5,month<8|C|The King of Pop dies at 50|Fans gathered outside hospitals and at the star's handprints in Hollywood. Radio stations are playing his songs around the clock.|",
+                "2010|2010|month>0,month<3|W|An earthquake devastates Haiti|Port-au-Prince is in ruins, and the dead may number more than 200,000. American ships and troops are bringing aid.|",
+                "2010|2010|month>3,month<5|T|Apple unveils a tablet computer|The iPad sold 300,000 the first day. Publishers hope it will save newspapers and magazines.|",
+                "2010|2010|month>9,month<11|W|Thirty-three miners are rescued in Chile after 69 days underground|One by one, the miners rode a capsule up a narrow shaft. A billion people watched.|",
+                "2011|2011|month>2,month<4|W|An earthquake and tsunami strike Japan; a nuclear plant melts down|The tsunami killed thousands and flooded the Fukushima nuclear plant. Radiation is leaking.|",
+                "2011|2011|month>3,month<5|W|A royal wedding at Westminster Abbey|Prince William married Catherine Middleton before two billion television viewers.|",
+                "2011|2011|month>4,month<6|N|A tornado destroys much of Joplin, Missouri|The mile-wide tornado killed 158 people and destroyed a hospital and thousands of homes.|",
+                "2011|2011|month>6,month<8|S|The last space shuttle lands|Atlantis rolled to a stop at Cape Canaveral after thirty years of shuttle flights. American astronauts will ride Russian rockets for now.|",
+                "2011|2011|month>8,month<12|D|Occupy Wall Street protesters camp in lower Manhattan|Protesters against inequality have pitched tents in a park near Wall Street. Similar camps have sprung up in dozens of cities.|sal:ECON=0.03",
+                "2011|2011|month>9,month<11|T|Apple's co-founder dies|The man who brought the world the Macintosh, the iPod and the iPhone was 56.|",
+                "2012|2012|month>6,month<8|S|Physicists find the Higgs boson|Scientists at the particle collider in Geneva announced the discovery of the particle that gives matter its mass.|",
+                "2012|2012|month>7,month<9|S|A car-sized rover lands on Mars|Curiosity was lowered to the surface on cables from a rocket-powered sky crane. Engineers in Pasadena wept.|",
+                "2012|2012|month>9,month<12|N|Superstorm Sandy floods New York and New Jersey|The storm surge flooded subways and tunnels and destroyed thousands of homes along the Jersey Shore.|",
+                "2013|2013|month>3,month<5|L|Bombs explode at the finish line of the Boston Marathon|Three people were killed and hundreds injured. The city was locked down during the manhunt that followed.|sal:SECURITY=0.04",
+                "2013|2013|month>4,month<6|N|A tornado tears through Moore, Oklahoma|Two elementary schools were destroyed. Twenty-four people died.|",
+                "2014|2014|month>7,month<9|D|The ice bucket challenge raises millions|People are dumping buckets of ice water over their heads and challenging friends to do the same, to raise money for ALS research.|",
+                "2014|2014|month>8,month<12|H|Ebola spreads in West Africa and reaches Dallas|The outbreak has killed thousands in Liberia, Sierra Leone and Guinea. A patient in Dallas has died, and two nurses were infected.|sal:HEALTH=0.04",
+                "2015|2015|month>6,month<8|S|A spacecraft flies past Pluto|After nine years in space, New Horizons sent back the first close-up pictures of Pluto, including a great heart-shaped plain.|",
+                "2015|2015|month>10|W|Terrorists kill 130 in Paris|Gunmen and suicide bombers attacked a concert hall, cafes and a stadium.|sal:SECURITY=0.04",
+                "2016|2016|month>5,month<7|W|Britain votes to leave the European Union|The referendum result stunned markets. The prime minister has resigned.|fin=-0.2",
+                "2016|2016|month>6,month<9|D|Millions chase cartoon monsters with their phones|A new game sends players out into parks and streets to catch virtual creatures.|",
+                "2016|2016|month>1,month<9|H|The Zika virus spreads through the Americas|The mosquito-borne virus is linked to birth defects. Florida has reported local cases.|sal:HEALTH=0.03",
+                "2016|2016|month>9|X|The Cubs win the World Series for the first time since 1908|Chicago beat Cleveland in ten innings in Game Seven, after a rain delay.|",
+                "2009|2014||T|Smartphones are everywhere|More than half of Americans now carry a smartphone. Apps are changing how people shop, date, bank and get around.|",
+                "2009|2013||B|Streaming puts the video stores out of business|The last big rental chain is closing its stores. Families now watch movies over the Internet.|",
+                "2009|2012|unemp>8|E|Job fairs draw thousands in {state}|Thousands lined up for a few hundred openings at a job fair. Many have been out of work for more than a year.|sal:JOBS=0.04",
+                // ---- 2017-2024 ----
+                "2017|2017|month>7,month<9|S|A total solar eclipse crosses the country|Millions traveled to the path of totality from Oregon to South Carolina to watch the sun go dark.|",
+                "2017|2017|month>7,month<10|N|Hurricane Harvey floods Houston|The storm stalled over Texas and dropped more than fifty inches of rain. Thousands were rescued from rooftops.|",
+                "2017|2017|month>8,month<11|N|Hurricane Maria devastates Puerto Rico|The island lost power entirely, and much of it will be dark for months. Thousands are fleeing to the mainland.|",
+                "2017|2018|month>9|D|Women share stories of harassment under a two-word hashtag|Millions of posts describe harassment and assault at work. Powerful men in entertainment, media and business have lost their jobs.|",
+                "2018|2018|month>4,month<6|W|A prince marries an American actress at Windsor Castle|Millions watched the wedding of Prince Harry and Meghan Markle.|",
+                "2018|2018|month>6,month<8|W|Boys trapped in a flooded Thai cave are rescued|Divers brought out twelve boys and their soccer coach after more than two weeks underground.|",
+                "2018|2018|month>10|N|A wildfire destroys the town of Paradise, California|The Camp Fire killed 85 people and burned nearly 19,000 buildings, the deadliest fire in the state's history.|",
+                "2019|2019|month>3,month<5|W|Fire ravages Notre-Dame Cathedral in Paris|The spire collapsed as Parisians watched from the streets. The president of France vowed to rebuild.|",
+                "2019|2019|month>3,month<5|S|Astronomers capture the first image of a black hole|A network of telescopes around the world photographed the glowing ring around a black hole in a distant galaxy.|",
+                "2019|2019|month>6,month<8|X|The American women win the World Cup again|The team won its fourth title, beating the Netherlands in France.|",
+                "2021|2021|month>1,month<3|N|A deep freeze knocks out Texas's power grid|Millions went without power and heat for days in subfreezing cold. Hundreds died.|sal:ENERGY=0.04",
+                "2021|2021|month>1,month<3|S|A rover lands on Mars with a helicopter on board|Perseverance will collect rock samples, and its small helicopter will try to fly in the thin Martian air.|",
+                "2021|2021|month>2,month<4|W|A giant container ship blocks the Suez Canal|The ship ran aground in a sandstorm and blocked one of the world's busiest trade routes for six days.|",
+                "2021|2021|month>11|S|The James Webb Space Telescope launches on Christmas Day|The giant telescope will unfold in space and look back to the first galaxies.|",
+                "2022|2022|month>6,month<8|S|The Webb telescope's first pictures stun astronomers|The images show galaxies formed not long after the Big Bang.|",
+                "2022|2022|month>8,month<10|W|Queen Elizabeth II dies at 96|The queen reigned for seventy years. Her son is now King Charles III.|",
+                "2022|2022|month>10|T|A chatbot that writes essays and code takes the Internet by storm|A million people signed up in five days to try ChatGPT. Teachers are worried about homework.|",
+                "2022|2022|month>11|S|Scientists achieve fusion ignition|For the first time, a fusion experiment at a California laboratory produced more energy than the lasers put in.|",
+                "2022|2022|month>11|X|Argentina wins the World Cup on penalties|The final in Qatar was called one of the greatest games ever played.|",
+                "2023|2023|month>5,month<7|N|Smoke from Canadian wildfires turns New York's sky orange|The air in New York was briefly the worst of any major city in the world.|sal:HEALTH=0.02",
+                "2023|2023|month>7,month<9|N|A wildfire destroys the town of Lahaina on Maui|Winds from a passing hurricane drove the fire through the historic town. About a hundred people died.|",
+                "2023|2023||C|A pop star's stadium tour sells out across the country|Hotels and restaurants in host cities say the concerts are worth millions to the local economy.|",
+                "2024|2024|month>2,month<4|D|A container ship knocks down Baltimore's Key Bridge|The ship lost power and struck a support. Six highway workers on the bridge were killed, and the port is closed.|",
+                "2024|2024|month>3,month<5|S|A total solar eclipse sweeps from Texas to Maine|Tens of millions of people watched the sky go dark in the middle of the afternoon.|",
+                "2024|2024|month>6,month<8|T|A faulty software update crashes computers worldwide|Airlines, hospitals and banks were knocked offline after a security company pushed a bad update to millions of Windows machines.|",
+                "2024|2024|month>6,month<9|X|The Olympics in Paris|American athletes topped the medal table. The opening ceremony was held on the Seine.|",
+                "2024|2024|month>8,month<11|N|Hurricane Helene floods western North Carolina|The storm brought catastrophic flooding to the mountains, washing away roads and towns far from the coast.|",
+                "2020|2023||B|Working from home becomes the new normal|Office towers sit half empty. Companies say many workers will never come back five days a week.|",
+                "2019|2025||T|Electric cars move from novelty to mainstream|Charging stations are going up along the interstates, and every automaker is promising electric models.|",
+                "2021|2024|infl>4|E|Grocery bills climb, and families cut back|Eggs, beef and baby formula cost far more than a year ago. Food banks in {state} say lines are the longest since the pandemic.|sal:PRICES=0.05",
+                "2021|2030||E|Rents climb out of reach in {state}|Rents in the state's biggest city are up by a quarter in two years. Young people are moving back in with their parents.|sal:PRICES=0.03",
+                "2023|2030|ai>0|T|AI chatbots move into offices and classrooms|Companies are using AI to write code and answer customers. Schools are rewriting their rules on homework.|sal:TECH=0.03",
+                "2018|2037|month>5,month<9|N|Wildfire smoke blankets the West|Air quality alerts are in effect from Seattle to Denver as fires burn across the region.|",
+                // ---- 2025-2026: the real news of the time ----
+                "2025|2025|month>0,month<3|D|A passenger jet and an Army helicopter collide over the Potomac|All 67 aboard the two aircraft were killed in the collision near Reagan National Airport. Investigators are looking at air traffic control and helicopter routes.|",
+                "2025|2025|month>0,month<3|N|Los Angeles begins to rebuild after the January fires|The Palisades and Eaton fires destroyed more than 16,000 homes and buildings. Residents are returning to sift through the ashes.|",
+                "2025|2025|month>0,month<3|B|A Chinese AI model shakes Wall Street|A startup in Hangzhou says it trained a model rivaling the best American systems for a fraction of the cost. Chip stocks lost hundreds of billions in a day.|fin=-0.2 sal:TECH=0.03",
+                "2025|2025|month>1,month<3|X|Philadelphia wins the Super Bowl|The Eagles beat Kansas City 40 to 22 in New Orleans, denying the Chiefs a third straight title.|",
+                "2025|2025|month>0,month<5|E|Egg prices hit a record as bird flu spreads|Farms have culled tens of millions of hens. Some stores are limiting how many cartons a customer can buy.|sal:PRICES=0.04",
+                "2025|2025|month>1,month<5|H|Measles spreads in West Texas|The largest outbreak in decades has sickened hundreds, most of them unvaccinated children.|sal:HEALTH=0.03",
+                "2025|2025|month>3,month<6|W|The cardinals elect the first American pope|The Chicago-born cardinal, who spent much of his career in Peru, took the name Leo XIV after the death of Pope Francis.|",
+                "2025|2025|month>6,month<8|N|Flash floods in the Texas Hill Country kill more than a hundred|The Guadalupe River rose more than twenty feet in under an hour before dawn on the Fourth of July. Many of the dead were children at a summer camp.|",
+                "2026|2026|month>1,month<3|X|The Winter Olympics open in Milan and Cortina|Italy is hosting the games in two cities, with events spread across the Alps.|",
+                "2026|2026|month>5,month<8|X|The World Cup comes to North America|The United States, Canada and Mexico are hosting the expanded 48-team tournament, with the final at MetLife Stadium in New Jersey.|",
+                "2026|2026|month>6,month<8|D|The nation celebrates its 250th birthday|Fireworks, parades and tall ships mark two hundred and fifty years since the Declaration of Independence.|rally=0.5",
+                // ---- 2026-2037: invented, but plausible ----
+                "2026|2030|ai>0|B|Data centers strain the grid in {state}|A new AI campus will use as much power as a city of a million people. Utilities are asking customers to pay for new power plants.|sal:ENERGY=0.03",
+                "2026|2032||T|Self-driving trucks begin hauling freight on the interstates|The first driverless trucks are running on highways in the Southwest. The Teamsters say they're a threat to millions of jobs.|sal:JOBS=0.02",
+                "2026|2035||D|Drones deliver groceries and prescriptions in the suburbs|Packages are arriving by air in under thirty minutes in a growing number of towns.|",
+                "2027|2030||S|Astronauts return to the moon|For the first time in more than half a century, Americans have walked on the lunar surface, near its south pole.|rally=0.5",
+                "2027|2033||H|A new generation of weight-loss drugs becomes a pill|Millions of Americans are taking the drugs, and food companies are reporting a drop in snack sales.|",
+                "2028|2028|month>6,month<9|X|The Olympics return to Los Angeles|The Games open in Los Angeles, the city's third Olympics after 1932 and 1984.|",
+                "2028|2034||T|AI tutors in every classroom|School districts are giving every student an AI tutor. Test scores in some districts are up; teachers' unions want limits.|sal:EDU=0.03",
+                "2029|2037||S|A fusion company puts power on the grid|A startup's pilot plant has delivered electricity to the grid for the first time. It will be years before fusion power is cheap.|",
+                "2029|2037||N|A heat dome bakes the South|Cities from Phoenix to Atlanta are setting records, and cooling centers are full.|sal:ENERGY=0.02",
+                "2029|2037||B|A trillion-dollar company that didn't exist ten years ago|An AI firm founded in a rented office is now worth more than most countries' entire stock markets.|",
+                "2030|2037||S|A probe finds hints of ancient life in Martian rock|Scientists say the pattern of minerals in samples studied by a rover is best explained by microbes billions of years ago. Others urge caution.|",
+                "2030|2037||D|Robots in the home: the first affordable household robot|For the price of a used car, a robot that folds laundry, loads the dishwasher and tidies up is on sale.|",
+                "2030|2037||H|Gene therapy cures a form of inherited blindness|Patients who were born blind can now see after a single treatment. The price is more than a million dollars.|",
+                "2030|2037||E|Four-day workweeks spread as AI takes on routine work|A growing number of companies have cut the workweek to four days without cutting pay.|",
+                "2032|2037||T|Quantum computers crack problems no ordinary machine can|A research lab says its machine has simulated a molecule for a new battery in minutes. Banks are rushing to upgrade their encryption.|",
+                "2029|2037||D|Air taxis lift off in three cities|Electric air taxis are flying paying passengers between downtown and the airport in a few big cities.|",
+                "2029|2037||C|A film made entirely by AI wins audiences, and an argument|A feature made with AI from script to score is a box-office hit. The actors' and writers' guilds are furious.|",
+        };
+    }
+
+    /**
+     * The news beyond the White House: more than 500 stories of their era (science, culture, sports, business, the weather,
+     * daily life) and stories that follow the state of the country. A story runs once a presidency, filling the paper
+     * and the ticker on quiet weeks. Some move what voters care about.
+     */
+    static final class Stories {
+        private static List<StoryDef> defs;
+
+        private Stories() {
+        }
+
+        /** Every ambient story, in table order. */
+        public static List<StoryDef> defs() {
+            if (defs == null) {
+                List<StoryDef> l = new ArrayList<StoryDef>();
+                for (String[] table : new String[][]{AmbientEarly.ROWS, AmbientMiddle.ROWS, AmbientRecent.ROWS, AmbientAny.ROWS})
+                    for (String row : table) l.add(new StoryDef(row));
+                defs = l;
+            }
+            return defs;
+        }
+
+        public static void setup(Game g) {
+            StoryState s = new StoryState();
+            s.used = new boolean[defs().size()];
+            s.cool = new int[StorylineTable.LINES.length];
+            g.stories = s;
+        }
+
+        /** A game saved before this version gets an empty record; a longer table keeps what has already run. */
+        public static void upgrade(Game g) {
+            if (g.stories == null) { setup(g); return; }
+            StoryState s = g.stories;
+            if (s.used.length != defs().size()) { boolean[] u = new boolean[defs().size()]; for (int i = 0; i < Math.min(u.length, s.used.length); i++) u[i] = s.used[i]; s.used = u; }
+            if (s.cool.length != StorylineTable.LINES.length) { int[] c = new int[StorylineTable.LINES.length]; for (int i = 0; i < Math.min(c.length, s.cool.length); i++) c[i] = s.cool[i]; s.cool = c; }
+            if (s.lines == null) s.lines = new ArrayList<Storyline>();
+        }
+
+        public static void week(Game g) {
+            ambient(g);
+            Storylines.week(g);
+        }
+
+        // ---- the era's stories ----
+
+        /** Runs one or two of the era's stories: two on a quiet week, often none on a busy one. */
+        static void ambient(Game g) {
+            double busy = 0;
+            int from = g.day() - 7;
+            for (News n : g.news) if (n.day >= from && n.section == null) busy += n.weight;
+            double chance = busy > 12 ? 0.5 : busy > 6 ? 0.75 : 0.95;
+            int n = busy < 5 ? 2 : 1;
+            for (int k = 0; k < n; k++) if (g.rng.nextDouble() < chance) run(g, pick(g));
+        }
+
+        /** Which story runs: those that follow the news of the moment weigh three times as much as the era's background. */
+        static int pick(Game g) {
+            StoryState s = g.stories;
+            int y = yearNow(g);
+            List<StoryDef> d = defs();
+            double total = 0;
+            double[] w = new double[d.size()];
+            for (int i = 0; i < w.length; i++) {
+                StoryDef x = d.get(i);
+                if (s.used[i] || y < x.from || y > x.to || !holds(g, x.when)) continue;
+                w[i] = x.when.isEmpty() ? 1 : 3;
+                total += w[i];
+            }
+            if (total <= 0) return -1;
+            double r = g.rng.nextDouble() * total;
+            for (int i = 0; i < w.length; i++) { r -= w[i]; if (w[i] > 0 && r <= 0) return i; }
+            return -1;
+        }
+
+        static void run(Game g, int i) {
+            if (i < 0) return;
+            StoryDef x = defs().get(i);
+            g.stories.used[i] = true;
+            g.stories.ran++;
+            String state = STATES[someState(g)].name;
+            int kind = x.section == 1 || x.section == 8 ? NK_ECON : x.section == 2 ? NK_WORLD : NK_INFO;
+            g.log(kind, fill(x.head, state, null), x.body.isEmpty() ? null : fill(x.body, state, null), 0.5 + 0.4 * g.rng.nextDouble());
+            g.news.get(g.news.size() - 1).section = SECTION[x.section];
+            fx(g, x.fx);
+        }
+
+        /** A state for a story to happen in: not the capital, and not Alaska or Hawaii before they became states in 1959. */
+        static int someState(Game g) {
+            while (true) {
+                int s = g.rng.nextInt(NS);
+                String ab = STATES[s].ab;
+                if (!ab.equals("DC") && (yearNow(g) >= 1959 || !ab.equals("AK") && !ab.equals("HI"))) return s;
+            }
+        }
+
+        /** Fills in a story's blanks: {state}, and for a storyline {who} (its made-up figure), {place} and {st} (its state's name and postal code). */
+        static String fill(String s, String state, Storyline l) {
+            String t = s.replace("{state}", state);
+            if (l != null) t = t.replace("{who}", l.who).replace("{place}", STATES[l.state].name).replace("{st}", STATES[l.state].ab);
+            return t;
+        }
+
+        // ---- effects and conditions ----
+
+        /**
+         * Effects in Diplo.fx's language, plus "sal:CRIME=0.2" (a story that makes voters care more, or less, about an
+         * issue) and "housing=-0.3" (housing starts, millions a year).
+         */
+        static void fx(Game g, String fx) {
+            if (fx == null || fx.isEmpty() || fx.equals("-")) return;
+            StringBuilder rest = new StringBuilder();
+            for (String tok : fx.split(" ")) {
+                if (tok.startsWith("housing=")) g.econ.housing = Math.max(0.3, g.econ.housing + Double.parseDouble(tok.substring(8)));
+                else if (tok.startsWith("sal:")) {
+                    int eq = tok.indexOf('=');
+                    int issue = issue(tok.substring(4, eq));
+                    if (issue >= 0) g.issueSal[issue] = clamp(g.issueSal[issue] + Double.parseDouble(tok.substring(eq + 1)), 0.05, 2.5);
+                } else if (!tok.isEmpty()) rest.append(rest.length() > 0 ? " " : "").append(tok);
+            }
+            if (rest.length() > 0) Diplo.fx(g, rest.toString());
+        }
+
+        /** An issue by its short code: ECON, PRICES, JOBS, HEALTH, IMMIG, CRIME, FOREIGN, SECURITY, TRADE, ENERGY, RIGHTS, TECH, EDU or ETHICS. */
+        public static int issue(String code) {
+            String[] codes = {"ECON", "PRICES", "JOBS", "HEALTH", "IMMIG", "CRIME", "FOREIGN", "SECURITY", "TRADE", "ENERGY", "RIGHTS", "TECH", "EDU", "ETHICS"};
+            for (int i = 0; i < codes.length; i++) if (codes[i].equals(code)) return i;
+            return -1;
+        }
+
+        /**
+         * The state of the country, for a story's conditions. Beyond what events and turning points can test: jobs,
+         * growth, prices at the pump, the markets, the deficit, wars, the election calendar and the president's party.
+         */
+        public static double var(Game g, String k) {
+            Econ e = g.econ;
+            switch (k) {
+                case "unemp": return e.unemp;
+                case "gdp": return e.gdp;
+                case "fed": return e.fed;
+                case "deficit": return e.deficit;
+                case "gasup": return e.gas / e.priceLevel - e.gasRef;
+                case "mkt": return market(g, 13);
+                case "uchg": return g.hist.size() > 26 ? e.unemp - g.hist.get(g.hist.size() - 27)[H_UNEMP] : 0;
+                case "wars": { int n = 0; if (g.world != null && g.world.wars != null) for (War x : g.world.wars) if (x.stage == 2) n++; return n; }
+                case "kia": return g.world != null ? g.world.kia : 0;
+                case "elect": return yearNow(g) % 4 == 0 ? 1 : 0;
+                case "midterm": return yearNow(g) % 4 == 2 ? 1 : 0;
+                case "tw": return g.tw();
+                case "dem": return g.party == DEM ? 1 : 0;
+                case "mortgage": return e.mortgage;
+                case "oil": return e.oil / e.priceLevel;
+                case "fin": return e.finShock;
+                case "base": return g.home != null ? (g.home.fac[0] + g.home.fac[1]) / 2 : 50;
+                case "farm": return e.farm;
+                case "sent": return e.sentiment;
+                default: return History.var(g, k);
+            }
+        }
+
+        /** The stock market's change over the last n weeks, in percent. */
+        static double market(Game g, int n) {
+            if (g.hist.size() <= n) return 0;
+            double then = g.hist.get(g.hist.size() - 1 - n)[H_STOCKS];
+            return then > 0 ? (g.econ.stocks / then - 1) * 100 : 0;
+        }
+
+        /** "unemp>7,month<4": every clause must hold. "p=0.02" is a weekly chance, drawn only when everything before it holds. */
+        public static boolean holds(Game g, String c) {
+            if (c == null || c.isEmpty()) return true;
+            for (String t : c.split(",")) {
+                if (t.startsWith("p=")) { if (g.rng.nextDouble() >= Double.parseDouble(t.substring(2))) return false; continue; }
+                int i = t.indexOf('>'), j = t.indexOf('<');
+                if (i > 0) { if (!(var(g, t.substring(0, i)) > Double.parseDouble(t.substring(i + 1)))) return false; }
+                else if (j > 0) { if (!(var(g, t.substring(0, j)) < Double.parseDouble(t.substring(j + 1)))) return false; }
+            }
+            return true;
+        }
+
+        /** Stories of this week that came from beyond the White House. */
+        public static List<News> thisWeek(Game g) {
+            List<News> l = new ArrayList<News>();
+            int from = g.day() - 7;
+            for (News n : g.news) if (n.day >= from && n.section != null) l.add(n);
+            return l;
+        }
+
+        /** How many of the table's stories could run at some point in a year, whatever the conditions. */
+        public static int inYear(int y) {
+            int n = 0;
+            for (StoryDef d : defs()) if (y >= d.from && y <= d.to) n++;
+            return n;
+        }
+
+        /** The section a story is filed under. */
+        public static String section(StoryDef d) { return SECTION[d.section]; }
+    }
+
+    // ---------------------------------------------------------------------
+    //  StoryData (resolutedesk.stories.StoryData): Constants for the era's news and the storylines that grow out of it.
+    // ---------------------------------------------------------------------
+    /** Sections of the paper, by the letter each ambient story is filed under. */
+    public static final String SECTION_CODES = "PEWSCXLNBHDT";
+    public static final String[] SECTION = {"Politics", "The economy", "The world", "Science", "Culture", "Sports", "Crime and the courts", "Weather and the land",
+            "Business", "Health", "Daily life", "Technology"};
+
+    /** A storyline is under way, has faded, has run away with the presidency, or was brought to an end. */
+    public static final int SL_ACTIVE = 0, SL_FADED = 1, SL_RUNAWAY = 2, SL_ENDED = 3;
+    public static final String[] SL_STATUS = {"Developing", "Faded", "Took over the presidency", "Brought to an end"};
+
+    /** Heat at the end of a stage: at or above this the story grows; at or below the other it fades. */
+    public static final double SL_GROW = 60, SL_FADE = 30;
+    /** Heat a storyline starts with, and how much it cools each week on its own. */
+    public static final double SL_START = 52, SL_COOL = 0.5;
+    /** Heat a gamble adds when it fails, on top of the option's own: a botched response is news in itself. */
+    public static final double SL_BACKFIRE = 6;
+    /** Weeks before a storyline that has ended can start again, and how many can run at once. */
+    public static final int SL_REST = 104, SL_MAX = 2;
+
+    /** One story of its era, read from its row: first year|last year|conditions|section letter|headline|body|effects. */
+    static final class StoryDef {
+        public final int from, to, section;
+        public final String when, head, body, fx;
+
+        StoryDef(String row) {
+            String[] t = row.split("\\|", -1);
+            if (t.length != 7) throw new IllegalArgumentException("a story needs 7 fields: " + row);
+            from = Integer.parseInt(t[0]);
+            to = Integer.parseInt(t[1]);
+            when = t[2];
+            section = SECTION_CODES.indexOf(t[3]);
+            if (section < 0) throw new IllegalArgumentException("no section " + t[3] + ": " + row);
+            head = t[4];
+            body = t[5];
+            fx = t[6];
+        }
+    }
+
+    /** The news beyond the White House: which of the era's stories have run, and the storylines under way. */
+    static final class StoryState implements Serializable {
+        private static final long serialVersionUID = 1L;
+        public boolean[] used;                                 // each ambient story runs once a presidency
+        public List<Storyline> lines = new ArrayList<Storyline>();
+        public int[] cool;                                     // weeks until each storyline can start again
+        public int ran;                                        // ambient stories run so far
+    }
+
+    /** One storyline under way: how far it has gone, how hot it is, and how it ended. */
+    static final class Storyline implements Serializable {
+        private static final long serialVersionUID = 1L;
+        public int def;                                        // its row in StorylineTable
+        public int stage;                                      // 0 is the first stage
+        public double heat;                                    // 0-100: how much it dominates the news; 60 and up, it grows
+        public int status;                                     // SL_* in StoryData
+        public int stageWeek, started, ended = -1;
+        public int lingers;                                    // checks at the end of a stage that neither grew nor faded
+        public String who;                                     // the made-up figure at its center
+        public int state;                                      // the state where it starts
+        public int choices;                                    // decisions made about it
+    }
+
+    /**
+     * One storyline, read from its rows in StorylineTable. The first row is
+     * id|first year|last year|what starts it|what feeds it|name|its ending's effects|its ending's headline|its ending's story|how it fades.
+     * Each row after it is a stage: headline|story|weeks|effects each week|options, with options separated by ";;" and each
+     * option label|adviser|odds kind|base odds|heat if it works|heat if it fails|effects if it works|effects if it fails|news if it works|news if it fails.
+     */
+    static final class StorylineDef {
+        public final String id, trigger, fuel, name, endFx, endHead, endBody, fade;
+        public final int from, to;
+        public final String[][] stage;          // headline and story of each stage
+        public final int[] weeks;
+        public final String[] weekFx;
+        public final String[][][] options;      // stage, option, field
+
+        StorylineDef(String[] rows) {
+            String[] h = rows[0].split("\\|", -1);
+            if (h.length != 10) throw new IllegalArgumentException("a storyline's first row needs 10 fields: " + rows[0]);
+            id = h[0]; from = Integer.parseInt(h[1]); to = Integer.parseInt(h[2]); trigger = h[3]; fuel = h[4]; name = h[5];
+            endFx = h[6]; endHead = h[7]; endBody = h[8]; fade = h[9];
+            int n = rows.length - 1;
+            stage = new String[n][];
+            weeks = new int[n];
+            weekFx = new String[n];
+            options = new String[n][][];
+            for (int i = 0; i < n; i++) {
+                String[] t = rows[i + 1].split("\\|", 5);
+                if (t.length != 5) throw new IllegalArgumentException(id + " stage " + (i + 1) + " needs 5 fields");
+                stage[i] = new String[]{t[0], t[1]};
+                weeks[i] = Integer.parseInt(t[2]);
+                weekFx[i] = t[3];
+                String[] opts = t[4].split(";;");
+                options[i] = new String[opts.length][];
+                for (int k = 0; k < opts.length; k++) {
+                    options[i][k] = opts[k].split("\\|", -1);
+                    if (options[i][k].length != 10) throw new IllegalArgumentException(id + " stage " + (i + 1) + " option " + (k + 1) + " needs 10 fields");
+                }
+            }
+        }
+
+        public int stages() { return stage.length; }
+    }
+
+    /**
+     * Storylines that can grow until they take over a presidency. Every name in them is made up ({who}); they happen in a
+     * state of the game's choosing ({place}, {st}). See StorylineDef for the layout of the rows. Effects use Diplo.fx's
+     * language plus sal:ISSUE (how much voters care about an issue).
+     */
+    static final class StorylineTable {
+        private StorylineTable() {
+        }
+
+        static final String[][] LINES = {
+                {"bankrun|1933|2100|fin<-0.8,p=0.03 mkt<-12,p=0.02 p=0.0006|mkt<-8:0.8 unemp>8:0.4 app<40:0.3 fin<-0.5:0.5|A run on the banks"
+                        + "|slump=-1 fin=-1.5 econ=-0.5 perf=-4 sal:ECON=0.6|A banking panic grips the country|Hundreds of banks have failed, savers are hoarding cash, and the economy is sliding. For months to come, nothing else matters to voters.|The bank runs are over: deposits are flowing back, and the lines have gone.",
+                        "Depositors line up outside a bank in {place}|Rumors that the bank lost heavily on bad loans sent hundreds of customers to withdraw their savings this morning. Other banks in the region report long lines.|3|fin=-0.03|"
+                                + "Have regulators stand behind its deposits|Treasury secretary|s|0.75|-22|-6|def=0.002 fin=0.1|def=0.002|Regulators' backing calms the lines in {place}|The lines in {place} keep growing despite the regulators;;"
+                                + "Arrange a takeover by a larger bank|Economic adviser|s|0.6|-18|4|fin=0.15|fin=-0.1|A larger bank agrees to take over the failing bank in {place}|Talks to rescue the bank in {place} collapse;;"
+                                + "Let it fail: no bailouts|Budget director|s|1|12|12|base=1|base=1|The bank in {place} closes its doors; depositors wait for their money|The bank in {place} closes its doors; depositors wait for their money",
+                        "The run spreads: banks in three states limit withdrawals|Customers are pulling money from banks that had nothing to do with the first failure. Several have capped withdrawals, and bank stocks are falling fast.|4|fin=-0.08 econ=-0.02|"
+                                + "Guarantee all deposits for now|Treasury secretary|s|0.7|-25|-8|def=0.01 fin=0.4 econ=0.1|def=0.01 fin=0.1|A blanket guarantee on deposits stops the run|Even a guarantee doesn't stop the withdrawals;;"
+                                + "Ask the central bank to lend without limit|Economic adviser|s|0.65|-18|-4|fin=0.3|fin=0.05 infl=0.1|Emergency lending steadies the banks|Emergency lending buys time but not confidence;;"
+                                + "Declare a bank holiday|Counsel|s|0.8|-15|6|fin=0.2 econ=-0.1 perf=0.5|fin=-0.2 econ=-0.15|A bank holiday closes every bank for four days; they reopen to calmer customers|Banks reopen after the holiday to even longer lines",
+                        "Credit freezes: businesses can't make payroll|Banks have stopped lending to each other and to almost everyone else. Factories in {place} and across the Midwest say they can't borrow to meet payroll.|5|fin=-0.12 jobs=-0.03 demand=-0.01|"
+                                + "Put government capital into the banks|Treasury secretary|s|0.65|-22|-6|def=0.03 fin=0.6 base=-2|def=0.03 fin=0.2 base=-3|Government capital gets the banks lending again|The banks take the capital and still won't lend;;"
+                                + "Emergency loans for business|Economic adviser|s|0.55|-16|-2|def=0.02 fin=0.3 jobs=0.1|def=0.02|Emergency loans keep payrolls flowing|The loan program is too slow to reach most businesses;;"
+                                + "Address the nation to restore confidence|Communications director|c|0.55|-14|4|rally=1 fin=0.2|perf=-0.5|The president's address calms the markets|Markets fall during the president's address",
+                        "Panic: the market crashes and banks fail by the dozen|The worst day for stocks in a generation. Bank failures are spreading faster than regulators can count them, and savers are hoarding cash.|6|fin=-0.2 econ=-0.04 demand=-0.02|"
+                                + "An emergency banking law, passed in a day|Legislative director|s|0.55|-28|-6|def=0.03 fin=0.8 perf=1.5|def=0.02 fin=0.2|Congress passes emergency banking powers overnight; the panic breaks|The emergency law stalls on the Hill as banks keep failing;;"
+                                + "Take over the weakest banks|Treasury secretary|s|0.5|-24|2|def=0.04 fin=0.6 base=-3 opp=-3|def=0.04 fin=-0.2 opp=-4|The government takes over the weakest banks, and depositors are made whole|Taking over the banks spooks investors further;;"
+                                + "Let the panic burn itself out|Budget director|s|1|10|10|fin=-0.3|fin=-0.3|The White House says the panic will pass|The White House says the panic will pass"},
+
+                {"strike|1933|2100|year<1953,unemp<12,p=0.006 year>1966,year<1982,infl>5,p=0.008 year>2020,infl>3.5,p=0.006 p=0.0008|infl>5:0.5 unemp<4.5:0.3 app<42:0.3|A strike wave"
+                        + "|supply=-0.6 jobs=-0.4 prices=-0.3 perf=-3 sal:JOBS=0.4 sal:PRICES=0.3|A wave of strikes shuts down half the country|Factories, ports and rail yards are idle from coast to coast. Shortages are spreading, and the strikes are the only story in the country.|The strikes are over: contracts are signed and the plants are running again.",
+                        "Workers walk out at a plant in {place}|Thousands of workers left the line this morning, demanding higher pay as prices climb. The union says the walkout will last as long as it takes.|4|supply=-0.01|"
+                                + "Send federal mediators|Labor secretary|s|0.7|-20|-4|jobs=0.05|-|Federal mediators get both sides talking in {place}|Talks in {place} break down within hours;;"
+                                + "Stand with the strikers|Political director|s|1|8|8|base=2 g24=2 opp=-2|base=2 g24=2 opp=-2|The president backs the workers in {place}; the company calls it interference|The president backs the workers in {place}; the company calls it interference;;"
+                                + "Stay out of it|Chief of staff|s|1|6|6|-|-|The White House calls the walkout in {place} a private matter|The White House calls the walkout in {place} a private matter",
+                        "The strike spreads to other plants and the ports|Workers at a dozen companies have joined the walkout, and dockworkers on both coasts say they will stop loading ships in sympathy.|5|supply=-0.03 jobs=-0.01|"
+                                + "Bring both sides to the White House|Chief of staff|s|0.6|-22|-2|perf=0.8 jobs=0.1|perf=-0.5|A White House summit produces a framework deal|The White House talks end without a deal;;"
+                                + "Back the union's core demands|Labor secretary|s|0.65|-16|4|g24=3 prices=-0.1 base=1|prices=-0.1|Companies start settling on the union's terms|Companies dig in against the union's demands;;"
+                                + "Seek a court order to end the walkout|Attorney general|j|0.6|-18|10|supply=0.2 g24=-4 base=-2|g24=-5 protest=6|A court orders the strikers back to work|The court order sends more workers into the streets",
+                        "Shortages: shelves empty and factories idle|With the ports shut, parts and goods aren't moving. Shelves are emptying in {place}, and factories that weren't on strike are sending workers home.|5|supply=-0.06 prices=-0.03 jobs=-0.02|"
+                                + "Order an eighty-day cooling-off period|Counsel|j|0.75|-24|6|supply=0.3 g24=-3|g24=-4 protest=5|The cooling-off order reopens the ports while talks go on|Strikers defy the cooling-off order;;"
+                                + "Name a special mediator with full backing|Labor secretary|s|0.55|-20|0|jobs=0.1 perf=0.5|-|A special mediator brokers a deal on wages|The special mediator makes little headway;;"
+                                + "Send in troops to move the freight|Defense secretary|m|0.7|-12|14|supply=0.3 g24=-6 rights=-0.2 protest=10|g24=-6 protest=15 rights=-0.3|Troops keep the freight moving, to bitter protest|Clashes break out as troops try to move the freight",
+                        "A general strike is called|Union leaders have called on every worker in the country to walk off the job on Monday. Cities are bracing for a shutdown.|5|supply=-0.1 jobs=-0.04 econ=-0.03|"
+                                + "A national settlement on wages and prices|Economic adviser|s|0.5|-30|-4|perf=2 jobs=0.2 prices=0.1|perf=-1|A national wage settlement averts the general strike|The settlement talks collapse the night before the strike;;"
+                                + "Take emergency powers over the railroads and ports|Counsel|j|0.55|-22|10|supply=0.4 rights=-0.2 g24=-4|rights=-0.3 protest=12|The government takes over the railroads and ports for the duration|The seizure is challenged in court as the strike begins;;"
+                                + "Wait them out|Chief of staff|s|1|10|10|-|-|The White House says it won't negotiate under threat|The White House says it won't negotiate under threat"},
+
+                {"protest|1933|2100|year>1964,year<1972,p=0.006 wars>0,app<45,p=0.008 protest>60,p=0.01 p=0.0009|protest>50:0.5 wars>0:0.4 app<40:0.4 year>1964,year<1972:0.3|A protest movement"
+                        + "|protest=25 rights=-0.3 perf=-3 sec=-0.2 sal:RIGHTS=0.4|The protests take over the country|Marches in every city, clashes in some, and a movement that sets the terms of the national debate. Everything the White House does is now measured against it.|The protest movement has lost steam; the marches are smaller and the organizers are turning to the next election.",
+                        "Students occupy a campus building in {place}|Hundreds of students have taken over the administration building, and they say they won't leave until the country changes course. Similar sit-ins are planned elsewhere.|4|protest=0.5|"
+                                + "Invite student leaders to the White House|Chief of staff|s|0.6|-18|2|g0=2 base=1|g0=1|A frank meeting with student leaders cools the campus protests|The student leaders walk out of the White House meeting;;"
+                                + "Say it's for the universities to handle|Press secretary|s|1|4|4|-|-|The White House leaves the sit-in in {place} to the university|The White House leaves the sit-in in {place} to the university;;"
+                                + "Condemn the occupation|Communications director|c|0.7|-6|10|base=1 g0=-2|g0=-3 protest=5|Your condemnation of the sit-in plays well outside the campuses|Your condemnation draws thousands more students to the cause",
+                        "A march on Washington draws a quarter million|The crowd stretched from the Lincoln Memorial to the Capitol. Speakers demanded the president act, and organizers promised to come back bigger.|4|protest=1|"
+                                + "Meet the organizers and take up one demand|Domestic policy adviser|s|0.6|-22|0|perf=0.5 base=-1|-|Taking up one of the marchers' demands takes the edge off the movement|The organizers call your gesture too little, too late;;"
+                                + "Give a speech on their concerns|Communications director|c|0.55|-14|4|rally=0.5|perf=-0.3|The president's speech wins over some of the marchers|The speech is jeered at rallies across the country;;"
+                                + "Ignore the march|Chief of staff|s|1|8|8|-|-|The president spends the day of the march on other business|The president spends the day of the march on other business",
+                        "Police and protesters clash in {place}|Tear gas, arrests and injuries on both sides. Video of the clashes is everywhere, and the protests are spreading to new cities.|5|protest=1.5 crime=-0.02|"
+                                + "Call for calm and an inquiry|Attorney general|j|0.6|-18|2|rights=0.1|-|An independent inquiry into the clashes is welcomed on both sides|The inquiry satisfies neither side;;"
+                                + "Send the National Guard|Defense secretary|m|0.7|-12|14|sec=0.1 rights=-0.2 base=1 g0=-3|protest=10 rights=-0.3|The Guard restores order in {place}|The Guard's arrival sets off bigger protests;;"
+                                + "Back the protesters' cause|Political director|s|1|-8|-8|base=-2 opp=-3 g0=3|base=-2 opp=-3 g0=3|The president sides with the protesters; the opposition is furious|The president sides with the protesters; the opposition is furious",
+                        "Unrest in a dozen cities|Curfews in several cities, businesses boarded up, and both parties say the country is coming apart. The movement's leaders say they are just getting started.|6|protest=2 crime=-0.04 econ=-0.02|"
+                                + "A national commission and a real change of course|Chief of staff|s|0.5|-28|-4|perf=1.5 base=-2|perf=-1|A change of course wins the movement's leaders to the table|The change of course comes too late to stop the unrest;;"
+                                + "Federal troops and curfews|Defense secretary|m|0.65|-20|12|sec=0.2 rights=-0.4 g0=-4 g10=-3|protest=15 rights=-0.5|Curfews and troops bring the cities under control|Troops in the streets bring the worst night of unrest yet;;"
+                                + "Address the nation|Communications director|c|0.5|-16|6|rally=1|perf=-1|An address to the nation lowers the temperature|The address does little to calm the streets"},
+
+                {"thirdparty|1933|2100|app<40,tw>60,p=0.01 tw>100,app<45,p=0.004 p=0.0005|app<40:0.6 base<45:0.4 unemp>7:0.3|A third-party insurgency"
+                        + "|base=-8 perf=-3 opp=2 sal:ETHICS=0.3|{who}'s movement becomes a party of its own|{who} has ballot access in nearly every state and polls in the twenties. The race for the White House is now a three-way contest, and much of the insurgent's vote is coming from your side.|{who}'s movement fades: the money dried up, and the rallies are half empty.",
+                        "{who} launches a movement against both parties|The businessman and broadcaster told a packed hall in {place} that both parties have failed. His new movement claims a million sign-ups in its first week.|5|-|"
+                                + "Take up one of {who}'s issues|Political director|s|0.6|-18|2|base=1|-|Taking up {who}'s issue blunts the new movement|{who} calls your move a cheap imitation;;"
+                                + "Dismiss {who} as a sideshow|Press secretary|c|0.6|-6|8|-|-|Most voters agree that {who} is a sideshow|Calling {who} a sideshow only helps {who} raise money;;"
+                                + "Say nothing|Chief of staff|s|1|5|5|-|-|The White House declines to comment on {who}|The White House declines to comment on {who}",
+                        "{who} polls at 15 percent|In a new national poll, one voter in seven says they'd back {who} for president. Most of them are from your side, and they say neither party listens.|6|base=-0.1|"
+                                + "Meet {who}'s voters where they are|Political director|s|0.55|-20|0|base=1.5|-|A tour of {who}'s strongholds wins some of them back|Crowds in {who}'s strongholds turn their backs;;"
+                                + "Go after {who}'s record|Communications director|c|0.55|-14|8|-|perf=-0.5|A look at {who}'s business record dents the movement|The attacks on {who} backfire and the movement grows;;"
+                                + "Ignore the polls|Chief of staff|s|1|8|8|-|-|The White House says it doesn't follow the polls|The White House says it doesn't follow the polls",
+                        "{who} fills arenas and wins ballot access in 40 states|The movement is now a party, with money, volunteers and its name on the ballot in most of the country. Your own party is starting to panic.|6|base=-0.2|"
+                                + "A deal: a seat at the table for {who}'s cause|Chief of staff|s|0.45|-26|4|base=2 perf=0.5|-|{who} accepts a role on a commission and tones down the campaign|{who} turns down your offer in public;;"
+                                + "Rally the base: a vote for {who} is a vote for the other side|Political director|s|0.6|-16|4|base=2 opp=-1|-|The warning that {who} will hand the election to the other side lands|Your warning only angers {who}'s voters;;"
+                                + "Challenge {who}'s ballot access in court|Counsel|j|0.5|-12|12|-|perf=-1|Courts throw {who} off the ballot in several states|The court fight makes {who} a martyr",
+                        "{who} pulls even with the two parties|Three polls in a week show a genuine three-way race. Party leaders are talking about what happens if no one wins a majority of the Electoral College.|6|base=-0.3|"
+                                + "A bold new agenda that steals the movement's thunder|Domestic policy adviser|s|0.45|-28|0|base=3 perf=1|-|Your new agenda takes the air out of {who}'s campaign|{who} says you've copied the movement and still can't be trusted;;"
+                                + "Debate {who} head to head|Communications director|c|0.5|-22|10|perf=1.5|perf=-2|You get the better of {who} in a televised debate|{who} wins the debate, and the movement surges;;"
+                                + "Stay the course|Chief of staff|s|1|6|6|-|-|The White House sticks to its message|The White House sticks to its message"},
+
+                {"drought|1933|2100|year<1941,p=0.02 month>4,month<9,p=0.002|farm<90:0.5 month>5,month<9:0.4|The great drought"
+                        + "|farm=-25 prices=-0.3 perf=-2 g22=-5 sal:ECON=0.3|The drought becomes a disaster|Crops have failed across the plains, families are abandoning their farms, and food prices are climbing. The drought is now the story of the year.|The rains have come back to the plains, and the drought is over.",
+                        "A dry spring in {place}|The driest spring anyone in {place} can remember. Wheat and corn are withering, and the reservoirs are low.|5|farm=-0.3|"
+                                + "Emergency loans for farmers|Budget director|s|0.75|-18|-4|def=0.003 farm=4 g22=2|def=0.003 farm=1|Emergency farm loans help families in {place} hold on|The farm loans are tied up in paperwork;;"
+                                + "Send soil and water experts|Domestic policy adviser|s|0.6|-14|2|farm=2|-|Soil and water experts help farmers in {place} save part of the crop|Experts can do little against the drought;;"
+                                + "Wait for rain|Chief of staff|s|1|6|6|-|-|The administration says the weather will turn|The administration says the weather will turn",
+                        "The crops fail across the plains|Corn and wheat harvests are the worst in decades. Ranchers are selling cattle they can't feed.|6|farm=-0.6 prices=-0.01|"
+                                + "Drought relief for the plains states|Legislative director|s|0.65|-20|-4|def=0.008 farm=6 g22=3 st:{st}=1|def=0.008 farm=2|Congress passes drought relief for the plains states|Drought relief stalls in Congress;;"
+                                + "Buy the herds to keep ranchers afloat|Budget director|s|0.7|-14|0|def=0.004 farm=4 g22=2|def=0.004|Federal purchases of cattle keep ranchers in business|The cattle purchase program runs out of money;;"
+                                + "Leave it to the states|Chief of staff|s|1|8|8|g22=-1|g22=-1|The White House says drought relief is up to the states|The White House says drought relief is up to the states",
+                        "Families leave their farms behind|Thousands of farm families have packed up and left for the cities and the coast. Towns in {place} are emptying.|6|farm=-0.4 g22=-0.2|"
+                                + "A conservation corps to restore the land|Domestic policy adviser|s|0.6|-22|-2|def=0.006 farm=5 jobs=0.1 g22=3|def=0.006|A conservation corps puts young men to work restoring the land|The conservation corps can't hire fast enough;;"
+                                + "Resettle families on better land|Budget director|s|0.5|-16|4|def=0.004 g22=2|g22=-1|Resettled families get a new start|The resettlement program is mired in disputes;;"
+                                + "Do nothing more|Chief of staff|s|1|10|10|-|-|The administration says it has done what it can|The administration says it has done what it can",
+                        "Dust storms black out the sky|A storm of dust blew from the plains all the way to the East Coast, darkening cities and coating ships at sea. Some call it the worst environmental disaster in the nation's history.|6|farm=-0.8 health=-0.02|"
+                                + "A national program to hold the soil|Domestic policy adviser|s|0.55|-30|-4|def=0.01 farm=8 g22=4 perf=1|def=0.01 farm=2|A national soil program begins to hold the land in place|The soil program is too little against the storms;;"
+                                + "Emergency food and water|Budget director|s|0.75|-18|0|def=0.006 health=0.1|def=0.006|Emergency food and water reach the hardest-hit counties|Relief convoys are stranded by the storms;;"
+                                + "Pray for rain|Chief of staff|s|1|10|10|-|-|The president calls for a day of prayer for rain|The president calls for a day of prayer for rain"},
+
+                {"redscare|1946|1957|year>1946,p=0.012|app<50:0.4 nk>60:0.3|The loyalty hunt"
+                        + "|rights=-0.8 perf=-3 base=-3 opp=-3 sal:SECURITY=0.5|The hunt for subversives takes over Washington|Hearings every week, careers ruined, and accusations reaching into your own administration. The fear of communists inside the government now sets the agenda.|The hunt for subversives has run its course; the hearings are over and the accusations are discredited.",
+                        "A senator claims communists work inside a federal agency|Senator {who} says he has a list of disloyal employees at a federal agency. He won't release it, but the charge is on every front page.|5|sec=-0.02|"
+                                + "Order a quiet review of the agency|Attorney general|j|0.7|-16|2|sec=0.1|-|A quiet review finds no evidence for {who}'s charge|The review leaks before it's done;;"
+                                + "Call the charge reckless|Press secretary|c|0.55|-10|8|rights=0.1|perf=-0.5|Most papers agree {who}'s charge was reckless|Your response puts {who} on every front page again;;"
+                                + "Say nothing|Chief of staff|s|1|6|6|-|-|The White House won't dignify {who}'s charge|The White House won't dignify {who}'s charge",
+                        "Hearings and a Hollywood blacklist|Senator {who}'s hearings call witness after witness. Studios are firing writers named in the hearings, and federal workers are under suspicion.|6|rights=-0.02|"
+                                + "Create a loyalty review program|Attorney general|j|0.7|-18|4|sec=0.2 rights=-0.2|rights=-0.2|A loyalty program takes the issue out of {who}'s hands|Critics say the loyalty program feeds the fear;;"
+                                + "Defend civil liberties|Counsel|s|0.5|-14|10|rights=0.3 base=-1|perf=-1 sec=-0.2|Your defense of civil liberties wins over editorial pages|Senator {who} accuses you of shielding traitors;;"
+                                + "Cooperate with the hearings|Legislative director|s|1|4|4|sec=0.1 rights=-0.2|sec=0.1 rights=-0.2|The administration hands over its files to {who}|The administration hands over its files to {who}",
+                        "The accusations reach your administration|Senator {who} names two of your own appointees as security risks. The charges are thin, but your opponents are piling on.|6|sec=-0.03 base=-0.1|"
+                                + "Stand by your people|Chief of staff|s|0.55|-18|8|base=1 rights=0.2|perf=-1.5|Your appointees are cleared, and {who} loses credibility|Standing by your appointees costs you in the polls;;"
+                                + "Ask them to resign|Counsel|s|1|-8|-8|sec=0.2 base=-2|sec=0.2 base=-2|Two of your appointees resign under pressure|Two of your appointees resign under pressure;;"
+                                + "Turn the tables: hearings on {who}'s methods|Legislative director|s|0.45|-24|10|rights=0.3 opp=2|perf=-1|Hearings on {who}'s methods begin to turn the country against him|Your counterattack looks like a cover-up",
+                        "Fear grips Washington|Federal workers are afraid to speak, the State Department is losing its experts, and both parties are afraid to cross Senator {who}.|6|rights=-0.05 for=-0.02|"
+                                + "Go on television against {who}|Communications director|c|0.5|-28|6|rights=0.4 perf=1.5|perf=-1|A televised rebuke turns the tide against {who}|Your rebuke on television makes {who} a martyr;;"
+                                + "Quietly work with the Senate to censure him|Legislative director|s|0.5|-24|4|rights=0.2|-|The Senate begins proceedings against {who}|Senators are too afraid to move against {who};;"
+                                + "Ride it out|Chief of staff|s|1|8|8|-|-|The White House waits for the fever to break|The White House waits for the fever to break"},
+
+                {"wages|1966|2100|year>1968,year<1982,p=0.006 year<1985,infl>5,p=0.012 year>2020,year<2024,p=0.006 year>2020,infl>4.5,p=0.01|infl>5:0.6 infl>8:0.6 unemp<5:0.3 year>1972,year<1982:0.3|The wage-price spiral"
+                        + "|infl=1.5 prices=-0.6 perf=-3 sal:PRICES=0.6|Wages and prices spiral out of control|Every price rise brings a demand for higher wages, and every raise brings higher prices. Economists call it a wage-price spiral, and it is now the only economic story that matters.|The spiral has broken: price rises are slowing, and wage demands with them.",
+                        "Unions demand double-digit raises|With prices rising fast, union leaders say their members need raises of 10 percent or more just to keep up. Employers say they'll pass the costs on.|5|infl=0.01|"
+                                + "Announce voluntary wage-price guidelines|Economic adviser|s|0.55|-16|4|prices=0.1|-|Companies and unions say they'll respect the guidelines|Unions and companies ignore the guidelines;;"
+                                + "Back the central bank's fight against inflation|Treasury secretary|s|0.7|-18|0|infl=-0.2 jobs=-0.1|jobs=-0.1|The central bank's resolve calms the markets|The central bank's resolve isn't enough;;"
+                                + "Let the market sort it out|Chief of staff|s|1|8|8|-|-|The White House says wages and prices are for the market to decide|The White House says wages and prices are for the market to decide",
+                        "Prices chase wages higher|The latest numbers show prices rising faster than the raises. Grocery and fuel bills are up sharply, and everyone expects more of the same.|6|infl=0.02 prices=-0.02|"
+                                + "Jawbone companies over price hikes|Communications director|c|0.5|-14|6|prices=0.1|-|Big companies roll back a round of price hikes|Companies shrug off the president's pressure;;"
+                                + "A tax cut for working families|Budget director|s|0.6|-10|6|def=0.01 prices=0.1 infl=0.05|def=0.01 infl=0.1|A tax cut eases the squeeze on family budgets|The tax cut adds fuel to the fire;;"
+                                + "Cut federal spending to cool things down|Budget director|s|0.6|-16|0|def=-0.01 infl=-0.1 base=-1|def=-0.01|Spending cuts help cool prices|The cuts hit services but prices keep rising",
+                        "Expectations come unmoored|Surveys show Americans now expect prices to keep rising fast. Businesses are raising prices in advance and workers are demanding cost-of-living clauses.|6|infl=0.03 prices=-0.03|"
+                                + "Freeze wages and prices for ninety days|Economic adviser|s|0.7|-22|8|infl=-0.8 prices=0.3 supply=-0.1|infl=-0.3 supply=-0.2|A ninety-day freeze stops the spiral in its tracks|Shortages appear under the price freeze;;"
+                                + "Back sharply higher interest rates|Treasury secretary|s|0.65|-24|0|infl=-0.4 jobs=-0.3 econ=-0.2|jobs=-0.3|Higher rates begin to break the spiral, at a cost in jobs|Rates go up but prices keep rising;;"
+                                + "Index wages and benefits to prices|Labor secretary|s|1|6|6|g24=2 g1=2 infl=0.1|g24=2 g1=2 infl=0.1|Cost-of-living increases protect workers and retirees|Cost-of-living increases protect workers and retirees",
+                        "Stagflation: prices soar while jobs vanish|Inflation is the highest in a generation, and unemployment is rising too. Economists are running out of names for it.|6|infl=0.04 jobs=-0.03 econ=-0.03|"
+                                + "A painful plan to wring out inflation|Treasury secretary|s|0.55|-30|-4|infl=-1 jobs=-0.4 perf=1|jobs=-0.4|A tough plan starts to bring inflation down|The tough plan brings pain without results;;"
+                                + "Mandatory controls on wages and prices|Economic adviser|s|0.5|-22|8|infl=-0.6 supply=-0.3|supply=-0.4 perf=-1|Mandatory controls hold prices down for now|Mandatory controls bring shortages and black markets;;"
+                                + "A national address on the crisis|Communications director|c|0.45|-14|6|rally=1|perf=-1|The address persuades many Americans to tighten their belts|The address is panned as a lecture"},
+
+                {"cyber|2013|2100|cyber>55,p=0.01 p=0.0015|cyber>60:0.5 terror>50:0.2|The ransomware wave"
+                        + "|cyber=15 supply=-0.4 sec=-0.5 perf=-3 sal:SECURITY=0.5 sal:TECH=0.3|Hackers bring the country to a halt|Hospitals, pipelines, banks and the power grid have all been hit. Americans are learning how much depends on systems they can't see.|The ransomware wave has broken: arrests abroad, seized servers, and fewer attacks every week.",
+                        "Ransomware shuts down hospitals in {place}|Hackers have locked the computer systems of a hospital chain in {place}. Ambulances are being diverted and the hackers want millions in cryptocurrency.|4|health=-0.02|"
+                                + "Send federal cyber teams|Homeland Security secretary|h|0.65|-18|2|sec=0.1|-|Federal teams restore the hospital systems in {place}|The hospitals in {place} stay offline for days;;"
+                                + "Let the hospitals pay|Chief of staff|s|1|6|6|-|-|The hospitals pay the ransom and their systems come back|The hospitals pay the ransom and their systems come back;;"
+                                + "Trace the money and the hackers|Director of national intelligence|i|0.55|-16|4|sec=0.15|-|Investigators trace the ransom to a gang abroad|The trail goes cold",
+                        "A fuel pipeline is shut down by hackers|The main fuel pipeline for the East Coast has stopped flowing after a ransomware attack. Lines are forming at gas stations.|4|oil=1 energy=-0.02|"
+                                + "An emergency order to keep fuel moving|Energy secretary|s|0.7|-20|2|energy=0.1|-|Emergency waivers keep fuel moving by truck and tanker|Gas stations run dry across the Southeast;;"
+                                + "Strike back at the hackers' servers|Defense secretary|m|0.6|-16|8|sec=0.2 cyber=-5|cyber=5|Cyber Command takes the hackers' servers offline|The counterattack hits the wrong servers;;"
+                                + "Pay to get the fuel flowing|Chief of staff|s|1|10|10|-|-|The pipeline's owner pays the ransom|The pipeline's owner pays the ransom",
+                        "The grid is hit: blackouts in three states|Hackers have tripped substations and taken control systems offline. Millions are without power.|5|grid=1 sec=-0.03 supply=-0.02|"
+                                + "Federal standards for the grid, now|Energy secretary|s|0.6|-22|0|grid=-5 def=0.005|def=0.005|Utilities race to meet new federal standards|Utilities balk at the new standards;;"
+                                + "Name and sanction the country behind it|Secretary of State|d|0.6|-16|6|sec=0.2 for=0.1|for=-0.1|Sanctions on the hackers' patrons slow the attacks|The attacks continue despite the sanctions;;"
+                                + "Ask the country to stay calm|Communications director|c|0.5|-8|8|-|perf=-0.5|Americans stay calm through the blackouts|Panic buying spreads in the dark",
+                        "Banks and markets are frozen by an attack|A cyberattack has frozen payments at major banks. Paychecks aren't arriving and the stock exchanges have halted trading.|5|fin=-0.15 econ=-0.03|"
+                                + "Close the markets and restore from backups|Treasury secretary|s|0.6|-24|0|fin=0.4|fin=-0.2|Markets reopen after a weekend of repairs|Restoring the systems takes far longer than promised;;"
+                                + "A cyber counteroffensive|Defense secretary|m|0.55|-22|8|sec=0.3 cyber=-10|cyber=10 for=-0.2|A counteroffensive cripples the hackers' networks|The counteroffensive sets off a wave of new attacks;;"
+                                + "Emergency powers over critical networks|Counsel|j|0.6|-20|4|sec=0.2 rights=-0.2 tech=-0.1|rights=-0.3|Emergency powers let federal teams take charge|Emergency powers are challenged in court"},
+
+                {"aijobs|2024|2100|ai>0,p=0.006 ai>0,unemp>5,p=0.015|unemp>5:0.5 ai>0:0.2 app<42:0.3|The AI layoffs"
+                        + "|jobs=-0.6 tech=-0.5 perf=-3 base=-2 sal:JOBS=0.6 sal:TECH=0.5|The AI layoffs become the issue of the age|Millions of office jobs are gone or going, and voters want to know what the government will do about it. Every other issue is now measured against it.|The panic over AI layoffs has eased: new jobs are growing, and the worst predictions haven't come true.",
+                        "A company in {place} replaces its call centers with AI|A big employer in {place} says AI will handle all its customer calls, and 4,000 workers will lose their jobs this year. Others are expected to follow.|5|jobs=-0.01|"
+                                + "Retraining money for the workers|Labor secretary|s|0.65|-16|2|def=0.002 jobs=0.1|def=0.002|The laid-off workers in {place} sign up for retraining|The retraining program is too small to matter;;"
+                                + "Call the company to the White House|Chief of staff|s|0.5|-14|4|jobs=0.05|-|The company agrees to phase in the layoffs and retrain workers|The company won't change its plans;;"
+                                + "Say it's how progress works|Economic adviser|s|1|8|8|tech=0.05|tech=0.05|The White House calls AI a long-term gain for workers|The White House calls AI a long-term gain for workers",
+                        "Lawyers, coders and analysts are next|White-collar layoffs are spreading as companies adopt AI agents. Graduates say the entry-level jobs they trained for are disappearing.|6|jobs=-0.02 g0=-0.1|"
+                                + "Tax credits for keeping workers on|Budget director|s|0.6|-18|2|def=0.008 jobs=0.15|def=0.008|Tax credits slow the layoffs|Companies take the credits and lay off workers anyway;;"
+                                + "A national AI transition commission|Domestic policy adviser|s|0.55|-12|4|tech=0.1|-|The commission's first report calms some fears|The commission is dismissed as a talking shop;;"
+                                + "Let the market adjust|Economic adviser|s|1|8|8|tech=0.05|tech=0.05|The White House says the market will create new jobs|The White House says the market will create new jobs",
+                        "A movement against the machines|{who}, a laid-off software engineer, has started a movement called Humans First. Its rallies are drawing tens of thousands, and both parties are courting it.|6|jobs=-0.02 tech=-0.03|"
+                                + "A wage insurance program for displaced workers|Labor secretary|s|0.55|-24|0|def=0.012 jobs=0.2 base=1|def=0.012|Wage insurance gives displaced workers a bridge to new jobs|Wage insurance can't keep up with the layoffs;;"
+                                + "Pause AI rollouts in federal agencies|Chief of staff|s|1|-10|-10|tech=-0.2 jobs=0.1|tech=-0.2 jobs=0.1|Federal agencies pause their AI rollouts|Federal agencies pause their AI rollouts;;"
+                                + "Meet {who} and the movement|Political director|s|0.5|-16|6|base=1|-|{who} calls the meeting a start|{who} walks out and calls the White House out of touch",
+                        "Office towers empty as AI takes over|In {place} and across the country, offices are emptying. The jobless rate for college graduates is the highest on record.|6|jobs=-0.04 econ=-0.03|"
+                                + "An AI dividend: a share of the gains for every worker|Domestic policy adviser|s|0.45|-30|-4|def=0.02 jobs=0.3 perf=1.5|def=0.02|A monthly AI dividend steadies the country|The AI dividend is too small to calm the anger;;"
+                                + "A tax on companies that replace workers|Economic adviser|s|0.55|-22|4|jobs=0.2 tech=-0.2 fin=-0.3|fin=-0.4|The automation tax slows the layoffs|The automation tax sends tech stocks tumbling;;"
+                                + "Stay the course|Chief of staff|s|1|10|10|-|-|The White House says the transition will pay off|The White House says the transition will pay off"},
+
+                {"bubble|1997|2100|year>2002,year<2008,p=0.015 year>2020,mortgage<5.5,p=0.006 fed<1.5,p=0.004|mortgage<5.5:0.4 fed<2:0.4|The housing bubble"
+                        + "|fin=-2 econ=-0.6 housing=-0.4 perf=-3 sal:ECON=0.5|The housing market crashes|Home prices are falling faster than at any time since the Depression, foreclosures are spreading, and the banks that made the loans are in trouble.|The housing frenzy has cooled without a crash; prices are flat and sales are steady.",
+                        "Home prices in {place} soar 20 percent in a year|Bidding wars, buyers waiving inspections, and lenders offering loans with nothing down. Economists are using the word bubble.|6|-|"
+                                + "Ask regulators to tighten lending standards|Treasury secretary|s|0.65|-18|2|econ=-0.05|-|Lenders pull back from the riskiest loans|Lenders find ways around the new standards;;"
+                                + "Celebrate rising home values|Communications director|c|1|8|8|econ=0.05|econ=0.05|The president celebrates record home values|The president celebrates record home values;;"
+                                + "Commission a study|Economic adviser|s|1|4|4|-|-|The administration orders a study of the housing market|The administration orders a study of the housing market",
+                        "Risky mortgages are everywhere|Loans with teaser rates, no proof of income and nothing down now make up a quarter of new mortgages. Wall Street is packaging them into bonds.|6|fin=-0.01|"
+                                + "Rules against the riskiest loans|Treasury secretary|s|0.55|-20|4|fin=0.1 econ=-0.05|-|New rules stop the worst of the lending|The new rules come too late to matter;;"
+                                + "Warn the public about risky loans|Communications director|c|0.55|-12|4|-|-|Buyers grow more cautious|The warning is drowned out by the boom;;"
+                                + "Leave the market alone|Economic adviser|s|1|8|8|-|-|The White House says the market will correct itself|The White House says the market will correct itself",
+                        "Defaults climb and a big lender fails|The first wave of borrowers can't make their payments, and a major mortgage lender has gone under. Bonds backed by the loans are losing value.|5|fin=-0.08 econ=-0.02|"
+                                + "A plan to modify troubled loans|Domestic policy adviser|s|0.55|-22|0|def=0.01 fin=0.2|def=0.01|Loan modifications keep thousands of families in their homes|Lenders drag their feet on modifying loans;;"
+                                + "Guarantee the mortgage bonds|Treasury secretary|s|0.6|-20|4|def=0.02 fin=0.4 base=-2|def=0.02 fin=0.1 base=-2|A federal guarantee steadies the mortgage market|The guarantee can't stop the slide;;"
+                                + "No bailouts for bad bets|Budget director|s|1|10|10|base=1 fin=-0.2|base=1 fin=-0.2|The White House rules out a bailout|The White House rules out a bailout",
+                        "Foreclosures sweep the country|One home in fifty is in foreclosure. Whole neighborhoods in {place} are empty, and construction has stopped.|6|fin=-0.15 econ=-0.04 jobs=-0.02|"
+                                + "A foreclosure moratorium and refinancing|Domestic policy adviser|s|0.5|-28|-4|def=0.02 fin=0.5 perf=1|def=0.02|A moratorium and refinancing stop the wave of foreclosures|Foreclosures keep climbing despite the moratorium;;"
+                                + "Rescue the banks that made the loans|Treasury secretary|s|0.6|-22|4|def=0.04 fin=0.8 base=-4 opp=-3|def=0.04 fin=0.2 base=-4|A bank rescue stops the financial bleeding|The bank rescue is condemned as a giveaway;;"
+                                + "Let prices find a bottom|Economic adviser|s|1|10|10|fin=-0.2|fin=-0.2|The White House says prices must find their level|The White House says prices must find their level"},
+
+                {"crime|1965|2100|year>1966,year<1995,p=0.004 year<1996,crimeidx>105,p=0.01 year>2019,crimeidx>110,p=0.01 crimeidx>120,p=0.02|crimeidx>105:0.5 crimeidx>115:0.5 unemp>7:0.2 year>1966,year<1995:0.2|The crime panic"
+                        + "|crime=-0.8 perf=-3 crimeidx=8 sal:CRIME=0.8|Crime becomes the only issue|Murders are up, every newscast leads with crime, and voters say no other issue matters. The panic has taken over the presidency.|The crime panic has eased: the numbers are coming down, and the headlines with them.",
+                        "A spree of killings shakes {place}|Six people were shot in a week in the same neighborhood of the state's biggest city. Residents say they're afraid to leave their homes.|5|crime=-0.02|"
+                                + "Send federal agents to help|Attorney general|j|0.7|-16|2|crime=0.1|-|Federal agents help make arrests in {place}|The killings in {place} continue;;"
+                                + "Grants for community programs|Domestic policy adviser|s|0.6|-12|2|def=0.002 crime=0.05|def=0.002|Community programs in {place} reach young people at risk|The community programs take time to show results;;"
+                                + "Leave it to the local police|Chief of staff|s|1|6|6|-|-|The White House says crime is a local matter|The White House says crime is a local matter",
+                        "Crime is up in every big city|New figures show violent crime up sharply nationwide. Talk shows and newscasts are dominated by it.|6|crime=-0.03 crimeidx=0.1|"
+                                + "Money for 50,000 more police officers|Budget director|s|0.65|-20|2|def=0.008 crime=0.2 crimeidx=-2|def=0.008|Cities begin hiring officers with federal money|Cities struggle to hire with the new money;;"
+                                + "A national violence prevention plan|Domestic policy adviser|s|0.55|-16|2|crime=0.15 crimeidx=-1|-|Violence prevention programs show early results|Critics call the plan soft;;"
+                                + "Talk tough|Communications director|c|0.6|-8|8|crime=0.1 base=1|-|Your tough talk reassures many voters|Tough talk without a plan rings hollow",
+                        "Vigilantes and fear: crime dominates the news|A subway shooting by a man who said he feared for his life has divided the country. Gun sales and home alarm sales are soaring.|6|crime=-0.04 protest=0.3|"
+                                + "A tough federal crime bill|Legislative director|s|0.55|-24|4|crime=0.3 crimeidx=-3 rights=-0.2 base=1|rights=-0.2|Congress passes a tough crime bill|The crime bill stalls in Congress;;"
+                                + "A summit of mayors and police chiefs|Chief of staff|s|0.6|-16|4|crime=0.15|-|The summit produces a plan cities can use|The summit ends in finger-pointing;;"
+                                + "Federalize the response in the worst cities|Attorney general|j|0.5|-18|10|crime=0.2 rights=-0.3|rights=-0.3 protest=6|Federal task forces cut crime in the worst cities|Federal task forces clash with local officials",
+                        "Crime becomes the campaign|Every race in the country is about crime. Your opponents are running ads calling your administration helpless.|6|crime=-0.05 base=-0.1|"
+                                + "Make public safety your top priority|Political director|s|0.55|-28|-2|crime=0.4 crimeidx=-3 perf=1|-|Your new focus on safety steadies the public|Your new focus is dismissed as a campaign stunt;;"
+                                + "Send the National Guard to the worst cities|Defense secretary|m|0.6|-22|10|crime=0.3 rights=-0.4 crimeidx=-2|rights=-0.4 protest=10|The Guard brings calm to the worst cities|Troops in the streets bring protests and confrontations;;"
+                                + "Point to the long-term trend|Economic adviser|s|1|8|8|-|-|The White House says crime is lower than a generation ago|The White House says crime is lower than a generation ago"},
+
+                {"polio|1937|1955|month>5,month<9,p=0.06|month>5,month<10:0.8|The polio summer"
+                        + "|health=-0.6 perf=-2 sal:HEALTH=0.6|Polio panic sweeps the country|Pools and movie theaters are closed, summer camps are empty, and parents are keeping their children indoors. The epidemic is the only thing anyone talks about.|The polio season has passed, and with the cool weather, the panic has eased.",
+                        "Polio cases climb in {place}|Doctors in {place} report dozens of new cases of infantile paralysis, most of them children. Parents are pulling their children out of swimming pools.|4|health=-0.02|"
+                                + "Send Public Health Service doctors|Health secretary|x|0.7|-16|2|health=0.1|-|Federal doctors help hospitals in {place} cope|Hospitals in {place} are overwhelmed;;"
+                                + "Back the national fund for research|Domestic policy adviser|s|0.8|-12|-2|health=0.1 perf=0.5|health=0.05|A national drive for polio research raises record sums|The research drive gets off to a slow start;;"
+                                + "Leave it to the state health board|Chief of staff|s|1|6|6|-|-|The administration leaves the outbreak to state health officials|The administration leaves the outbreak to state health officials",
+                        "Pools, theaters and camps close|Cities in several states have closed public pools and movie houses to slow the spread. Summer camps are sending children home.|5|health=-0.03 econ=-0.01|"
+                                + "Iron lungs for every hospital that needs one|Budget director|s|0.7|-18|0|def=0.003 health=0.2|def=0.003|Iron lungs reach the hospitals that need them|Iron lungs can't be built fast enough;;"
+                                + "Calm the country with a radio address|Communications director|c|0.55|-14|4|rally=0.5|-|Your address calms frightened parents|Your address does little to calm parents;;"
+                                + "Order a national quarantine of affected towns|Counsel|j|0.6|-10|8|health=0.1 econ=-0.1|econ=-0.15|Quarantines slow the spread|Quarantines bring hardship but the cases keep rising",
+                        "The worst epidemic year on record|Thousands of children are paralyzed. Hospitals are lining iron lungs down the corridors.|5|health=-0.05|"
+                                + "Federal money to speed a vaccine|Health secretary|x|0.55|-26|-2|def=0.004 health=0.3 perf=1|def=0.004|Federal money speeds vaccine trials|The vaccine is still years away;;"
+                                + "Emergency care for paralyzed children|Budget director|s|0.75|-18|0|def=0.004 health=0.2|def=0.004|Emergency care reaches thousands of families|The care program is swamped;;"
+                                + "Promise a cure is coming|Communications director|c|0.5|-10|6|-|perf=-0.5|Parents take heart from the president's promise|Parents take the promise as empty words"},
+
+                {"opioids|2000|2100|od>60,p=0.01 od>80,p=0.02|od>70:0.5 od>90:0.5|The overdose epidemic"
+                        + "|od=10 health=-0.6 crime=-0.3 perf=-2 sal:HEALTH=0.5 sal:CRIME=0.3|Overdoses become a national emergency|More Americans are dying of overdoses than in car crashes and gun deaths combined. Town after town is burying its young.|Overdose deaths are falling at last, and the crisis is easing.",
+                        "Pill mills flood {place} with painkillers|A handful of clinics in {place} have written millions of prescriptions for opioid painkillers. Overdose deaths in the state have tripled.|6|od=0.1|"
+                                + "Shut down the pill mills|Attorney general|j|0.7|-16|2|od=-3 crime=0.1|-|Federal raids close the pill mills in {place}|New clinics open as fast as the old ones close;;"
+                                + "Limits on opioid prescriptions|Health secretary|x|0.65|-14|2|od=-2 health=0.1|-|Prescription limits cut the flow of pills|Prescription limits push users to street drugs;;"
+                                + "Leave it to the states|Chief of staff|s|1|6|6|-|-|The White House says the states must lead|The White House says the states must lead",
+                        "Heroin and fentanyl replace the pills|With pills harder to get, users are turning to heroin, now cut with fentanyl. Overdoses are rising again.|6|od=0.2|"
+                                + "Treatment on demand|Health secretary|x|0.6|-20|0|def=0.004 od=-4 health=0.15|def=0.004|Treatment centers open across the hardest-hit states|Treatment centers have waiting lists months long;;"
+                                + "A border crackdown on fentanyl|Homeland Security secretary|h|0.55|-16|4|od=-3 imm=0.1|-|Border seizures of fentanyl rise sharply|The drugs keep getting through;;"
+                                + "Naloxone in every pharmacy and school|Health secretary|x|0.75|-14|0|od=-2|-|Naloxone saves thousands of lives|Naloxone is slow to reach the places that need it",
+                        "Overdose deaths hit a record|More than a hundred thousand Americans died of overdoses last year. Life expectancy is falling.|6|od=0.3 health=-0.03|"
+                                + "Declare a public health emergency|Health secretary|x|0.6|-24|0|def=0.006 od=-5 health=0.2 perf=1|def=0.006|The emergency speeds money to treatment and prevention|The emergency declaration brings little new money;;"
+                                + "Go after the suppliers abroad|Secretary of State|d|0.5|-18|4|od=-4 for=0.1|for=-0.1|Pressure on suppliers abroad cuts the flow of chemicals|Suppliers abroad find new routes;;"
+                                + "Make it a law-and-order fight|Attorney general|j|0.6|-12|6|crime=0.15 od=-1 rights=-0.1|-|Arrests of dealers rise|Arrests fill the jails but deaths keep climbing"},
+
+                {"hoax|2012|2100|elect>0,p=0.012 midterm>0,p=0.008 p=0.0015|elect>0:0.5 protest>50:0.3|The viral hoax"
+                        + "|rights=-0.4 sec=-0.3 perf=-2 protest=10 sal:ETHICS=0.4|The hoax takes over the election|Millions believe the fabricated claims, election officials are under siege, and every result is now in doubt.|The hoax has run its course: the platforms took it down and the claims fell apart.",
+                        "A fabricated video goes viral|A doctored video showing election workers in {place} destroying ballots has been viewed 40 million times. The workers in it say it's fake, and they've been getting threats.|4|-|"
+                                + "Debunk it from the White House|Press secretary|c|0.55|-14|6|-|-|The debunking slows the video's spread|The debunking only spreads the video further;;"
+                                + "Ask the platforms to take it down|Counsel|s|0.6|-16|4|rights=-0.05|-|The platforms take the video down|The video keeps reappearing;;"
+                                + "Ignore it|Chief of staff|s|1|6|6|-|-|The White House doesn't comment on the video|The White House doesn't comment on the video",
+                        "Election officials are threatened|Officials in {place} and other states have received death threats. Several have quit, and some counties don't have enough poll workers.|5|sec=-0.02|"
+                                + "Federal protection for election workers|Attorney general|j|0.65|-20|2|sec=0.1 rights=0.1|-|Federal agents arrest several people who threatened election workers|The threats keep coming;;"
+                                + "Money for election security|Budget director|s|0.7|-14|0|def=0.002 sec=0.1|def=0.002|States use the money to protect polling places|The money arrives too late for this election;;"
+                                + "Say it's a state matter|Chief of staff|s|1|6|6|-|-|The White House leaves election security to the states|The White House leaves election security to the states",
+                        "The hoax spreads: copycat claims in every state|Copycat videos and fake documents are appearing in state after state. A third of voters say they don't trust the count.|5|protest=0.5|"
+                                + "A bipartisan statement with the opposition's leaders|Legislative director|s|0.5|-24|2|opp=3 perf=1|-|Leaders of both parties vouch for the election together|The opposition refuses to sign on;;"
+                                + "A public campaign to prebunk the lies|Communications director|c|0.55|-18|4|rights=0.1|-|The campaign teaches millions to spot fakes|The campaign is mocked online;;"
+                                + "Prosecute the people behind it|Attorney general|j|0.5|-16|8|-|protest=5|Prosecutors charge the people behind the hoax|The charges turn them into heroes to their followers",
+                        "Armed groups vow to watch the polls|Armed groups say they'll stand outside polling places to stop the fraud they claim is coming. Election officials are pleading for help.|5|protest=1 sec=-0.03|"
+                                + "Federal protection at polling places|Attorney general|j|0.6|-26|4|sec=0.2 rights=0.2|protest=6|Federal agents keep the polling places safe|Confrontations break out at polling places;;"
+                                + "An address to the nation on the election|Communications director|c|0.5|-20|6|rally=1|-|Your address reassures voters that the count can be trusted|The address is drowned out by the hoax;;"
+                                + "Leave it to local police|Chief of staff|s|1|10|10|-|-|The White House leaves the polling places to local police|The White House leaves the polling places to local police"},
+
+                {"nullify|2010|2100|tw>40,app<45,p=0.004 p=0.0008|app<42:0.4 base<45:0.2|The states defy Washington"
+                        + "|rights=-0.5 perf=-3 opp=-4 sal:RIGHTS=0.4|A constitutional crisis: states defy federal law|A dozen states are refusing to enforce federal law, and their governors say Washington can't make them. Scholars say the Union hasn't faced anything like it since the 1950s.|The standoff with the states is over: the courts have ruled, and the governors are backing down.",
+                        "The governor of {place} orders state agencies to ignore a federal law|Governor {who} has signed an order telling state agencies not to enforce a federal law. Other governors are watching.|6|-|"
+                                + "Take the state to court|Attorney general|j|0.7|-18|2|-|-|A federal judge blocks the governor's order|The court fight drags on;;"
+                                + "Negotiate with Governor {who}|Chief of staff|s|0.55|-14|4|opp=1|-|Governor {who} agrees to a compromise|Governor {who} rejects the compromise in public;;"
+                                + "Let it go|Chief of staff|s|1|8|8|-|-|The White House shrugs off the order from {place}|The White House shrugs off the order from {place}",
+                        "Five more states follow {place}|Five more governors have signed orders like Governor {who}'s. They're calling it a movement for states' rights.|6|opp=-0.1|"
+                                + "Cut federal grants to the defiant states|Budget director|s|0.6|-16|8|opp=-2|opp=-3 protest=4|The defiant states begin to back down to save their grants|The grant cuts rally voters behind the governors;;"
+                                + "A summit of governors|Chief of staff|s|0.55|-20|2|opp=2|-|The governors' summit cools the standoff|The governors walk out of the summit;;"
+                                + "Go to the Supreme Court|Attorney general|j|0.6|-14|4|-|-|The Supreme Court agrees to hear the case quickly|The Court won't hear the case for months",
+                        "Federal agents are barred from state buildings|State police in {place} have blocked federal agents from entering a state office. The standoff is on live television.|5|protest=0.5 sec=-0.02|"
+                                + "Order the agents to stand down and negotiate|Chief of staff|s|0.55|-20|4|-|perf=-1|The standoff ends peacefully, and talks begin|The governors call it a victory;;"
+                                + "Federalize the state's National Guard|Defense secretary|m|0.6|-18|12|sec=0.1 rights=-0.2 opp=-4|protest=10 opp=-5|The Guard is federalized and the agents go in|Federalizing the Guard sets off protests across the region;;"
+                                + "Address the nation on the Constitution|Communications director|c|0.5|-14|6|rally=0.5|-|Your address on the Constitution rallies the country|The address is dismissed by the governors",
+                        "A dozen states in open defiance|Twelve governors are now refusing to enforce federal law. Some legislatures are talking about withholding federal taxes.|6|protest=1 opp=-0.2|"
+                                + "A grand bargain on states' powers|Legislative director|s|0.45|-28|-2|opp=4 perf=1|-|A deal on states' powers ends the standoff|The bargain falls apart on the Hill;;"
+                                + "Enforce federal law with federal force|Attorney general|j|0.55|-20|12|rights=-0.3 sec=0.1|protest=15 rights=-0.4|Federal law is enforced, and the governors back down|Federal force deepens the crisis;;"
+                                + "Wait for the courts|Counsel|s|1|8|8|-|-|The White House waits for the courts to rule|The White House waits for the courts to rule"},
+
+                {"gaslines|1973|2100|year<1975,p=0.01 year>1978,year<1981,p=0.01 gasup>1,p=0.012 oil>110,p=0.01|gasup>0.5:0.4 gasup>1:0.5 year<1981:0.3|The gas lines"
+                        + "|energy=-0.6 prices=-0.4 supply=-0.3 perf=-3 sal:ENERGY=0.6 sal:PRICES=0.3|The fuel shortage brings the country to a crawl|Stations are dry across much of the country, truckers are idle, and the lines at the pumps are the picture of the presidency.|Gas is flowing again, the lines are gone, and prices are easing.",
+                        "Gas stations run dry in {place}|Dozens of stations in {place} have hung out signs saying they're out of gas. Lines at the rest stretch for blocks.|4|energy=-0.01|"
+                                + "Release fuel from reserves|Energy secretary|s|0.7|-18|2|oil=-3 energy=0.1|-|Fuel from reserves reaches stations in {place}|The reserve fuel doesn't reach the dry stations;;"
+                                + "Ask Americans to drive less|Communications director|c|0.5|-10|6|-|-|Americans cut back on driving|The call to drive less is ignored;;"
+                                + "Blame the oil companies|Political director|s|1|6|6|base=1|base=1|The president blames the oil companies for the shortage|The president blames the oil companies for the shortage",
+                        "Odd-even rationing at the pumps|States are limiting drivers to buying gas every other day, depending on their license plates. Tempers are flaring in the lines.|5|energy=-0.02 prices=-0.01|"
+                                + "Lean on producers to pump more|Secretary of State|d|0.55|-20|2|oil=-5|-|Producers agree to pump more oil|The producers won't budge;;"
+                                + "Suspend the federal gas tax|Budget director|s|1|-8|-8|def=0.004 prices=0.1|def=0.004 prices=0.1|The gas tax holiday brings a little relief|The gas tax holiday brings a little relief;;"
+                                + "Lower speed limits and close stations on Sundays|Energy secretary|s|0.65|-14|4|energy=0.05 base=-1|base=-1|Conservation measures stretch the supply|Drivers ignore the new rules",
+                        "Truckers strike over the price of diesel|Independent truckers are blocking highways in protest. Food deliveries are disrupted in several states.|5|supply=-0.04 prices=-0.02|"
+                                + "A deal with the truckers on fuel costs|Transportation secretary|s|0.55|-20|2|supply=0.2|-|The truckers end their blockade after a deal|The truckers reject the deal;;"
+                                + "Clear the highways|Attorney general|j|0.65|-14|8|supply=0.2 g24=-2|protest=6|The highways are cleared|Clashes on the highways make the evening news;;"
+                                + "Price controls on diesel|Economic adviser|s|0.6|-16|6|prices=0.1 supply=-0.1|supply=-0.2|Diesel price controls ease the truckers' costs|Controls bring shortages of diesel",
+                        "A national fuel emergency|The country's fuel stocks are at their lowest in decades. Airlines are canceling flights and factories are cutting shifts.|6|energy=-0.04 supply=-0.05 econ=-0.03|"
+                                + "Emergency rationing, fairly shared|Energy secretary|s|0.6|-26|0|energy=0.2 perf=1|-|Fair rationing gets the country through the emergency|Rationing breaks down into black markets;;"
+                                + "Open new drilling and pipelines at once|Energy secretary|s|0.5|-20|4|oil=-4 energy=0.1 base=1|-|New supply begins to ease the shortage|New supply is years away;;"
+                                + "An address to the nation on energy|Communications director|c|0.45|-14|6|rally=1|perf=-1|Your address calls the country to sacrifice, and many answer|The address is remembered as a lecture"},
+        };
+    }
+
+    /**
+     * Storylines that grow: a bank run, a strike wave, a protest movement, a third-party insurgency and a dozen more.
+     * Each starts small and comes back to the president at every stage. A storyline has heat: what the president
+     * does cools it or feeds it, and the state of the country (jobs, prices, approval, a war) keeps feeding it.
+     * At the end of each stage a hot story grows into the next, a cool one fades, and one that reaches the end of
+     * its last stage still hot takes over the presidency.
+     */
+    static final class Storylines {
+        private static List<StorylineDef> defs;
+
+        private Storylines() {
+        }
+
+        public static List<StorylineDef> defs() {
+            if (defs == null) {
+                List<StorylineDef> l = new ArrayList<StorylineDef>();
+                for (String[] rows : StorylineTable.LINES) l.add(new StorylineDef(rows));
+                defs = l;
+            }
+            return defs;
+        }
+
+        public static StorylineDef def(Storyline l) { return defs().get(l.def); }
+
+        /** Storylines still under way. */
+        public static List<Storyline> active(Game g) {
+            List<Storyline> l = new ArrayList<Storyline>();
+            if (g.stories != null) for (Storyline x : g.stories.lines) if (x.status == SL_ACTIVE) l.add(x);
+            return l;
+        }
+
+        public static void week(Game g) {
+            StoryState s = g.stories;
+            for (int i = 0; i < s.cool.length; i++) if (s.cool[i] > 0) s.cool[i]--;
+            for (Storyline l : active(g)) step(g, l);
+            if (active(g).size() >= SL_MAX) return;
+            int y = yearNow(g);
+            for (int i = 0; i < defs().size(); i++) {
+                StorylineDef d = defs().get(i);
+                if (s.cool[i] > 0 || y < d.from || y > d.to || running(g, i)) continue;
+                if (triggered(g, d)) { start(g, i); return; }
+            }
+        }
+
+        /** A storyline's trigger is one or more sets of conditions, separated by spaces: any one set starts it. */
+        static boolean triggered(Game g, StorylineDef d) {
+            for (String alt : d.trigger.split(" ")) if (!alt.isEmpty() && Stories.holds(g, alt)) return true;
+            return false;
+        }
+
+        static boolean running(Game g, int i) {
+            for (Storyline l : active(g)) if (l.def == i) return true;
+            return false;
+        }
+
+        /** Begins a storyline at its first stage, with a made-up figure at its center and a state where it starts. */
+        public static Storyline start(Game g, int i) {
+            Storyline l = new Storyline();
+            l.def = i;
+            l.heat = clamp(SL_START + g.rng.nextGaussian() * 4, 30, 70);
+            l.status = SL_ACTIVE;
+            l.stageWeek = g.week;
+            l.started = g.week;
+            l.who = ResoluteDesk.genFirst(g.rng, ResoluteDesk.genFemale(g.rng, 0.8)) + " " + ResoluteDesk.MORE_LASTS[g.rng.nextInt(ResoluteDesk.MORE_LASTS.length)];
+            l.state = Stories.someState(g);
+            g.stories.lines.add(l);
+            announce(g, l);
+            return l;
+        }
+
+        /** A week of a storyline: the country feeds it or lets it cool; at the end of a stage it grows, fades or lingers. */
+        static void step(Game g, Storyline l) {
+            StorylineDef d = def(l);
+            l.heat = clamp(l.heat + fuel(g, d) - SL_COOL + g.rng.nextGaussian() * 0.8, 0, 100);
+            Stories.fx(g, fill(d.weekFx[l.stage], l));
+            if (g.week - l.stageWeek < d.weeks[l.stage]) return;
+            if (l.heat >= SL_GROW) { if (l.stage + 1 < d.stages()) grow(g, l); else runaway(g, l); }
+            else if (l.heat <= SL_FADE || l.lingers >= 2) fade(g, l);
+            else { l.lingers++; l.stageWeek = g.week - d.weeks[l.stage] + 3; }
+        }
+
+        /** What keeps a storyline going this week: "unemp>7:0.6 app<40:0.4" adds 0.6 while unemployment is over 7 and 0.4 while approval is under 40. */
+        static double fuel(Game g, StorylineDef d) {
+            double f = 0;
+            for (String tok : d.fuel.split(" ")) {
+                int c = tok.lastIndexOf(':');
+                if (c <= 0) continue;
+                if (Stories.holds(g, tok.substring(0, c))) f += Double.parseDouble(tok.substring(c + 1));
+            }
+            return f;
+        }
+
+        static void grow(Game g, Storyline l) {
+            l.stage++;
+            l.stageWeek = g.week;
+            l.lingers = 0;
+            announce(g, l);
+        }
+
+        /** The news of a new stage, and the decision it brings to the president. */
+        static void announce(Game g, Storyline l) {
+            StorylineDef d = def(l);
+            String[] st = d.stage[l.stage];
+            String head = fill(st[0], l), body = fill(st[1], l);
+            g.log(l.stage == 0 ? NK_BAD : NK_BIG, head, body, 1.6 + l.stage * 0.7);
+            String[][] o = d.options[l.stage];
+            String[] lab = new String[o.length], adv = new String[o.length];
+            for (int k = 0; k < o.length; k++) {
+                lab[k] = o[k][0];
+                adv[k] = o[k][1] + ": \"" + Diplo.odds(g, o[k][2], Double.parseDouble(o[k][3])) + "\"";
+            }
+            String where = d.name + ", stage " + (l.stage + 1) + " of " + d.stages() + (l.stage + 1 < d.stages() ? ". Left alone, stories like this grow." : ". If it doesn't cool now, it will take over the presidency.");
+            Decision dec = Decisions.add(g, D_STORY, head, body + "\n\n" + where, lab, adv);
+            dec.story = l;
+            if (l.stage > 0) g.stress = Math.min(100, g.stress + 2 + l.stage);
+        }
+
+        /** The president's answer at a stage: it cools the story or feeds it, with what else it does. */
+        public static void decide(Game g, Decision dec, int k) {
+            Storyline l = dec.story;
+            if (l == null || l.status != SL_ACTIVE) return;
+            String[] o = def(l).options[l.stage][k];
+            double base = Double.parseDouble(o[3]);
+            boolean ok = g.rng.nextDouble() < Diplo.p(g, o[2], base);
+            if (base < 1) { if (ok) g.okCount++; else g.failCount++; }
+            l.heat = clamp(l.heat + (ok ? Double.parseDouble(o[4]) : Double.parseDouble(o[5]) + (base < 1 ? SL_BACKFIRE : 0)), 0, 100);
+            l.choices++;
+            Stories.fx(g, fill(ok ? o[6] : o[7], l));
+            g.log(ok ? NK_GOOD : NK_BAD, fill(ok ? o[8] : o[9], l), null, 1.3);
+        }
+
+        /** What the hands-off president does: whatever is most likely to cool the story. */
+        public static int auto(Game g, Decision dec) {
+            Storyline l = dec.story;
+            if (l == null) return 0;
+            String[][] o = def(l).options[l.stage];
+            int best = 0;
+            double bv = 1e9;
+            for (int k = 0; k < o.length; k++) {
+                double p = Diplo.p(g, o[k][2], Double.parseDouble(o[k][3]));
+                double v = p * Double.parseDouble(o[k][4]) + (1 - p) * Double.parseDouble(o[k][5]);
+                if (v < bv) { bv = v; best = k; }
+            }
+            return best;
+        }
+
+        static void fade(Game g, Storyline l) {
+            StorylineDef d = def(l);
+            l.status = SL_FADED;
+            l.ended = g.week;
+            g.stories.cool[l.def] = SL_REST;
+            g.log(NK_INFO, fill(d.fade, l), null, 1.0);
+        }
+
+        /** The storyline takes over: its full effect, a lasting hold on what voters care about, and a place in the record. */
+        static void runaway(Game g, Storyline l) {
+            StorylineDef d = def(l);
+            l.status = SL_RUNAWAY;
+            l.ended = g.week;
+            g.stories.cool[l.def] = SL_REST * 2;
+            Stories.fx(g, fill(d.endFx, l));
+            String head = fill(d.endHead, l), body = fill(d.endBody, l);
+            g.log(NK_BIG, head.toUpperCase(), body, 4.5);
+            g.milestones.add(dateStr(g.day()) + ": " + d.name.toLowerCase() + " took over the presidency");
+            g.stress = Math.min(100, g.stress + 8);
+            Decisions.info(g, head, body);
+        }
+
+        /** Ends a storyline at once, for tests and for history that overtakes it. */
+        public static void end(Game g, Storyline l) {
+            if (l.status != SL_ACTIVE) return;
+            l.status = SL_ENDED;
+            l.ended = g.week;
+            g.stories.cool[l.def] = SL_REST;
+        }
+
+        static String fill(String s, Storyline l) { return Stories.fill(s, STATES[l.state].name, l); }
+
+        /** A storyline's name, stage and heat in a line, for the paper and the daily brief. */
+        public static String describe(Storyline l) {
+            StorylineDef d = def(l);
+            return d.name + ": stage " + (l.stage + 1) + " of " + d.stages() + (l.heat >= SL_GROW ? ", and growing" : l.heat <= SL_FADE + 5 ? ", and cooling" : "");
+        }
+
+        /** The current stage's headline, with its blanks filled in. */
+        public static String stageHead(Storyline l) { return fill(def(l).stage[l.stage][0], l); }
     }
 
     /** Someone on the shortlist for a job in the new administration. */
@@ -14887,11 +16381,13 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
 
     /** The morning paper: the front page that sums up each week. */
     static final class Paper {
+        /** This week's stories, biggest first, with the week's biggest Washington story leading if there is one. */
         static List<News> stories(Game g) {
             List<News> l = new ArrayList<News>();
             int from = g.day() - 7;
             for (News n : g.news) if (n.day >= from) l.add(n);
             Collections.sort(l, (a, b) -> Double.compare(b.weight, a.weight));
+            for (int i = 0; i < l.size(); i++) if (l.get(i).section == null) { if (i > 0) l.add(0, l.remove(i)); break; }
             return l;
         }
 
@@ -14938,6 +16434,7 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 int c = (i - 1) % 3;
                 double x = px + 34 + c * (colW + 20), y = cy + ((i - 1) / 3) * 92;
                 News n = st.get(i);
+                if (n.section != null) { text(g, n.section.toUpperCase(), x, y + 2, F_TB, C_INK2); y += 12; }
                 double yy = y + 4 + wrap(g, cap(n.head), x, y + 16, colW, new Font(SERIF, Font.BOLD, 16), C_INK);
                 if (n.body != null) wrap(g, n.body, x, yy + 6, colW, new Font(SERIF, Font.PLAIN, 12), C_INK2);
             }
@@ -14950,6 +16447,21 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                 double yy = y + 4 + wrap(g, feat[k][0], x, y + 16, colW, new Font(SERIF, Font.BOLD, 16), C_INK);
                 wrap(g, feat[k][1], x, yy + 6, colW, new Font(SERIF, Font.PLAIN, 12), C_INK2);
             }
+            // everything else, in brief
+            if (st.size() > 7) {
+                double by = cy + 2 * 92 + 8;
+                g.setColor(C_INK);
+                g.fill(new Rectangle2D.Double(px + 30, by - 4, pw - 60, 1));
+                text(g, "IN BRIEF", px + 34, by + 12, F_TB, C_INK2);
+                Font brief = new Font(SERIF, Font.PLAIN, 13);
+                for (int i = 7; i < Math.min(st.size(), 15); i++) {
+                    int k = i - 7;
+                    double bx = px + 34 + (k % 2) * ((pw - 68) / 2), yb = by + 30 + (k / 2) * 18;
+                    if (yb > py + ph - 12) break;
+                    News n = st.get(i);
+                    textFit(g, (n.section != null ? n.section + ": " : "") + cap(n.head), bx, yb, (pw - 68) / 2 - 16, brief, C_INK);
+                }
+            }
             // the side panel: numbers
             double sx = px + pw + 24, sw = DW - sx - 24;
             g.setColor(new Color(255, 255, 255, 12));
@@ -14960,7 +16472,41 @@ public class ResoluteDesk extends JPanel implements ActionListener, MouseListene
                     {"Gas", "$" + fmt2(e.gas)}, {"Fed funds", fmt2(e.fed) + "%"}, {"Your stamina", String.valueOf(Math.round(game.stamina))}};
             double y = py + 56;
             for (String[] r : rows) { text(g, r[0], sx + 14, y, F_XS, C_TEXT); textR(g, r[1], sx + sw - 14, y, F_SB, Color.white); y += 28; }
+            developing(g, game, 24, py, px - 48);
             u.button(g, DW / 2 - 160, DH - 58, 320, 44, "To the Oval Office", B_GOLD, () -> u.go(SC_OVAL), "Space");
+        }
+
+        /** The storylines under way, beside the paper: each one's stage and how hot it is, and how the last ones ended. */
+        static void developing(Graphics2D g, Game game, double x, double y, double w) {
+            if (game.stories == null) return;
+            List<Storyline> act = Storylines.active(game);
+            int ended = 0;
+            for (Storyline l : game.stories.lines) if (l.status != SL_ACTIVE) ended++;
+            g.setColor(new Color(255, 255, 255, 12));
+            g.fill(new RoundRectangle2D.Double(x, y, w, 70 + (act.isEmpty() ? 52 : act.size() * 84) + (ended > 0 ? 30 + Math.min(4, ended) * 40 : 0), 10, 10));
+            label(g, "DEVELOPING STORIES", x + 14, y + 26, C_GOLD);
+            double yy = y + 52;
+            if (act.isEmpty()) { wrap(g, "Nothing is building. Storylines start small, and they come back to you at every stage.", x + 14, yy, w - 28, F_XS, C_DIM); yy += 52; }
+            for (Storyline l : act) {
+                StorylineDef d = Storylines.def(l);
+                yy += wrap(g, d.name, x + 14, yy, w - 28, F_SB, Color.white) + 2;
+                for (int i = 0; i < d.stages(); i++) {
+                    g.setColor(i < l.stage ? C_BAD : i == l.stage ? C_GOLD : new Color(255, 255, 255, 50));
+                    g.fill(new RoundRectangle2D.Double(x + 14 + i * 22, yy, 16, 6, 3, 3));
+                }
+                text(g, "Stage " + (l.stage + 1) + " of " + d.stages(), x + 14 + d.stages() * 22 + 6, yy + 7, F_T, C_DIM);
+                yy += 18;
+                bar(g, x + 14, yy, w - 28, 8, l.heat / 100, l.heat >= SL_GROW ? C_BAD : l.heat >= 45 ? C_AMBER : C_GOOD);
+                text(g, l.heat >= SL_GROW ? "Growing" : l.heat >= 45 ? "Holding" : "Cooling", x + 14, yy + 20, F_T, C_DIM);
+                yy += 40;
+            }
+            int shown = 0;
+            for (int i = game.stories.lines.size() - 1; i >= 0 && shown < 4; i--) {
+                Storyline l = game.stories.lines.get(i);
+                if (l.status == SL_ACTIVE) continue;
+                if (shown++ == 0) { label(g, "LATELY", x + 14, yy + 8, C_FAINT); yy += 22; }
+                yy += wrap(g, Storylines.def(l).name + ": " + SL_STATUS[l.status].toLowerCase(), x + 14, yy, w - 28, F_XS, l.status == SL_RUNAWAY ? C_BAD : C_DIM) + 6;
+            }
         }
 
         /** Regular features that fill the page: the week ahead, poll watch, markets and an opinion column. */

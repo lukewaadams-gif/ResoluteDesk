@@ -82,7 +82,7 @@ function $boot() {
     });
     window.addEventListener('keyup', e => { if (code0(e) !== undefined) p.keyReleased(new KeyEventW(code0(e), 0)); });
     function code0(e) { return KEYS[e.key] !== undefined ? KEYS[e.key] : (e.key.length === 1 ? e.key.toUpperCase().charCodeAt(0) : undefined); }
-    window.__rd = { get app() { return APP; }, Screens, Creator, Oval, Rooms, Paper, Week, Setup, Settings, Economy, Approval, SaveGame, Game, candById, era, Diagnostics, HillUI, Legis, Decisions, Budget, Hill, Midterms, WestWing, Cabinet, Actions, Courts, Trouble, SitRoom, Diplo, Summit, PressRoom, HomeFront, Speech, QA, Social, Polls, History, Reelection, Terms, Legacy, Night, CampaignUI, BgImport, HallStore, Tutorial, Watch, Auto, ERAS, Hist: { leanIn, evFor, courtIn, applyEra } };
+    window.__rd = { get app() { return APP; }, Screens, Creator, Oval, Rooms, Paper, Week, Setup, Settings, Economy, Approval, SaveGame, Game, candById, era, Diagnostics, HillUI, Legis, Decisions, Budget, Hill, Midterms, WestWing, Cabinet, Actions, Courts, Trouble, SitRoom, Diplo, Summit, PressRoom, HomeFront, Speech, QA, Social, Polls, History, Reelection, Terms, Legacy, Night, CampaignUI, BgImport, HallStore, Tutorial, Watch, Auto, Stories, Storylines, ERAS, Hist: { leanIn, evFor, courtIn, applyEra } };
     canvas.focus();
     resize();
     requestAnimationFrame(frame);

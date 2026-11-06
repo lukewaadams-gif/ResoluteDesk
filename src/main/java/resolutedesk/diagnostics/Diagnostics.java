@@ -29,6 +29,7 @@ import static resolutedesk.press.Outlets.*;
 import static resolutedesk.sim.DecisionKinds.*;
 import static resolutedesk.sim.Rosters.*;
 import static resolutedesk.sim.Schedule.*;
+import static resolutedesk.stories.StoryData.*;
 import static resolutedesk.transition.TransitionData.*;
 import static resolutedesk.ui.RoomIds.*;
 import static resolutedesk.ui.ScreenIds.*;
@@ -72,6 +73,7 @@ import resolutedesk.model.Cand;
 import resolutedesk.model.Econ;
 import resolutedesk.model.Era;
 import resolutedesk.model.Game;
+import resolutedesk.model.News;
 import resolutedesk.model.Settings;
 import resolutedesk.opinion.Elect;
 import resolutedesk.opinion.Groups;
@@ -84,6 +86,11 @@ import resolutedesk.sim.Decision;
 import resolutedesk.sim.Decisions;
 import resolutedesk.sim.Setup;
 import resolutedesk.sim.Week;
+import resolutedesk.stories.Stories;
+import resolutedesk.stories.StoryDef;
+import resolutedesk.stories.Storyline;
+import resolutedesk.stories.StorylineDef;
+import resolutedesk.stories.Storylines;
 import resolutedesk.transition.Prospect;
 import resolutedesk.transition.Transitions;
 import resolutedesk.ui.Creator;
@@ -128,6 +135,7 @@ public final class Diagnostics {
         }
         if (what.equals("ui")) ui(a.length > 2 ? a[2] : "shots");
         if (what.equals("policies")) policySim(a.length > 2 ? Integer.parseInt(a[2]) : 2025, a.length > 3 ? Integer.parseInt(a[3]) : 104);
+        if (what.equals("stories")) storySim(a.length > 2 ? Integer.parseInt(a[2]) : 2025, a.length > 3 ? Integer.parseInt(a[3]) : 104);
         if (what.equals("wars")) warSim(a.length > 2 ? Integer.parseInt(a[2]) : 2025, a.length > 3 ? Integer.parseInt(a[3]) : 80);
         if (what.equals("transition")) transitionSim(a.length > 2 ? Integer.parseInt(a[2]) : 2025, a.length > 3 ? Integer.parseInt(a[3]) : 52);
         if (what.equals("check")) check();
@@ -243,6 +251,18 @@ public final class Diagnostics {
         }
     }
 
+    /** A story's effects without the keys only stories know (salience and housing), for checkFx. */
+    static String storyFx(String fx) {
+        if (fx.equals("-")) return "";
+        StringBuilder b = new StringBuilder();
+        for (String t : fx.split(" ")) {
+            if (t.isEmpty() || t.startsWith("housing=")) continue;
+            if (t.startsWith("sal:")) { if (Stories.issue(t.substring(4, t.indexOf('='))) < 0) System.out.println("BAD ISSUE " + t); continue; }
+            b.append(b.length() > 0 ? " " : "").append(t);
+        }
+        return b.toString();
+    }
+
     /** Every parallel data table must line up. */
     static void check() {
         int n = AD_ID.length;
@@ -322,6 +342,25 @@ public final class Diagnostics {
             }
         }
         System.out.println("statecraft: " + nobj + " objectives");
+        for (StoryDef d : Stories.defs()) {
+            if (d.from > d.to) System.out.println("STORY RUNS BACKWARD: " + d.head);
+            checkFx(storyFx(d.fx));
+            if (d.head.contains("\"") || d.body.contains("\"")) System.out.println("STORY QUOTES SOMEONE: " + d.head);
+        }
+        for (StorylineDef d : Storylines.defs()) {
+            checkFx(storyFx(d.endFx.replace("{st}", "TX")));
+            for (int i = 0; i < d.stages(); i++) {
+                checkFx(storyFx(d.weekFx[i].replace("{st}", "TX")));
+                for (String[] o : d.options[i]) {
+                    if (!"dmihjxcs".contains(o[2]) || o[2].length() != 1) System.out.println("STORYLINE " + d.id + ": odds kind " + o[2]);
+                    Double.parseDouble(o[3]); Double.parseDouble(o[4]); Double.parseDouble(o[5]);
+                    checkFx(storyFx(o[6].replace("{st}", "TX"))); checkFx(storyFx(o[7].replace("{st}", "TX")));
+                    boolean adv = false; for (String lab : ADV_LABEL) if (lab.equals(o[1])) adv = true;
+                    if (!adv) System.out.println("STORYLINE " + d.id + ": no adviser " + o[1]);
+                }
+            }
+        }
+        System.out.println("stories: " + Stories.defs().size() + " of their era, " + Storylines.defs().size() + " storylines");
         System.out.println("history: " + ERAS.size() + " eras, " + HIST.size() + " historical figures, " + FLASH.length + " turning points, " + HBILL_SPEC.length + " historical bills");
         System.out.println("check done: " + n + " actions, " + nc + " crises, " + ne + " events");
     }
@@ -414,6 +453,26 @@ public final class Diagnostics {
         System.out.println(b);
     }
 
+    /** The era's news and its storylines over a presidency left to the hands-off president: every story, and how each storyline went. */
+    static void storySim(int year, int weeks) {
+        Game g = newGame(91, year, null, 0);
+        StringBuilder b = new StringBuilder("=== stories " + year + " " + g.pres.name() + ", " + Stories.inYear(year) + " stories for the year\n");
+        int seen = 0;
+        for (int k = 0; k < weeks && !g.over; k++) {
+            Auto.week(g); Week.resolve(g); Decisions.autoAll(g);
+            for (; seen < g.news.size(); seen++) {
+                News n = g.news.get(seen);
+                if (n.section != null) b.append("  wk").append(g.week).append(" [").append(n.section).append("] ").append(n.head).append("\n");
+            }
+            seen = g.news.size();
+            for (Storyline l : Storylines.active(g)) if (g.week % 4 == 0) b.append("  wk").append(g.week).append(" storyline ").append(Storylines.describe(l)).append(" heat ").append(fmt0(l.heat)).append("\n");
+        }
+        for (Storyline l : g.stories.lines) b.append("  ").append(Storylines.def(l).name).append(": ").append(SL_STATUS[l.status]).append(" at stage ").append(l.stage + 1).append(", weeks ").append(l.started).append("-").append(l.ended).append(", ").append(l.choices).append(" choices, who ").append(l.who).append("\n");
+        b.append("  ambient stories ").append(g.stories.ran).append(" approval ").append(fmt1(g.approval)).append("\n");
+        for (String m : g.milestones) b.append("  * ").append(m).append("\n");
+        System.out.println(b);
+    }
+
     static void transitionSim(int year, int weeks) {
         Settings s = new Settings();
         Era e = era(year);
@@ -465,6 +524,22 @@ public final class Diagnostics {
         for (int i = 0; i < g.world.wars.size(); i++) if (g.world.wars.get(i).enemy == CC_VE) SitRoom.selWar = 0;
         shot(u, dir, "war_venezuela");
         SitRoom.tab = 0;
+    }
+
+    /** The paper with the era's stories and a storyline under way, and a storyline's decision. */
+    static void storyShots(ResoluteDesk u, String dir) {
+        Game g = u.game;
+        u.modal = null; g.inbox.clear();
+        int strike = 0;
+        for (int i = 0; i < Storylines.defs().size(); i++) if (Storylines.defs().get(i).id.equals("strike")) strike = i;
+        Storyline l = Storylines.start(g, strike);
+        Decisions.show(u, g); shot(u, dir, "storyline_decision");
+        u.modal = null; g.inbox.clear();
+        l.heat = 70;
+        for (int w = 0; w < 4; w++) { Week.routine(g); Week.resolve(g); }
+        g.inbox.clear();
+        u.go(SC_PAPER); shot(u, dir, "paper_stories");
+        u.go(SC_OVAL);
     }
 
     /** The Cabinet Room: a policy and its impacts, the outcomes, and the system map. */
@@ -530,6 +605,7 @@ public final class Diagnostics {
         for (int t = 0; t < HillUI.TABS.length; t++) { HillUI.tab = t; HillUI.sel = -1; shot(u, dir, "hill_" + t); }
         policyShots(u, dir);
         worldShots(u, dir);
+        storyShots(u, dir);
         HillUI.tab = 1; HillUI.draftSel = 1; HillUI.draft = Legis.draft(u.game, HillUI.agenda(u.game).get(1)); shot(u, dir, "hill_draft");
         HillUI.tab = 0; HillUI.chairCh = 1; shot(u, dir, "hill_senate_chairs");
         for (Bill b : u.game.cong.bills) if (b.stage == ST_LAW) { Legis.toDesk(u.game, b); break; }

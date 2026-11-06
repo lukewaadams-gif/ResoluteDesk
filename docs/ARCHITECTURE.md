@@ -23,6 +23,7 @@ src/main/java/resolutedesk/
   policy/             about 150 policies, the channels that change them, and the outcomes they produce
   executive/          staff and cabinet, orders and rules, the courts, scandals, the vice president
   world/              countries, diplomacy, summits, crises, operations, statecraft, objectives and wars
+  stories/            the era's news beyond the White House, and the storylines that grow out of it
   history/            eras and the turning points of history
   home/               events at home, disasters, the president's party and the opposition
   press/              press conferences, speeches, posts, polls and news outlets
@@ -96,6 +97,14 @@ power, and a nuclear power or a great-power protector all but stops it. Support 
 legitimacy at the start (authorized or not, against an enemy or a friend), less about six points per
 tenfold rise in deaths, and an unpopular war drags on approval every week. An invasion that reaches 100
 topples the government (`world.Statecraft.topple`) and becomes an occupation with a new front.
+
+**Storylines** (`stories.Storylines`) are small state machines over a number called heat. Each week the
+country's state feeds a storyline's heat through its fuel conditions (written in the same condition language
+as events and turning points) while it cools a little on its own. Decisions at each stage add or subtract heat,
+and a failed gamble adds more. At the end of a stage, heat at or above 60 moves it to the next stage, at or below 30
+fades it, and anything between lingers for another look. The tables are data: `StorylineTable` holds each
+storyline's trigger, fuel, stages, options and ending, and `AmbientEarly`, `AmbientMiddle`, `AmbientRecent` and
+`AmbientAny` hold the era's stories, one row each.
 
 **Relationships with Congress** (`congress.Relations`) replace political capital. Nothing is spent but time:
 each deal takes an hour of the president's week, and the hours come from Hill meetings on the calendar.
